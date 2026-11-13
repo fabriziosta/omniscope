@@ -5,5 +5,5 @@
 /// Patch bumps: `make bump-patch` / CI on push to `main`.
 abstract final class AppInfo {
   static const name = 'Omniscope';
-  static const version = '1.0.2+e3daf78';
+  static const version = '1.0.3+739978a';
 }
