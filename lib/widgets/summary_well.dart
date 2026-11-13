@@ -52,20 +52,20 @@ class SummaryWell extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    eyebrow,
-                    style: theme.textTheme.small.copyWith(
-                      color: eyebrowColor,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                ?trailing,
-              ],
+            Text(
+              eyebrow,
+              style: theme.textTheme.small.copyWith(
+                color: eyebrowColor,
+                fontWeight: FontWeight.w600,
+              ),
             ),
+            if (trailing != null) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: trailing!,
+              ),
+            ],
             const SizedBox(height: 4),
             Text(blurb, style: theme.textTheme.muted),
             const SizedBox(height: 12),

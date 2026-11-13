@@ -183,7 +183,8 @@ void main() {
     expect(find.text('Live · Crypto.com'), findsOneWidget);
     expect(find.textContaining('Real exchange balances'), findsOneWidget);
     expect(find.text('BTC'), findsOneWidget);
-    expect(find.text('Balances'), findsOneWidget);
+    // CTA label + section heading both say "Balances".
+    expect(find.text('Balances'), findsNWidgets(2));
 
     await tester.binding.setSurfaceSize(null);
   });

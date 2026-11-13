@@ -195,7 +195,7 @@ void main() {
           AgentActivityRepository activity,
           AgentChatRepository chats,
           AppNotificationRepository notifications,
-        })> _harness({
+        })> harness({
       required MockClient httpClient,
     }) async {
       final store = await memoryConfig();
@@ -247,7 +247,7 @@ void main() {
 
     test('skips when paused or not due', () async {
       var llmCalls = 0;
-      final h = await _harness(
+      final h = await harness(
         httpClient: MockClient((_) async {
           llmCalls++;
           return http.Response(
@@ -297,7 +297,7 @@ void main() {
 
     test('runs due symbols when resumed and logs scheduled activity', () async {
       var llmCalls = 0;
-      final h = await _harness(
+      final h = await harness(
         httpClient: MockClient((_) async {
           llmCalls++;
           return http.Response(
