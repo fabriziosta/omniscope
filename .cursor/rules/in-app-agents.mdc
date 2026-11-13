@@ -1,0 +1,40 @@
+---
+description: Prefer in-app AI agent entry points on symbol/decision UI
+alwaysApply: true
+---
+
+# In-app agents (suggest when possible)
+
+When designing or changing Omniscope UI, **proactively suggest** where an AI agent CTA fits. Prefer integrating agents into the user’s flow over leaving them only on the Agents tab.
+
+## When to propose an agent action
+
+- Screen or row has a **symbol / asset / holding**
+- User is about to **decide** (buy/sell, size, risk) or asks “what is this?”
+- Copy would otherwise say “learn more” / “research” with no in-app path
+- New feature surfaces market context that an agent Run already understands
+
+## How to wire it
+
+- Use [`AgentLaunchIntent`](lib/data/agents/agent_launch.dart): `investigate` (research/desk) or `tradeCheck` (intraday/desk).
+- Launch via [`AgentLaunchActions.launch`](lib/features/agents/agent_launch_actions.dart) or [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart) — do not push `AgentChatScreen` with a hard-coded role unless intentional.
+- Pass the **symbol**; set `autoRun` through the shared helper so chat runs the role prompt + market snapshot.
+- Mobile-first: one CTA if a single connected agent applies; picker when several; when none connected, call `ShellNavigationController.goToAgents(connectRoleId: …)` so the user lands on Agents with Connect open.
+- Brand / shadcn only — no ad-hoc Material menus.
+
+```dart
+// ❌ BAD — Agents tab only; asset detail has no path into chat
+// (user must retype the symbol in Run)
+
+// ✅ GOOD — context-aware launch
+AgentLaunchButton(
+  symbol: quote.symbol,
+  intent: AgentLaunchIntent.investigate,
+)
+```
+
+## Do not
+
+- Spawn Python CrewAI/LangGraph from Flutter UI (chat stays HTTPS LLM).
+- Claim live brokerage execution from agent output.
+- Invent new agent frameworks per screen — extend intents / role mapping instead.

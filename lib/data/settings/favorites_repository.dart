@@ -73,6 +73,39 @@ class FavoritesRepository extends ChangeNotifier {
     await _persist();
   }
 
+  /// Reorders Markets favorites.
+  ///
+  /// [newIndex] is the destination after the item is removed (as reported by
+  /// Flutter's [ReorderableListView.onReorderItem]).
+  Future<void> reorderMarketFavorites(int oldIndex, int newIndex) async {
+    if (oldIndex < 0 || oldIndex >= _markets.length) return;
+    if (newIndex < 0 || newIndex >= _markets.length) return;
+    if (newIndex == oldIndex) return;
+    final item = _markets.removeAt(oldIndex);
+    _markets.insert(newIndex, item);
+    notifyListeners();
+    await _persist();
+  }
+
+  /// Reorders crypto favorites for [exchangeId].
+  ///
+  /// [newIndex] is the destination after the item is removed (as reported by
+  /// Flutter's [ReorderableListView.onReorderItem]).
+  Future<void> reorderCryptoFavorites(
+    String exchangeId,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    final list = _crypto[exchangeId];
+    if (list == null || oldIndex < 0 || oldIndex >= list.length) return;
+    if (newIndex < 0 || newIndex >= list.length) return;
+    if (newIndex == oldIndex) return;
+    final item = list.removeAt(oldIndex);
+    list.insert(newIndex, item);
+    notifyListeners();
+    await _persist();
+  }
+
   Future<void> _persist() async {
     final cryptoOut = <String, List<String>>{};
     final exchangeIds = _crypto.keys.toList()..sort();

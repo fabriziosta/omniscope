@@ -39,7 +39,14 @@ class TappableNavRow extends StatelessWidget {
                 Expanded(child: leading),
                 if (trailing != null) ...[
                   const SizedBox(width: 8),
-                  trailing!,
+                  // Flexible so icon CTAs + price can shrink on narrow panes
+                  // without overflowing the card row.
+                  Flexible(
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: trailing!,
+                    ),
+                  ),
                   const SizedBox(width: 8),
                 ],
                 Icon(

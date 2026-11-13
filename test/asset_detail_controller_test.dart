@@ -1,41 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:omniscope/data/market/market_data_client.dart';
-import 'package:omniscope/data/market/models.dart';
 import 'package:omniscope/data/portfolio/portfolio_repository.dart';
 import 'package:omniscope/data/settings/display_settings.dart';
 import 'package:omniscope/features/asset_detail/asset_detail_controller.dart';
 
+import 'support/fake_market_data_client.dart';
 import 'support/memory_config.dart';
-
-class _FakeMarketDataClient implements MarketDataClient {
-  _FakeMarketDataClient({this.delay = Duration.zero});
-
-  Duration delay;
-  var quoteCalls = 0;
-
-  @override
-  Future<List<Candle>> getHistory(
-    String symbol, {
-    required String range,
-    required String interval,
-  }) async {
-    await Future<void>.delayed(delay);
-    return [
-      Candle(time: DateTime.utc(2026, 1, 1), close: 100),
-      Candle(time: DateTime.utc(2026, 1, 2), close: 110),
-    ];
-  }
-
-  @override
-  Future<List<Quote>> getQuotes(List<String> symbols) async {
-    quoteCalls += 1;
-    final price = 100.0 * quoteCalls;
-    await Future<void>.delayed(delay);
-    return [
-      for (final s in symbols) Quote(symbol: s, price: price, name: s),
-    ];
-  }
-}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -44,7 +13,7 @@ void main() {
     final store = await memoryConfig();
     final portfolio = PortfolioRepository(store: store);
     await portfolio.load();
-    final client = _FakeMarketDataClient();
+    final client = FakeMarketDataClient(scalePriceByCall: true);
     final controller = AssetDetailController(
       symbol: 'AAPL',
       marketData: client,
@@ -58,13 +27,16 @@ void main() {
     expect(controller.hasError, isFalse);
     expect(controller.quote?.price, 100);
     expect(controller.candles, hasLength(2));
+    expect(controller.fetchedAt, isNotNull);
+    expect(AssetDetailController.rangeExplainer('1M'), contains('month'));
   });
 
   test('stale load is ignored when a newer load wins', () async {
     final store = await memoryConfig();
     final portfolio = PortfolioRepository(store: store);
     await portfolio.load();
-    final client = _FakeMarketDataClient(
+    final client = FakeMarketDataClient(
+      scalePriceByCall: true,
       delay: const Duration(milliseconds: 40),
     );
     final controller = AssetDetailController(
@@ -90,7 +62,7 @@ void main() {
     await portfolio.load();
     final controller = AssetDetailController(
       symbol: 'AAPL',
-      marketData: _FakeMarketDataClient(),
+      marketData: FakeMarketDataClient(scalePriceByCall: true),
       portfolio: portfolio,
       initialRange: ChartRangePreset.oneMonth,
     );

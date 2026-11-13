@@ -5,23 +5,24 @@ alwaysApply: true
 
 # Brand colors
 
-All visual chrome must use [`lib/core/brand_colors.dart`](lib/core/brand_colors.dart) / `ShadTheme` scheme tokens. No ad-hoc hex for icons, images, borders, shadows, fills, or chart accents.
+All visual chrome must use [`lib/core/brand_colors.dart`](lib/core/brand_colors.dart) / `ShadTheme` scheme tokens from the **active** [`BrandPalette`](lib/core/brand_colors.dart) (Settings → Appearance → Color set). No ad-hoc hex for icons, images, borders, shadows, fills, or chart accents.
 
-| Role | Light | Dark |
-|------|-------|------|
-| Primary | `#0F766E` | `#2DD4BF` |
-| Secondary | `#CCFBF1` | `#134E4A` |
-| Border | `#B7C9C5` | `#3A5552` |
-| Gain (numbers up) | `#15803D` | `#4ADE80` |
-| Loss (numbers down) | `#DC2626` | `#F87171` |
+Default palette **Teal** (others: Ocean, Forest, Slate, Amber). Each palette defines light **and** dark tokens — brightness (ThemeMode) is independent.
+
+| Role | Use |
+|------|-----|
+| Primary / secondary / border / selection | Active palette via `colorScheme` |
+| Gain (numbers up) | `#15803D` / `#4ADE80` — fixed across palettes |
+| Loss (numbers down) | `#DC2626` / `#F87171` — fixed across palettes |
 
 ## Rules
 
 - Icons / images: `colorScheme.primary` (or secondary well behind them).
 - Borders / dividers / inputs: `colorScheme.border` or `input`.
-- Shadows: `BrandColors.shadowOf(context)` only.
+- Shadows: `BrandColors.shadowOf(context)` only (uses active primary).
 - Positive/negative **data**: `BrandColors.gainOf` / `lossOf` — never primary for P&L.
 - CTAs / focus: primary; soft selected states: secondary.
+- Do not hard-code teal hex in new UI — read from theme so palette switching works.
 
 ```dart
 // ❌ BAD

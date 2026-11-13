@@ -67,10 +67,12 @@ class _CryptoGroupScreenState extends State<CryptoGroupScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const TabPageHeader(
-          title: 'Crypto',
-          subtitle: 'Spot markets by exchange. Pick a venue to browse pairs.',
-        ),
+        if (_narrowSelectedId == null)
+          const TabPageHeader(
+            title: 'Crypto',
+            subtitle:
+                'Spot markets by exchange. Pick a venue to browse pairs.',
+          ),
         Expanded(
           child: exchanges.isEmpty || wideSelected == null
               ? AppEmptyView(emptyMessage)
@@ -79,15 +81,13 @@ class _CryptoGroupScreenState extends State<CryptoGroupScreen> {
                   narrowSelected: narrowSelected,
                   onNarrowBack: _backToNavList,
                   sidebarBuilder: (context, highlighted, {required wide}) {
-                    return ListView(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-                      children: [
-                        for (var i = 0; i < exchanges.length; i++) ...[
-                          if (i > 0) const SizedBox(height: 6),
+                    return MasterDetailNavList(
+                      tiles: [
+                        for (final client in exchanges)
                           MasterDetailNavTile(
-                            title: exchanges[i].exchange.displayName,
+                            title: client.exchange.displayName,
                             meta: () {
-                              final id = exchanges[i].exchange.id;
+                              final id = client.exchange.id;
                               final favCount =
                                   favorites.cryptoSymbolsFor(id).length;
                               if (favCount == 0) return 'Spot pairs';
@@ -97,13 +97,10 @@ class _CryptoGroupScreenState extends State<CryptoGroupScreen> {
                             }(),
                             icon: LucideIcons.bitcoin,
                             selected: highlighted?.exchange.id ==
-                                exchanges[i].exchange.id,
-                            onTap: () => _select(
-                              exchanges[i].exchange.id,
-                              wide: wide,
-                            ),
+                                client.exchange.id,
+                            onTap: () =>
+                                _select(client.exchange.id, wide: wide),
                           ),
-                        ],
                       ],
                     );
                   },

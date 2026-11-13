@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../core/brand_colors.dart';
 import '../../core/formatting.dart';
 import '../../data/settings/display_settings.dart';
 import '../../data/settings/theme_settings.dart';
@@ -68,7 +70,10 @@ class AppearanceSectionBody extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SettingsSubsectionLabel('Theme'),
+        const SettingsSubsectionLabel(
+          'Brightness',
+          description: 'Light, dark, or follow the device. Works with any color set.',
+        ),
         const SizedBox(height: 10),
         for (var i = 0; i < _themeOptions.length; i++) ...[
           if (i > 0) const SizedBox(height: 8),
@@ -77,6 +82,22 @@ class AppearanceSectionBody extends StatelessWidget {
             subtitle: _themeOptions[i].$3,
             selected: themeSettings.mode == _themeOptions[i].$1,
             onTap: () => themeSettings.setMode(_themeOptions[i].$1),
+          ),
+        ],
+        const SizedBox(height: 20),
+        const SettingsSubsectionLabel(
+          'Color set',
+          description:
+              'Brand accents for buttons, icons, and chrome. '
+              'Gain and loss numbers stay green and red in every set.',
+        ),
+        const SizedBox(height: 10),
+        for (var i = 0; i < BrandColors.all.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          _PaletteOptionTile(
+            palette: BrandColors.all[i],
+            selected: themeSettings.paletteId == BrandColors.all[i].id,
+            onTap: () => themeSettings.setPaletteId(BrandColors.all[i].id),
           ),
         ],
         const SizedBox(height: 20),
@@ -98,7 +119,8 @@ class AppearanceSectionBody extends StatelessWidget {
         const SizedBox(height: 20),
         const SettingsSubsectionLabel(
           'Numbers',
-          description: 'How prices appear in Markets, Crypto, Portfolio, and Asset detail.',
+          description:
+              'How prices appear in Markets, Crypto, Portfolio, and Asset detail.',
         ),
         const SizedBox(height: 10),
         for (var i = 0; i < _priceOptions.length; i++) ...[
@@ -113,7 +135,8 @@ class AppearanceSectionBody extends StatelessWidget {
         const SizedBox(height: 20),
         const SettingsSubsectionLabel(
           'Charts',
-          description: 'Default history range when you open an asset. You can still change it on the chart.',
+          description:
+              'Default history range when you open an asset. You can still change it on the chart.',
         ),
         const SizedBox(height: 10),
         for (var i = 0; i < _chartOptions.length; i++) ...[
@@ -128,6 +151,151 @@ class AppearanceSectionBody extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _PaletteOptionTile extends StatelessWidget {
+  const _PaletteOptionTile({
+    required this.palette,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final BrandPalette palette;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final foreground = selected
+        ? theme.colorScheme.secondaryForeground
+        : theme.colorScheme.foreground;
+    final swatchPrimary = isDark ? palette.primaryDark : palette.primaryLight;
+    final swatchSecondary =
+        isDark ? palette.secondaryDark : palette.secondaryLight;
+    final swatchBorder = isDark ? palette.borderDark : palette.borderLight;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: selected ? theme.colorScheme.secondary : null,
+              border: Border.all(color: theme.colorScheme.border),
+              borderRadius: theme.radius,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  _PaletteSwatches(
+                    primary: swatchPrimary,
+                    secondary: swatchSecondary,
+                    border: swatchBorder,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          palette.label,
+                          style: theme.textTheme.large.copyWith(
+                            color: foreground,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          palette.description,
+                          style: theme.textTheme.muted.copyWith(
+                            color: selected
+                                ? theme.colorScheme.secondaryForeground
+                                    .withValues(alpha: 0.8)
+                                : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (selected)
+                    Icon(
+                      LucideIcons.check,
+                      size: 18,
+                      color: theme.colorScheme.secondaryForeground,
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PaletteSwatches extends StatelessWidget {
+  const _PaletteSwatches({
+    required this.primary,
+    required this.secondary,
+    required this.border,
+  });
+
+  final Color primary;
+  final Color secondary;
+  final Color border;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return SizedBox(
+      width: 52,
+      height: 28,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            top: 2,
+            child: _Dot(color: primary, outline: theme.colorScheme.border),
+          ),
+          Positioned(
+            left: 14,
+            top: 2,
+            child: _Dot(color: secondary, outline: border),
+          ),
+          Positioned(
+            left: 28,
+            top: 2,
+            child: _Dot(color: border, outline: theme.colorScheme.border),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Dot extends StatelessWidget {
+  const _Dot({required this.color, required this.outline});
+
+  final Color color;
+  final Color outline;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: outline),
+      ),
     );
   }
 }

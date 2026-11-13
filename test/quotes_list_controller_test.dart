@@ -1,43 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:omniscope/data/market/market_data_client.dart';
-import 'package:omniscope/data/market/models.dart';
 import 'package:omniscope/features/quotes/quotes_list_controller.dart';
 
-class _FakeMarketDataClient implements MarketDataClient {
-  _FakeMarketDataClient({this.delay = Duration.zero, this.fail = false});
-
-  Duration delay;
-  bool fail;
-  var calls = 0;
-  final requestedBatches = <List<String>>[];
-
-  @override
-  Future<List<Candle>> getHistory(
-    String symbol, {
-    required String range,
-    required String interval,
-  }) async =>
-      const [];
-
-  @override
-  Future<List<Quote>> getQuotes(List<String> symbols) async {
-    calls += 1;
-    requestedBatches.add(List<String>.from(symbols));
-    final call = calls;
-    await Future<void>.delayed(delay);
-    if (fail) throw Exception('network');
-    return [
-      for (final s in symbols)
-        Quote(symbol: s, price: 10.0 * call, name: s),
-    ];
-  }
-}
+import 'support/fake_market_data_client.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('refresh loads first page only', () async {
-    final client = _FakeMarketDataClient();
+    final client = FakeMarketDataClient(basePrice: 10, scalePriceByCall: true);
     final symbols = [for (var i = 0; i < 40; i++) 'S$i'];
     final controller = QuotesListController(
       client: client,
@@ -56,7 +26,7 @@ void main() {
   });
 
   test('loadMore appends the next page', () async {
-    final client = _FakeMarketDataClient();
+    final client = FakeMarketDataClient(basePrice: 10, scalePriceByCall: true);
     final symbols = [for (var i = 0; i < 25; i++) 'S$i'];
     final controller = QuotesListController(
       client: client,
@@ -76,7 +46,7 @@ void main() {
   });
 
   test('refresh sets friendly error on failure', () async {
-    final client = _FakeMarketDataClient(fail: true);
+    final client = FakeMarketDataClient(fail: true);
     final controller = QuotesListController(
       client: client,
       symbols: const ['AAPL'],
@@ -89,8 +59,35 @@ void main() {
     expect(controller.quotes, isEmpty);
   });
 
+  test('loadMore soft-fails without clearing existing quotes', () async {
+    final client = FakeMarketDataClient(basePrice: 10, scalePriceByCall: true);
+    final symbols = [for (var i = 0; i < 20; i++) 'S$i'];
+    final controller = QuotesListController(
+      client: client,
+      symbols: symbols,
+      pageSize: 10,
+    );
+
+    await controller.refresh();
+    expect(controller.quotes, hasLength(10));
+    expect(controller.fetchedAt, isNotNull);
+
+    client.fail = true;
+    await controller.loadMore();
+
+    expect(controller.quotes, hasLength(10));
+    expect(controller.hasError, isFalse);
+    expect(controller.lastPagingError, isNotNull);
+    expect(controller.loadingMore, isFalse);
+
+    controller.clearPagingError();
+    expect(controller.lastPagingError, isNull);
+  });
+
   test('stale refresh is ignored when a newer load wins', () async {
-    final client = _FakeMarketDataClient(
+    final client = FakeMarketDataClient(
+      basePrice: 10,
+      scalePriceByCall: true,
       delay: const Duration(milliseconds: 40),
     );
     final controller = QuotesListController(
@@ -106,5 +103,127 @@ void main() {
 
     expect(controller.quotes.single.price, 20);
     expect(client.calls, 2);
+  });
+
+  test('setSymbolQuery fetches only matching catalog symbols', () async {
+    final client = FakeMarketDataClient(basePrice: 10, scalePriceByCall: true);
+    final controller = QuotesListController(
+      client: client,
+      symbols: const [
+        'ETH_USD',
+        'BTC_USD',
+        'SOL_USD',
+        'WBTC_USD',
+        'ADA_USD',
+        'BTC_EUR',
+      ],
+      pageSize: 10,
+    );
+
+    await controller.refresh();
+    expect(client.requestedBatches.single, [
+      'ETH_USD',
+      'BTC_USD',
+      'SOL_USD',
+      'WBTC_USD',
+      'ADA_USD',
+      'BTC_EUR',
+    ]);
+
+    await controller.setSymbolQuery('BTC');
+
+    expect(controller.symbolQuery, 'btc');
+    expect(controller.totalSymbols, 3);
+    expect(controller.hasMore, isFalse);
+    expect(
+      controller.quotes.map((q) => q.symbol),
+      ['BTC_USD', 'WBTC_USD', 'BTC_EUR'],
+    );
+    expect(client.requestedBatches.last, [
+      'BTC_USD',
+      'WBTC_USD',
+      'BTC_EUR',
+    ]);
+  });
+
+  test('loadMore under query pages further matches only', () async {
+    final client = FakeMarketDataClient(basePrice: 10, scalePriceByCall: true);
+    final symbols = [
+      for (var i = 0; i < 10; i++) 'ETH_$i',
+      for (var i = 0; i < 25; i++) 'BTC_$i',
+      for (var i = 0; i < 10; i++) 'SOL_$i',
+    ];
+    final controller = QuotesListController(
+      client: client,
+      symbols: symbols,
+      pageSize: 10,
+    );
+
+    await controller.setSymbolQuery('BTC');
+    expect(controller.totalSymbols, 25);
+    expect(controller.quotes, hasLength(10));
+    expect(controller.hasMore, isTrue);
+    expect(
+      client.requestedBatches.single,
+      [for (var i = 0; i < 10; i++) 'BTC_$i'],
+    );
+
+    await controller.loadMore();
+    expect(controller.quotes, hasLength(20));
+    expect(
+      client.requestedBatches[1],
+      [for (var i = 10; i < 20; i++) 'BTC_$i'],
+    );
+
+    await controller.loadMore();
+    expect(controller.quotes, hasLength(25));
+    expect(controller.hasMore, isFalse);
+    expect(
+      client.requestedBatches[2],
+      [for (var i = 20; i < 25; i++) 'BTC_$i'],
+    );
+  });
+
+  test('clearing symbol query restores full-catalog browse paging', () async {
+    final client = FakeMarketDataClient(basePrice: 10, scalePriceByCall: true);
+    final symbols = [
+      for (var i = 0; i < 5; i++) 'ETH_$i',
+      for (var i = 0; i < 5; i++) 'BTC_$i',
+      for (var i = 0; i < 20; i++) 'SOL_$i',
+    ];
+    final controller = QuotesListController(
+      client: client,
+      symbols: symbols,
+      pageSize: 10,
+    );
+
+    await controller.setSymbolQuery('BTC');
+    expect(controller.quotes, hasLength(5));
+
+    await controller.setSymbolQuery('');
+    expect(controller.symbolQuery, isEmpty);
+    expect(controller.totalSymbols, 30);
+    expect(controller.quotes, hasLength(10));
+    expect(controller.hasMore, isTrue);
+    expect(client.requestedBatches.last, symbols.take(10).toList());
+  });
+
+  test('query with zero matches yields empty quotes', () async {
+    final client = FakeMarketDataClient(basePrice: 10);
+    final controller = QuotesListController(
+      client: client,
+      symbols: const ['ETH_USD', 'SOL_USD'],
+      pageSize: 10,
+    );
+
+    await controller.setSymbolQuery('BTC');
+
+    expect(controller.symbolQuery, 'btc');
+    expect(controller.totalSymbols, 0);
+    expect(controller.quotes, isEmpty);
+    expect(controller.hasMore, isFalse);
+    expect(controller.hasLoaded, isTrue);
+    expect(controller.hasError, isFalse);
+    expect(client.calls, 0);
   });
 }

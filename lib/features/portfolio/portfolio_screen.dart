@@ -1,30 +1,41 @@
+import 'package:flutter/material.dart' show RefreshIndicator;
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../core/app_copy.dart';
 import '../../core/brand_colors.dart';
 import '../../core/fade_page_route.dart';
 import '../../core/formatting.dart';
+import '../../core/shell_navigation.dart';
+import '../../data/agents/agent_launch.dart';
+import '../../data/crypto/crypto_exchange_client.dart';
 import '../../data/crypto/crypto_exchange_registry.dart';
 import '../../data/crypto/exchange_portfolio.dart';
 import '../../data/market/market_data_client.dart';
 import '../../data/market/models.dart';
 import '../../data/portfolio/models.dart';
+import '../../data/portfolio/portfolio_catalog.dart';
 import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/display_settings.dart';
 import '../../data/settings/env_secrets_repository.dart';
+import '../../widgets/agent_launch_button.dart';
 import '../../widgets/app_progress.dart';
+import '../../widgets/in_tab_back.dart';
+import '../../widgets/master_detail_shell.dart';
 import '../../widgets/metric_stat.dart';
 import '../../widgets/summary_well.dart';
+import '../../widgets/tab_page_header.dart';
 import '../../widgets/tappable_nav_row.dart';
-import '../../widgets/themed_accordion_item.dart';
 import '../asset_detail/asset_detail_screen.dart';
 import '../settings/portfolio_actions.dart';
 import 'portfolio_screen_controller.dart';
 
 class PortfolioScreen extends StatelessWidget {
   const PortfolioScreen({super.key});
+
+  static const wideBreakpoint = MasterDetailShell.wideBreakpointDefault;
 
   @override
   Widget build(BuildContext context) {
@@ -40,8 +51,37 @@ class PortfolioScreen extends StatelessWidget {
   }
 }
 
-class _PortfolioView extends StatelessWidget {
+class _PortfolioView extends StatefulWidget {
   const _PortfolioView();
+
+  @override
+  State<_PortfolioView> createState() => _PortfolioViewState();
+}
+
+class _PortfolioViewState extends State<_PortfolioView> {
+  String _selectedId = PortfolioDescriptor.practiceId;
+  String? _narrowSelectedId;
+
+  void _select(String id, {required bool wide}) {
+    setState(() {
+      _selectedId = id;
+      if (!wide) {
+        _narrowSelectedId = id;
+      }
+    });
+  }
+
+  void _backToNavList() {
+    setState(() => _narrowSelectedId = null);
+  }
+
+  PortfolioDescriptor? _byId(List<PortfolioDescriptor> list, String? id) {
+    if (id == null) return null;
+    for (final d in list) {
+      if (d.id == id) return d;
+    }
+    return null;
+  }
 
   Future<void> _confirmReset(BuildContext context) async {
     final controller = context.read<PortfolioScreenController>();
@@ -51,9 +91,19 @@ class _PortfolioView extends StatelessWidget {
     }
   }
 
+  Widget _refreshTrailing(PortfolioScreenController controller) {
+    if (controller.isRefreshing) {
+      return const AppProgress(compact: true);
+    }
+    return ShadButton.ghost(
+      size: ShadButtonSize.sm,
+      onPressed: controller.refreshAll,
+      child: const Text('Refresh'),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
     final priceFormat = context.watch<DisplaySettings>().priceFormat;
     final portfolio = context.watch<PortfolioRepository>();
     final state = portfolio.state;
@@ -66,155 +116,218 @@ class _PortfolioView extends StatelessWidget {
 
     final descriptors = controller.portfolios;
     final hasLive = controller.hasLive;
+    final pendingLive = context
+        .watch<CryptoExchangeRegistry>()
+        .pendingLivePortfolioClients;
+
+    final wideSelected = _byId(descriptors, _selectedId) ??
+        (descriptors.isEmpty ? null : descriptors.first);
+    final narrowSelected = _byId(descriptors, _narrowSelectedId);
 
     final holdingsValue = controller.holdingsValueFor(state);
     final paperTotal = controller.paperTotalFor(state);
     final unrealized = controller.unrealizedFor(state);
 
-    final accordionValues = <Object>[
-      for (final d in descriptors) d.id,
-    ];
+    return InTabBackEffect(
+      onBack: _narrowSelectedId != null ? _backToNavList : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_narrowSelectedId == null)
+            TabPageHeader(
+              title: 'Portfolio',
+              subtitle: hasLive
+                  ? 'Practice paper trading, plus live balances from '
+                      'connected exchanges.'
+                  : 'Practice with fake money — no account required.',
+            ),
+          Expanded(
+            child: wideSelected == null
+                ? const SizedBox.shrink()
+                : MasterDetailShell<PortfolioDescriptor>(
+                    selected: wideSelected,
+                    narrowSelected: narrowSelected,
+                    onNarrowBack: _backToNavList,
+                    sidebarBuilder: (context, highlighted, {required wide}) {
+                      return MasterDetailNavList(
+                        leading: [
+                          if (pendingLive.isNotEmpty)
+                            _ConnectLivePortfolioCard(pending: pendingLive),
+                        ],
+                        tiles: [
+                          for (final desc in descriptors)
+                            MasterDetailNavTile(
+                              title: desc.displayName,
+                              icon: desc.isPractice
+                                  ? LucideIcons.wallet
+                                  : LucideIcons.landmark,
+                              badge: desc.isPractice
+                                  ? const ShadBadge.secondary(
+                                      child: Text('Paper'),
+                                    )
+                                  : const ShadBadge(
+                                      child: Text('Live'),
+                                    ),
+                              meta: desc.isPractice
+                                  ? formatDisplayMoney(
+                                      paperTotal,
+                                      priceFormat,
+                                    )
+                                  : formatDisplayMoney(
+                                      controller
+                                          .liveByExchange[desc.id]?.totalValue,
+                                      priceFormat,
+                                    ),
+                              selected: highlighted?.id == desc.id,
+                              onTap: () => _select(desc.id, wide: wide),
+                            ),
+                        ],
+                      );
+                    },
+                    contentBuilder:
+                        (context, desc, {required showBack, onBack}) {
+                      if (desc.isPractice) {
+                        return MasterDetailContentPane(
+                          key: const ValueKey('portfolio-practice'),
+                          title: desc.displayName,
+                          subtitle: 'Fake money for learning — not real funds.',
+                          showBack: showBack,
+                          onBack: onBack,
+                          backLabel: 'Portfolio',
+                          trailing: _refreshTrailing(controller),
+                          body: RefreshIndicator(
+                            color: ShadTheme.of(context).colorScheme.primary,
+                            backgroundColor:
+                                ShadTheme.of(context).colorScheme.background,
+                            onRefresh: controller.refreshAll,
+                            child: ListView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                              children: [
+                                _PracticeBody(
+                                  cash: state.cash,
+                                  holdingsValue: holdingsValue,
+                                  paperTotal: paperTotal,
+                                  unrealized: unrealized,
+                                  holdings: state.holdings,
+                                  quotes: controller.quotes,
+                                  quoteError: controller.quoteError,
+                                  onReset: () => _confirmReset(context),
+                                  onOpenHolding: (symbol) {
+                                    pushFadePage(
+                                      context,
+                                      AssetDetailScreen(symbol: symbol),
+                                    ).then((_) {
+                                      if (context.mounted) {
+                                        controller.refreshQuotes();
+                                      }
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Portfolio', style: theme.textTheme.h3),
-                    const SizedBox(height: 4),
-                    Text(
-                      hasLive
-                          ? 'Practice paper trading, plus live balances from '
-                              'connected exchanges.'
-                          : 'Practice with fake money — no account required.',
-                      style: theme.textTheme.muted,
-                    ),
-                  ],
-                ),
-              ),
-              if (controller.isRefreshing)
-                const AppProgress(compact: true)
-              else
-                ShadButton.ghost(
-                  size: ShadButtonSize.sm,
-                  onPressed: controller.refreshAll,
-                  child: const Text('Refresh'),
-                ),
-            ],
+                      return MasterDetailContentPane(
+                        key: ValueKey('portfolio-live-${desc.id}'),
+                        title: desc.displayName,
+                        subtitle:
+                            'Read-only balances from your API credentials.',
+                        showBack: showBack,
+                        onBack: onBack,
+                        backLabel: 'Portfolio',
+                        trailing: _refreshTrailing(controller),
+                        body: RefreshIndicator(
+                          color: ShadTheme.of(context).colorScheme.primary,
+                          backgroundColor:
+                              ShadTheme.of(context).colorScheme.background,
+                          onRefresh: controller.refreshAll,
+                          child: ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                            children: [
+                              _LiveBody(
+                                exchangeName: desc.displayName,
+                                snapshot:
+                                    controller.liveByExchange[desc.id],
+                                error: controller.liveErrors[desc.id],
+                                loading: controller.loadingLive &&
+                                    !controller.liveByExchange
+                                        .containsKey(desc.id) &&
+                                    !controller.liveErrors
+                                        .containsKey(desc.id),
+                                onRetry: controller.refreshLivePortfolios,
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
           ),
-        ),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-            children: [
-              ShadAccordion<Object>.multiple(
-                initialValue: accordionValues,
-                children: [
-                  for (final desc in descriptors)
-                    if (desc.isPractice)
-                      ThemedAccordionItem<Object>(
-                        value: desc.id,
-                        title: _SectionTitle(
-                          name: desc.displayName,
-                          subtitle: formatDisplayMoney(paperTotal, priceFormat),
-                          badge: const ShadBadge.secondary(
-                            child: Text('Paper'),
-                          ),
-                        ),
-                        child: _PracticeBody(
-                          cash: state.cash,
-                          holdingsValue: holdingsValue,
-                          unrealized: unrealized,
-                          holdings: state.holdings,
-                          quotes: controller.quotes,
-                          quoteError: controller.quoteError,
-                          onReset: () => _confirmReset(context),
-                          onOpenHolding: (symbol) {
-                            pushFadePage(
-                              context,
-                              AssetDetailScreen(symbol: symbol),
-                            ).then((_) {
-                              if (context.mounted) {
-                                controller.refreshQuotes();
-                              }
-                            });
-                          },
-                        ),
-                      )
-                    else
-                      ThemedAccordionItem<Object>(
-                        value: desc.id,
-                        title: _SectionTitle(
-                          name: desc.displayName,
-                          subtitle: formatDisplayMoney(
-                            controller.liveByExchange[desc.id]?.totalValue,
-                            priceFormat,
-                          ),
-                          badge: const ShadBadge(
-                            child: Text('Live'),
-                          ),
-                        ),
-                        child: _LiveBody(
-                          exchangeName: desc.displayName,
-                          snapshot: controller.liveByExchange[desc.id],
-                          error: controller.liveErrors[desc.id],
-                          loading: controller.loadingLive &&
-                              !controller.liveByExchange.containsKey(desc.id) &&
-                              !controller.liveErrors.containsKey(desc.id),
-                          onRetry: controller.refreshLivePortfolios,
-                        ),
-                      ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({
-    required this.name,
-    required this.subtitle,
-    required this.badge,
-  });
+/// Soft CTA when Live-capable venues still need API credentials.
+class _ConnectLivePortfolioCard extends StatelessWidget {
+  const _ConnectLivePortfolioCard({required this.pending});
 
-  final String name;
-  final String subtitle;
-  final Widget badge;
+  final List<CryptoExchangeClient> pending;
 
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    return Row(
-      children: [
-        Flexible(
-          child: Text(
-            name,
-            style: theme.textTheme.large,
-            overflow: TextOverflow.ellipsis,
-          ),
+    final names = pending.map((c) => c.exchange.displayName).toList();
+    final venues = names.length == 1
+        ? names.single
+        : names.length == 2
+            ? '${names[0]} or ${names[1]}'
+            : '${names.take(names.length - 1).join(', ')}, or ${names.last}';
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondary.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: theme.colorScheme.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              AppCopy.connectLivePortfolioTitle,
+              style: theme.textTheme.large.copyWith(
+                color: theme.colorScheme.secondaryForeground,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${AppCopy.connectLivePortfolioBody} Supported now: $venues.',
+              style: theme.textTheme.small.copyWith(
+                color: theme.colorScheme.secondaryForeground,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: ShadButton(
+                onPressed: () {
+                  context.read<ShellNavigationController>().goToSettings(
+                        sectionId: 'dataSources',
+                      );
+                },
+                child: const Text(AppCopy.connectLivePortfolioCta),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 8),
-        badge,
-        const SizedBox(width: 8),
-        Flexible(
-          child: Text(
-            subtitle,
-            style: theme.textTheme.muted,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.end,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -223,6 +336,7 @@ class _PracticeBody extends StatelessWidget {
   const _PracticeBody({
     required this.cash,
     required this.holdingsValue,
+    required this.paperTotal,
     required this.unrealized,
     required this.holdings,
     required this.quotes,
@@ -233,6 +347,7 @@ class _PracticeBody extends StatelessWidget {
 
   final double cash;
   final double holdingsValue;
+  final double paperTotal;
   final double unrealized;
   final List<Holding> holdings;
   final Map<String, Quote> quotes;
@@ -245,75 +360,73 @@ class _PracticeBody extends StatelessWidget {
     final theme = ShadTheme.of(context);
     final priceFormat = context.watch<DisplaySettings>().priceFormat;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SummaryWell(
-            tone: SummaryWellTone.paper,
-            eyebrow: 'Practice portfolio',
-            blurb: 'Fake money for learning — not real funds.',
-            totalLabel: 'Total value',
-            totalValue: formatDisplayMoney(
-              cash + holdingsValue,
-              priceFormat,
-            ),
-            trailing: ShadButton.outline(
-              size: ShadButtonSize.sm,
-              onPressed: onReset,
-              child: const Text('Reset'),
-            ),
-            stats: [
-              MetricStat(
-                label: 'Cash',
-                value: formatDisplayMoney(cash, priceFormat),
-              ),
-              MetricStat(
-                label: 'Holdings',
-                value: formatDisplayMoney(holdingsValue, priceFormat),
-              ),
-              MetricStat(
-                label: 'Unrealized P&L',
-                value: formatSignedMoney(unrealized),
-                valueColor: unrealized >= 0
-                    ? BrandColors.gainOf(context)
-                    : BrandColors.lossOf(context),
-              ),
-            ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SummaryWell(
+          tone: SummaryWellTone.paper,
+          eyebrow: 'Practice portfolio',
+          blurb: 'Fake money for learning — not real funds.',
+          totalLabel: 'Total value',
+          totalValue: formatDisplayMoney(
+            cash + holdingsValue,
+            priceFormat,
           ),
-          if (quoteError != null) ...[
-            const SizedBox(height: 10),
-            Text(
-              quoteError!,
-              style: theme.textTheme.small.copyWith(
-                color: theme.colorScheme.destructive,
-              ),
+          trailing: ShadButton.outline(
+            size: ShadButtonSize.sm,
+            onPressed: onReset,
+            child: const Text('Reset'),
+          ),
+          stats: [
+            MetricStat(
+              label: 'Cash',
+              value: formatDisplayMoney(cash, priceFormat),
+            ),
+            MetricStat(
+              label: 'Holdings',
+              value: formatDisplayMoney(holdingsValue, priceFormat),
+            ),
+            MetricStat(
+              label: 'Unrealized P&L',
+              value: formatSignedMoney(unrealized),
+              valueColor: unrealized >= 0
+                  ? BrandColors.gainOf(context)
+                  : BrandColors.lossOf(context),
             ),
           ],
-          const SizedBox(height: 12),
-          Text('Holdings', style: theme.textTheme.large),
-          const SizedBox(height: 8),
-          if (holdings.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Text(
-                'No holdings yet.\nBuy something from Markets.',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.muted,
-              ),
-            )
-          else
-            for (var i = 0; i < holdings.length; i++) ...[
-              if (i > 0) const SizedBox(height: 10),
-              _HoldingTile(
-                holding: holdings[i],
-                quote: quotes[holdings[i].symbol],
-                onTap: () => onOpenHolding(holdings[i].symbol),
-              ),
-            ],
+        ),
+        if (quoteError != null) ...[
+          const SizedBox(height: 10),
+          Text(
+            quoteError!,
+            style: theme.textTheme.small.copyWith(
+              color: theme.colorScheme.destructive,
+            ),
+          ),
         ],
-      ),
+        const SizedBox(height: 12),
+        Text('Holdings', style: theme.textTheme.large),
+        const SizedBox(height: 8),
+        if (holdings.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text(
+              'No holdings yet.\nBuy something from Markets.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.muted,
+            ),
+          )
+        else
+          for (var i = 0; i < holdings.length; i++) ...[
+            if (i > 0) const SizedBox(height: 10),
+            _HoldingTile(
+              holding: holdings[i],
+              quote: quotes[holdings[i].symbol],
+              paperTotal: paperTotal,
+              onTap: () => onOpenHolding(holdings[i].symbol),
+            ),
+          ],
+      ],
     );
   }
 }
@@ -346,25 +459,22 @@ class _LiveBody extends StatelessWidget {
     }
 
     if (error != null && snapshot == null) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              error!,
-              style: theme.textTheme.small.copyWith(
-                color: theme.colorScheme.destructive,
-              ),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            error!,
+            style: theme.textTheme.small.copyWith(
+              color: theme.colorScheme.destructive,
             ),
-            const SizedBox(height: 8),
-            ShadButton.outline(
-              size: ShadButtonSize.sm,
-              onPressed: onRetry,
-              child: const Text('Retry'),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 8),
+          ShadButton.outline(
+            size: ShadButtonSize.sm,
+            onPressed: onRetry,
+            child: const Text('Retry'),
+          ),
+        ],
       );
     }
 
@@ -379,61 +489,58 @@ class _LiveBody extends StatelessWidget {
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SummaryWell(
-            tone: SummaryWellTone.live,
-            eyebrow: 'Live · $exchangeName',
-            blurb:
-                'Real exchange balances from your API credentials. '
-                'Read-only in Omniscope.',
-            totalLabel: 'Total cash balance',
-            totalValue: formatDisplayMoney(data.totalValue, priceFormat),
-            stats: [
-              MetricStat(
-                label: 'Available',
-                value: formatDisplayMoney(data.availableValue, priceFormat),
-              ),
-              MetricStat(
-                label: 'Assets',
-                value: '${data.balances.length}',
-              ),
-              MetricStat(
-                label: 'Currency',
-                value: data.currency,
-              ),
-            ],
-            footer: error == null
-                ? null
-                : Text(
-                    error!,
-                    style: theme.textTheme.small.copyWith(
-                      color: theme.colorScheme.destructive,
-                    ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SummaryWell(
+          tone: SummaryWellTone.live,
+          eyebrow: 'Live · $exchangeName',
+          blurb:
+              'Real exchange balances from your API credentials. '
+              'Read-only in Omniscope.',
+          totalLabel: 'Total cash balance',
+          totalValue: formatDisplayMoney(data.totalValue, priceFormat),
+          stats: [
+            MetricStat(
+              label: 'Available',
+              value: formatDisplayMoney(data.availableValue, priceFormat),
+            ),
+            MetricStat(
+              label: 'Assets',
+              value: '${data.balances.length}',
+            ),
+            MetricStat(
+              label: 'Currency',
+              value: data.currency,
+            ),
+          ],
+          footer: error == null
+              ? null
+              : Text(
+                  error!,
+                  style: theme.textTheme.small.copyWith(
+                    color: theme.colorScheme.destructive,
                   ),
-          ),
-          const SizedBox(height: 12),
-          Text('Balances', style: theme.textTheme.large),
-          const SizedBox(height: 8),
-          if (data.balances.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Text(
-                'No non-zero balances on this exchange.',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.muted,
-              ),
-            )
-          else
-            for (var i = 0; i < data.balances.length; i++) ...[
-              if (i > 0) const SizedBox(height: 10),
-              _BalanceTile(balance: data.balances[i]),
-            ],
-        ],
-      ),
+                ),
+        ),
+        const SizedBox(height: 12),
+        Text('Balances', style: theme.textTheme.large),
+        const SizedBox(height: 8),
+        if (data.balances.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text(
+              'No non-zero balances on this exchange.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.muted,
+            ),
+          )
+        else
+          for (var i = 0; i < data.balances.length; i++) ...[
+            if (i > 0) const SizedBox(height: 10),
+            _BalanceTile(balance: data.balances[i]),
+          ],
+      ],
     );
   }
 }
@@ -442,11 +549,13 @@ class _HoldingTile extends StatelessWidget {
   const _HoldingTile({
     required this.holding,
     required this.quote,
+    required this.paperTotal,
     required this.onTap,
   });
 
   final Holding holding;
   final Quote? quote;
+  final double paperTotal;
   final VoidCallback onTap;
 
   @override
@@ -459,6 +568,13 @@ class _HoldingTile extends StatelessWidget {
     final pnlColor = pnl >= 0
         ? BrandColors.gainOf(context)
         : BrandColors.lossOf(context);
+    final weight = paperTotal > 0 ? value / paperTotal : null;
+
+    final identity = quote?.listSubtitle;
+    final holdingMeta =
+        '${formatShares(holding.shares)} shares · '
+        'avg ${formatDisplayMoney(holding.avgCost, priceFormat)}'
+        '${weight == null ? '' : ' · ${formatPercent(weight)}'}';
 
     return TappableNavRow(
       onTap: onTap,
@@ -466,25 +582,49 @@ class _HoldingTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(holding.symbol, style: theme.textTheme.large),
+          if (identity != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              identity,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.muted,
+            ),
+          ],
           const SizedBox(height: 2),
           Text(
-            '${formatShares(holding.shares)} shares · '
-            'avg ${formatDisplayMoney(holding.avgCost, priceFormat)}',
-            style: theme.textTheme.muted,
+            holdingMeta,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.small.copyWith(
+              color: theme.colorScheme.mutedForeground,
+            ),
           ),
         ],
       ),
-      trailing: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            formatDisplayMoney(value, priceFormat),
-            style: theme.textTheme.large,
+          AgentLaunchButton(
+            symbol: holding.symbol,
+            intent: AgentLaunchIntent.tradeCheck,
+            iconOnly: true,
+            quantity: holding.shares,
           ),
-          const SizedBox(height: 2),
-          Text(
-            formatSignedMoney(pnl),
-            style: theme.textTheme.small.copyWith(color: pnlColor),
+          const SizedBox(width: 4),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                formatDisplayMoney(value, priceFormat),
+                style: theme.textTheme.large,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                formatSignedMoney(pnl),
+                style: theme.textTheme.small.copyWith(color: pnlColor),
+              ),
+            ],
           ),
         ],
       ),

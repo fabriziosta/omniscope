@@ -9,6 +9,7 @@ import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/env_secrets_repository.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/app_tooltip.dart';
 import 'portfolio_actions.dart';
 import 'settings_option_tiles.dart';
 
@@ -106,8 +107,12 @@ class _PortfoliosSectionBodyState extends State<PortfoliosSectionBody> {
           title: 'Practice',
           subtitle: 'Paper money for learning — stored only on this device.',
           icon: LucideIcons.wallet,
-          trailing: const ShadBadge.secondary(
-            child: Text('Paper'),
+          trailing: const AppTooltip(
+            message: 'Paper — practice money only',
+            wrapDetector: true,
+            child: ShadBadge.secondary(
+              child: Text('Paper'),
+            ),
           ),
         ),
         const SizedBox(height: 16),
@@ -186,8 +191,12 @@ class _PortfoliosSectionBodyState extends State<PortfoliosSectionBody> {
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const ShadBadge(
-                        child: Text('Live'),
+                      const AppTooltip(
+                        message: 'Live — read-only exchange balances',
+                        wrapDetector: true,
+                        child: ShadBadge(
+                          child: Text('Live'),
+                        ),
                       ),
                       if (!ready && widget.onOpenDataSources != null) ...[
                         const SizedBox(width: 8),

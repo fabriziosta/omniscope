@@ -44,4 +44,26 @@ void main() {
     expect(repo.marketSymbols, isEmpty);
     expect(repo.cryptoSymbolsFor('crypto_com'), isEmpty);
   });
+
+  test('reorderMarketFavorites and reorderCryptoFavorites persist', () async {
+    final store = await memoryConfig();
+    final repo = FavoritesRepository(store: store);
+    await repo.load();
+    await repo.toggleMarketFavorite('AAPL');
+    await repo.toggleMarketFavorite('MSFT');
+    await repo.toggleMarketFavorite('SPY');
+    // Move index 0 → end (destination after removal).
+    await repo.reorderMarketFavorites(0, 2);
+    expect(repo.marketSymbols, ['MSFT', 'SPY', 'AAPL']);
+
+    await repo.toggleCryptoFavorite('crypto_com', 'BTC_USD');
+    await repo.toggleCryptoFavorite('crypto_com', 'ETH_USD');
+    await repo.reorderCryptoFavorites('crypto_com', 1, 0);
+    expect(repo.cryptoSymbolsFor('crypto_com'), ['ETH_USD', 'BTC_USD']);
+
+    final again = FavoritesRepository(store: store);
+    await again.load();
+    expect(again.marketSymbols, ['MSFT', 'SPY', 'AAPL']);
+    expect(again.cryptoSymbolsFor('crypto_com'), ['ETH_USD', 'BTC_USD']);
+  });
 }

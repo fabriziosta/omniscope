@@ -79,6 +79,10 @@ class AgentsRepository extends ChangeNotifier {
     required String apiKey,
     required String modelId,
     String? baseUrl,
+    bool autopilotEnabled = false,
+    String? autopilotExchangeId,
+    double? autopilotMaxNotional,
+    int autopilotMaxOpenProposals = 3,
   }) async {
     if (_roleCatalog != null && _roleCatalog!.byId(roleId) == null) {
       return 'Unknown agent role.';
@@ -100,6 +104,14 @@ class AgentsRepository extends ChangeNotifier {
       modelId: model,
       baseUrl: llmProvider == LlmProvider.custom ? baseUrl?.trim() : null,
       connected: true,
+      autopilotEnabled: autopilotEnabled,
+      autopilotExchangeId: autopilotExchangeId?.trim().isEmpty == true
+          ? null
+          : autopilotExchangeId?.trim(),
+      autopilotMaxNotional: autopilotMaxNotional,
+      autopilotMaxOpenProposals: autopilotMaxOpenProposals < 1
+          ? 1
+          : autopilotMaxOpenProposals,
     );
     _state = _state.withConnection(connection);
     await _persist();
@@ -107,7 +119,7 @@ class AgentsRepository extends ChangeNotifier {
     return null;
   }
 
-  /// Disconnect and clear the stored API key.
+  /// Disconnect and clear the stored API key (keeps Autopilot prefs off).
   Future<void> disconnect(String roleId) async {
     final existing = _state.forRoleId(roleId);
     _state = _state.withConnection(
@@ -118,6 +130,10 @@ class AgentsRepository extends ChangeNotifier {
         modelId: existing.modelId,
         baseUrl: existing.baseUrl,
         connected: false,
+        autopilotEnabled: false,
+        autopilotExchangeId: existing.autopilotExchangeId,
+        autopilotMaxNotional: existing.autopilotMaxNotional,
+        autopilotMaxOpenProposals: existing.autopilotMaxOpenProposals,
       ),
     );
     await _persist();

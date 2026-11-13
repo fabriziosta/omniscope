@@ -4,10 +4,13 @@ import 'package:provider/provider.dart';
 import 'app.dart';
 import 'core/app_error_controller.dart';
 import 'core/app_error_handling.dart';
+import 'core/shell_navigation.dart';
+import 'data/agents/agent_activity_repository.dart';
 import 'data/agents/agent_chat_repository.dart';
 import 'data/agents/agent_role_catalog.dart';
 import 'data/agents/agents_repository.dart';
 import 'data/agents/llm_chat_client.dart';
+import 'data/agents/trade_proposal_repository.dart';
 import 'data/crypto/crypto_com/crypto_com_exchange_client.dart';
 import 'data/crypto/crypto_exchange_registry.dart';
 import 'data/market/equity_data_source.dart';
@@ -21,6 +24,8 @@ import 'data/settings/env_secrets_repository.dart';
 import 'data/settings/favorites_repository.dart';
 import 'data/settings/theme_settings.dart';
 import 'data/settings/user_config_store.dart';
+import 'data/trading/broker_exchange_registry.dart';
+import 'data/trading/trade_executor.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -54,6 +59,12 @@ Future<void> main() async {
   final agentChats = AgentChatRepository(store: config);
   await agentChats.load();
 
+  final tradeProposals = TradeProposalRepository(store: config);
+  await tradeProposals.load();
+
+  final agentActivity = AgentActivityRepository(store: config);
+  await agentActivity.load();
+
   final llmChat = LlmChatClient();
 
   late final CryptoComExchangeClient cryptoCom;
@@ -81,10 +92,17 @@ Future<void> main() async {
   );
 
   final cryptoRegistry = CryptoExchangeRegistry([cryptoCom]);
+  const brokerRegistry = BrokerExchangeRegistry.empty;
 
   final MarketDataClient marketData = RoutingMarketDataClient(
     equitiesRegistry: equitiesRegistry,
     cryptoRegistry: cryptoRegistry,
+    dataSources: dataSourceSettings,
+  );
+
+  final TradeExecutor tradeExecutor = RoutingTradeExecutor(
+    cryptoRegistry: cryptoRegistry,
+    brokerRegistry: brokerRegistry,
     dataSources: dataSourceSettings,
   );
 
@@ -95,11 +113,19 @@ Future<void> main() async {
         Provider<MarketDataClient>.value(value: marketData),
         Provider<EquityDataSourceRegistry>.value(value: equitiesRegistry),
         Provider<CryptoExchangeRegistry>.value(value: cryptoRegistry),
+        Provider<BrokerExchangeRegistry>.value(value: brokerRegistry),
+        Provider<TradeExecutor>.value(value: tradeExecutor),
         ChangeNotifierProvider<EnvSecretsRepository>.value(value: envSecrets),
         ChangeNotifierProvider<FavoritesRepository>.value(value: favorites),
         ChangeNotifierProvider<PortfolioRepository>.value(value: portfolio),
         ChangeNotifierProvider<AgentsRepository>.value(value: agents),
         ChangeNotifierProvider<AgentChatRepository>.value(value: agentChats),
+        ChangeNotifierProvider<TradeProposalRepository>.value(
+          value: tradeProposals,
+        ),
+        ChangeNotifierProvider<AgentActivityRepository>.value(
+          value: agentActivity,
+        ),
         Provider<LlmChatClient>.value(value: llmChat),
         ChangeNotifierProvider<ThemeSettings>.value(value: themeSettings),
         ChangeNotifierProvider<DisplaySettings>.value(value: displaySettings),
@@ -107,6 +133,9 @@ Future<void> main() async {
           value: dataSourceSettings,
         ),
         ChangeNotifierProvider<AppErrorController>.value(value: appErrors),
+        ChangeNotifierProvider<ShellNavigationController>(
+          create: (_) => ShellNavigationController(),
+        ),
       ],
       child: OmniscopeApp(navigatorKey: navigatorKey),
     ),

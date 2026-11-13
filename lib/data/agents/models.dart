@@ -133,6 +133,10 @@ class AgentConnection {
     required this.modelId,
     this.baseUrl,
     required this.connected,
+    this.autopilotEnabled = false,
+    this.autopilotExchangeId,
+    this.autopilotMaxNotional,
+    this.autopilotMaxOpenProposals = 3,
   });
 
   final String roleId;
@@ -141,6 +145,19 @@ class AgentConnection {
   final String modelId;
   final String? baseUrl;
   final bool connected;
+
+  /// When true, risk-approved proposals auto-submit on the target exchange.
+  /// Default is off — human Confirm in chat.
+  final bool autopilotEnabled;
+
+  /// Preferred venue for Autopilot / suggestions; null = first tradable.
+  final String? autopilotExchangeId;
+
+  /// Optional max notional (quote currency) per Autopilot order.
+  final double? autopilotMaxNotional;
+
+  /// Cap concurrent pending proposals before Autopilot skips.
+  final int autopilotMaxOpenProposals;
 
   /// True when both a model and an API key are assigned.
   bool get isConfigured =>
@@ -154,6 +171,12 @@ class AgentConnection {
     String? baseUrl,
     bool clearBaseUrl = false,
     bool? connected,
+    bool? autopilotEnabled,
+    String? autopilotExchangeId,
+    bool clearAutopilotExchangeId = false,
+    double? autopilotMaxNotional,
+    bool clearAutopilotMaxNotional = false,
+    int? autopilotMaxOpenProposals,
   }) {
     return AgentConnection(
       roleId: roleId ?? this.roleId,
@@ -162,6 +185,15 @@ class AgentConnection {
       modelId: modelId ?? this.modelId,
       baseUrl: clearBaseUrl ? null : (baseUrl ?? this.baseUrl),
       connected: connected ?? this.connected,
+      autopilotEnabled: autopilotEnabled ?? this.autopilotEnabled,
+      autopilotExchangeId: clearAutopilotExchangeId
+          ? null
+          : (autopilotExchangeId ?? this.autopilotExchangeId),
+      autopilotMaxNotional: clearAutopilotMaxNotional
+          ? null
+          : (autopilotMaxNotional ?? this.autopilotMaxNotional),
+      autopilotMaxOpenProposals:
+          autopilotMaxOpenProposals ?? this.autopilotMaxOpenProposals,
     );
   }
 
@@ -174,6 +206,12 @@ class AgentConnection {
         'modelId': modelId,
         if (baseUrl != null && baseUrl!.isNotEmpty) 'baseUrl': baseUrl,
         'connected': connected,
+        'autopilotEnabled': autopilotEnabled,
+        if (autopilotExchangeId != null && autopilotExchangeId!.isNotEmpty)
+          'autopilotExchangeId': autopilotExchangeId,
+        if (autopilotMaxNotional != null)
+          'autopilotMaxNotional': autopilotMaxNotional,
+        'autopilotMaxOpenProposals': autopilotMaxOpenProposals,
       };
 
   factory AgentConnection.fromJson(Map<String, dynamic> json) {
@@ -186,6 +224,11 @@ class AgentConnection {
       modelId: json['modelId'] as String? ?? '',
       baseUrl: json['baseUrl'] as String?,
       connected: json['connected'] as bool? ?? false,
+      autopilotEnabled: json['autopilotEnabled'] as bool? ?? false,
+      autopilotExchangeId: json['autopilotExchangeId'] as String?,
+      autopilotMaxNotional: (json['autopilotMaxNotional'] as num?)?.toDouble(),
+      autopilotMaxOpenProposals:
+          (json['autopilotMaxOpenProposals'] as num?)?.toInt() ?? 3,
     );
   }
 

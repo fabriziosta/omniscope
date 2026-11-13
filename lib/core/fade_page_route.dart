@@ -1,13 +1,16 @@
+import 'package:flutter/material.dart' show SelectionArea;
 import 'package:flutter/widgets.dart';
 
 /// Fade transition used for tab roots and detail pushes.
+///
+/// Each page is wrapped in [SelectionArea] so static [Text] is selectable.
 class FadePageRoute<T> extends PageRouteBuilder<T> {
   FadePageRoute({
     required WidgetBuilder builder,
     super.settings,
   }) : super(
           pageBuilder: (context, animation, secondaryAnimation) =>
-              builder(context),
+              SelectionArea(child: builder(context)),
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             return FadeTransition(opacity: animation, child: child);
           },

@@ -1,4 +1,6 @@
 import '../../core/formatting.dart';
+import '../crypto/crypto_exchange_client.dart';
+import '../crypto/exchange_portfolio.dart';
 import '../market/market_data_client.dart';
 import '../market/models.dart';
 
@@ -114,5 +116,84 @@ class MarketContextBuilder {
     }
 
     return buf.toString().trimRight();
+  }
+
+  /// Append live exchange balances (never paper) for trading roles.
+  Future<String?> buildLiveExchangeContext({
+    required CryptoExchangeClient client,
+    String? symbolHint,
+  }) async {
+    if (!client.canFetchPortfolio) return null;
+    ExchangePortfolioSnapshot snapshot;
+    try {
+      snapshot = await client.fetchPortfolio();
+    } catch (_) {
+      return null;
+    }
+
+    final buf = StringBuffer(
+      'Live exchange context for ${snapshot.exchangeName} '
+      '(id=${snapshot.exchangeId}; educational — user must Confirm in app):\n',
+    );
+    if (snapshot.totalValue != null) {
+      buf.writeln(
+        '- Total value: ${formatMoney(snapshot.totalValue)}'
+        '${snapshot.currency.isNotEmpty ? ' ${snapshot.currency}' : ''}',
+      );
+    }
+    if (snapshot.availableValue != null) {
+      buf.writeln(
+        '- Available: ${formatMoney(snapshot.availableValue)}'
+        '${snapshot.currency.isNotEmpty ? ' ${snapshot.currency}' : ''}',
+      );
+    }
+    final hint = symbolHint?.trim().toUpperCase();
+    final base = hint != null && hint.contains('_')
+        ? hint.split('_').first
+        : hint;
+    var listed = 0;
+    for (final bal in snapshot.balances) {
+      if (listed >= 12) break;
+      if (base != null &&
+          base.isNotEmpty &&
+          bal.asset.toUpperCase() != base &&
+          bal.asset.toUpperCase() != snapshot.currency.toUpperCase()) {
+        continue;
+      }
+      buf.writeln(
+        '- ${bal.asset}: qty ${bal.quantity}'
+        '${bal.available != null ? ' (avail ${bal.available})' : ''}'
+        '${bal.marketValue != null ? ', value ${formatMoney(bal.marketValue)}' : ''}',
+      );
+      listed++;
+    }
+    if (listed == 0) {
+      for (final bal in snapshot.balances.take(8)) {
+        buf.writeln(
+          '- ${bal.asset}: qty ${bal.quantity}'
+          '${bal.marketValue != null ? ', value ${formatMoney(bal.marketValue)}' : ''}',
+        );
+      }
+    }
+    return buf.toString().trimRight();
+  }
+
+  /// Combine market snapshot + optional live venue balances.
+  Future<String?> buildForTradingSymbol({
+    required String symbol,
+    CryptoExchangeClient? exchangeClient,
+  }) async {
+    final market = await buildForSymbol(symbol);
+    String? live;
+    if (exchangeClient != null) {
+      live = await buildLiveExchangeContext(
+        client: exchangeClient,
+        symbolHint: symbol,
+      );
+    }
+    if (market == null && live == null) return null;
+    if (market == null) return live;
+    if (live == null) return market;
+    return '$market\n\n$live';
   }
 }

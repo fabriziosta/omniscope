@@ -13,6 +13,7 @@ class DataSourceSettings extends ChangeNotifier {
   UserConfigStore? store;
   final Set<String> _disabledMarketIds = {};
   final Set<String> _disabledCryptoIds = {};
+  final Set<String> _disabledBrokerIds = {};
   bool _ready = false;
 
   bool get isReady => _ready;
@@ -21,9 +22,13 @@ class DataSourceSettings extends ChangeNotifier {
 
   bool isCryptoEnabled(String id) => !_disabledCryptoIds.contains(id);
 
+  bool isBrokerEnabled(String id) => !_disabledBrokerIds.contains(id);
+
   Set<String> get disabledMarketIds => Set.unmodifiable(_disabledMarketIds);
 
   Set<String> get disabledCryptoIds => Set.unmodifiable(_disabledCryptoIds);
+
+  Set<String> get disabledBrokerIds => Set.unmodifiable(_disabledBrokerIds);
 
   Future<void> load({UserConfigStore? store}) async {
     if (store != null) this.store = store;
@@ -34,6 +39,9 @@ class DataSourceSettings extends ChangeNotifier {
     _disabledCryptoIds
       ..clear()
       ..addAll(_parseIdList(slice, 'disabledCrypto'));
+    _disabledBrokerIds
+      ..clear()
+      ..addAll(_parseIdList(slice, 'disabledBrokers'));
     _ready = true;
     notifyListeners();
   }
@@ -60,12 +68,25 @@ class DataSourceSettings extends ChangeNotifier {
     await _persist();
   }
 
+  Future<void> setBrokerEnabled(String id, bool enabled) async {
+    if (isBrokerEnabled(id) == enabled) return;
+    if (enabled) {
+      _disabledBrokerIds.remove(id);
+    } else {
+      _disabledBrokerIds.add(id);
+    }
+    notifyListeners();
+    await _persist();
+  }
+
   Future<void> _persist() async {
     final markets = _disabledMarketIds.toList(growable: false)..sort();
     final crypto = _disabledCryptoIds.toList(growable: false)..sort();
+    final brokers = _disabledBrokerIds.toList(growable: false)..sort();
     await store?.setSlice(UserConfigKeys.dataSources, {
       'disabledMarkets': markets,
       'disabledCrypto': crypto,
+      'disabledBrokers': brokers,
     });
   }
 

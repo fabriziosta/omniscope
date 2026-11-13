@@ -29,11 +29,17 @@ OMNISCOPE_OPENAI_API_KEY=sk-openai
     expect(client.credentials.apiSecret, 'cdc-secret');
   });
 
-  test('canFetchPortfolio requires api key and secret', () {
+  test('canFetchPortfolio and canPlaceOrders require api key and secret', () {
     expect(
       CryptoComExchangeClient(
         credentials: const ExchangeCredentials(apiKey: 'only-key'),
       ).canFetchPortfolio,
+      isFalse,
+    );
+    expect(
+      CryptoComExchangeClient(
+        credentials: const ExchangeCredentials(apiKey: 'only-key'),
+      ).canPlaceOrders,
       isFalse,
     );
     expect(
@@ -49,6 +55,24 @@ OMNISCOPE_OPENAI_API_KEY=sk-openai
           apiSecret: 'secret',
         ),
       ).canFetchPortfolio,
+      isTrue,
+    );
+    expect(
+      CryptoComExchangeClient(
+        credentials: const ExchangeCredentials(
+          apiKey: 'key',
+          apiSecret: 'secret',
+        ),
+      ).canPlaceOrders,
+      isTrue,
+    );
+    expect(
+      CryptoComExchangeClient(
+        credentials: const ExchangeCredentials(
+          apiKey: 'key',
+          apiSecret: 'secret',
+        ),
+      ).supportsLiveTrading,
       isTrue,
     );
   });
@@ -131,7 +155,7 @@ OMNISCOPE_OPENAI_API_KEY=sk-openai
     });
 
     expect(quote.symbol, 'BTC_USD');
-    expect(quote.name, 'BTC');
+    expect(quote.name, 'BTC / USD');
     expect(quote.currency, 'USD');
     expect(quote.price, closeTo(71449.35, 0.001));
     expect(quote.changePercent, closeTo(-0.0282, 0.0001));

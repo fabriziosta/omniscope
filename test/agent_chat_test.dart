@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:omniscope/core/brand_colors.dart';
+import 'package:omniscope/core/shell_navigation.dart';
+import 'package:omniscope/data/agents/agent_activity_repository.dart';
 import 'package:omniscope/data/agents/agent_chat_repository.dart';
 import 'package:omniscope/data/agents/agent_role_catalog.dart';
 import 'package:omniscope/data/agents/agent_role_prompts.dart';
@@ -13,14 +15,43 @@ import 'package:omniscope/data/agents/chat_models.dart';
 import 'package:omniscope/data/agents/llm_chat_client.dart';
 import 'package:omniscope/data/agents/market_context_builder.dart';
 import 'package:omniscope/data/agents/models.dart';
+import 'package:omniscope/data/agents/trade_proposal_repository.dart';
+import 'package:omniscope/data/crypto/crypto_exchange_registry.dart';
 import 'package:omniscope/data/market/market_data_client.dart';
 import 'package:omniscope/data/market/models.dart';
+import 'package:omniscope/data/settings/data_source_settings.dart';
 import 'package:omniscope/data/settings/env_secrets_repository.dart';
+import 'package:omniscope/data/trading/broker_exchange_registry.dart';
+import 'package:omniscope/data/trading/trade_executor.dart';
 import 'package:omniscope/features/agents/agents_screen.dart';
+import 'package:omniscope/widgets/in_tab_back.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import 'support/fake_market_data_client.dart';
 import 'support/memory_config.dart';
+
+FakeMarketDataClient _agentMarketData() => FakeMarketDataClient(
+      basePrice: 190,
+      fixedName: 'Apple',
+      changePercent: 0.012,
+      previousClose: 188,
+      dataSource: 'Yahoo Finance',
+      history: [
+        Candle(
+          time: DateTime.utc(2026, 1, 1),
+          close: 180,
+          high: 182,
+          low: 178,
+        ),
+        Candle(
+          time: DateTime.utc(2026, 1, 30),
+          close: 190,
+          high: 192,
+          low: 185,
+        ),
+      ],
+    );
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -149,7 +180,7 @@ void main() {
     });
 
     test('formats quote snapshot', () async {
-      final builder = MarketContextBuilder(_FakeMarketData());
+      final builder = MarketContextBuilder(_agentMarketData());
       final snap = await builder.buildForSymbol('AAPL');
       expect(snap, isNotNull);
       expect(snap!, contains('AAPL'));
@@ -332,6 +363,19 @@ void main() {
     );
     final agentChats = AgentChatRepository(store: store);
     await agentChats.load();
+    final proposals = TradeProposalRepository(store: store);
+    await proposals.load();
+    final activity = AgentActivityRepository(store: store);
+    await activity.load();
+    final dataSources = DataSourceSettings(store: store);
+    await dataSources.load();
+    const cryptoRegistry = CryptoExchangeRegistry([]);
+    const brokerRegistry = BrokerExchangeRegistry.empty;
+    final tradeExecutor = RoutingTradeExecutor(
+      cryptoRegistry: cryptoRegistry,
+      brokerRegistry: brokerRegistry,
+      dataSources: dataSources,
+    );
 
     await tester.binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -339,9 +383,17 @@ void main() {
     await tester.pumpWidget(
       MultiProvider(
         providers: [
-          Provider<MarketDataClient>.value(value: _FakeMarketData()),
+          Provider<MarketDataClient>.value(value: _agentMarketData()),
+          Provider<CryptoExchangeRegistry>.value(value: cryptoRegistry),
+          Provider<BrokerExchangeRegistry>.value(value: brokerRegistry),
+          Provider<TradeExecutor>.value(value: tradeExecutor),
+          ChangeNotifierProvider<DataSourceSettings>.value(value: dataSources),
           ChangeNotifierProvider<AgentsRepository>.value(value: agents),
           ChangeNotifierProvider<AgentChatRepository>.value(value: agentChats),
+          ChangeNotifierProvider<TradeProposalRepository>.value(
+            value: proposals,
+          ),
+          ChangeNotifierProvider<AgentActivityRepository>.value(value: activity),
           Provider<LlmChatClient>.value(
             value: LlmChatClient(
               httpClient: MockClient(
@@ -352,9 +404,18 @@ void main() {
           ChangeNotifierProvider<EnvSecretsRepository>.value(
             value: EnvSecretsRepository(store: store, syncEnvFile: false),
           ),
+          ChangeNotifierProvider<ShellNavigationController>(
+            create: (_) => ShellNavigationController(),
+          ),
         ],
         child: ShadApp(
-          home: const AgentsScreen(),
+          home: InTabBackScope(
+            registry: InTabBackRegistry(),
+            child: const ShellTabIndex(
+              index: 3,
+              child: AgentsScreen(),
+            ),
+          ),
           theme: ShadThemeData(
             brightness: Brightness.light,
             colorScheme: BrandColors.lightScheme(),
@@ -363,6 +424,12 @@ void main() {
       ),
     );
     await tester.pump();
+
+    // Narrow: open Roles pane, then Open chat.
+    expect(find.text('Roles'), findsWidgets);
+    await tester.tap(find.text('Roles').first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
 
     expect(find.text('Open chat'), findsOneWidget);
     await tester.tap(find.text('Open chat'));
@@ -373,33 +440,4 @@ void main() {
     expect(find.text('Run research'), findsOneWidget);
     expect(find.textContaining('Messages stay on this device'), findsOneWidget);
   });
-}
-
-class _FakeMarketData implements MarketDataClient {
-  @override
-  Future<List<Quote>> getQuotes(List<String> symbols) async {
-    return [
-      for (final s in symbols)
-        Quote(
-          symbol: s,
-          price: 190,
-          name: 'Apple',
-          changePercent: 0.012,
-          previousClose: 188,
-          dataSource: 'Yahoo Finance',
-        ),
-    ];
-  }
-
-  @override
-  Future<List<Candle>> getHistory(
-    String symbol, {
-    required String range,
-    required String interval,
-  }) async {
-    return [
-      Candle(time: DateTime.utc(2026, 1, 1), close: 180, high: 182, low: 178),
-      Candle(time: DateTime.utc(2026, 1, 30), close: 190, high: 192, low: 185),
-    ];
-  }
 }

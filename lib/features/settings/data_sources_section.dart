@@ -85,7 +85,8 @@ class DataSourcesSectionBody extends StatelessWidget {
         const SettingsSubsectionLabel(
           'Credentials',
           description:
-              'Optional. Key + secret unlock Live balances on Portfolio. '
+              'Optional. Key + secret unlock Live balances on Portfolio and '
+              'live order placement for agent Confirm / Autopilot. '
               'Suggested from .env when present; saving writes back when possible.',
         ),
         const SizedBox(height: 12),
@@ -145,8 +146,8 @@ class _CryptoComCredentialsCard extends StatelessWidget {
     final subtitle = !creds.isConfigured && !creds.hasApiSecret
         ? 'Not configured — public market data still works'
         : liveReady
-            ? 'Configured — Live portfolio ready'
-            : 'Partial — Live portfolio needs key and secret';
+            ? 'Configured — Live portfolio + trading ready'
+            : 'Partial — Live portfolio / trading need key and secret';
 
     return SettingsConnectionCard(
       title: CryptoComExchangeClient.meta.displayName,
@@ -246,7 +247,7 @@ class _CryptoComCredentialsDialogState
       title: const Text('Crypto.com credentials'),
       description: Text(
         'Suggested from .env when present. '
-        'Key and secret unlock Live balances on Portfolio. '
+        'Key and secret unlock Live balances and agent trade suggestions. '
         '${widget.canWriteEnvFile ? 'Saving also updates the project .env file.' : 'Saving keeps keys on this device (project .env write unavailable here).'}',
       ),
       actions: [

@@ -1,4 +1,5 @@
 import '../market/models.dart';
+import '../trading/order_models.dart';
 import 'crypto_exchange.dart';
 import 'exchange_portfolio.dart';
 
@@ -8,7 +9,8 @@ import 'exchange_portfolio.dart';
 /// Map each venue’s DTOs → [Quote] / [Candle] inside the concrete adapter.
 ///
 /// Optional private credentials enable [canFetchPortfolio] / [fetchPortfolio]
-/// for live balances on the Portfolio tab.
+/// for live balances on the Portfolio tab, and [canPlaceOrders] / [placeOrder]
+/// for agent-confirmed live trades (never paper).
 abstract class CryptoExchangeClient {
   CryptoExchange get exchange;
 
@@ -40,6 +42,31 @@ abstract class CryptoExchangeClient {
   Future<ExchangePortfolioSnapshot> fetchPortfolio() {
     throw UnsupportedError(
       '${exchange.displayName} does not support live portfolio',
+    );
+  }
+
+  /// Whether this venue can place live orders once credentials are set.
+  bool get supportsLiveTrading => false;
+
+  /// True when private credentials are present for live order placement.
+  bool get canPlaceOrders => false;
+
+  /// Place a live order. Only call when [canPlaceOrders] is true.
+  Future<OrderResult> placeOrder(OrderRequest request) {
+    throw UnsupportedError(
+      '${exchange.displayName} does not support live order placement',
+    );
+  }
+
+  Future<OrderResult> cancelOrder(String orderId) {
+    throw UnsupportedError(
+      '${exchange.displayName} does not support cancel order',
+    );
+  }
+
+  Future<OrderResult> getOrder(String orderId) {
+    throw UnsupportedError(
+      '${exchange.displayName} does not support order status',
     );
   }
 }

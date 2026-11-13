@@ -1,7 +1,11 @@
 import 'package:flutter/widgets.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-/// Size-aware master–detail layout for Settings, Markets, and Crypto.
+import 'app_tooltip.dart';
+import 'nav_back_button.dart';
+
+/// Size-aware master–detail layout for shell tabs (Markets, Crypto, Portfolio,
+/// Agents, Settings).
 ///
 /// Wide (≥ [wideBreakpoint]): persistent sidebar + content pane.
 /// Narrow: nav list, then content with Back (in-tab; no route push).
@@ -96,6 +100,41 @@ class MasterDetailShell<T> extends StatelessWidget {
   }
 }
 
+/// Standard padded sidebar list shared by master–detail shell tabs.
+class MasterDetailNavList extends StatelessWidget {
+  const MasterDetailNavList({
+    super.key,
+    required this.tiles,
+    this.leading = const [],
+  });
+
+  /// Optional widgets above the tiles (e.g. a soft CTA card).
+  final List<Widget> leading;
+
+  /// Destination rows — typically [MasterDetailNavTile]s.
+  final List<Widget> tiles;
+
+  static const tileGap = 6.0;
+  static const listPadding = EdgeInsets.fromLTRB(12, 8, 12, 24);
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: listPadding,
+      children: [
+        for (final child in leading) ...[
+          child,
+          const SizedBox(height: 16),
+        ],
+        for (var i = 0; i < tiles.length; i++) ...[
+          if (i > 0) const SizedBox(height: tileGap),
+          tiles[i],
+        ],
+      ],
+    );
+  }
+}
+
 /// Settings-style sidebar row with optional leading icon and selected chrome.
 class MasterDetailNavTile extends StatelessWidget {
   const MasterDetailNavTile({
@@ -105,6 +144,7 @@ class MasterDetailNavTile extends StatelessWidget {
     required this.onTap,
     this.icon,
     this.meta,
+    this.badge,
   });
 
   final String title;
@@ -114,6 +154,9 @@ class MasterDetailNavTile extends StatelessWidget {
 
   /// Optional muted line under [title] (e.g. symbol count).
   final String? meta;
+
+  /// Optional chip after the title (e.g. Paper / Live).
+  final Widget? badge;
 
   @override
   Widget build(BuildContext context) {
@@ -125,82 +168,100 @@ class MasterDetailNavTile extends StatelessWidget {
         ? theme.colorScheme.secondaryForeground.withValues(alpha: 0.8)
         : theme.colorScheme.mutedForeground;
 
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 44),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: selected ? theme.colorScheme.secondary : null,
-              border: Border.all(
-                color: selected
-                    ? theme.colorScheme.secondary
-                    : theme.colorScheme.border,
+    final tooltipMessage =
+        meta == null || meta!.isEmpty ? title : '$title · $meta';
+
+    return AppTooltip(
+      message: tooltipMessage,
+      wrapDetector: true,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 44),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: selected ? theme.colorScheme.secondary : null,
+                border: Border.all(
+                  color: selected
+                      ? theme.colorScheme.secondary
+                      : theme.colorScheme.border,
+                ),
+                borderRadius: theme.radius,
               ),
-              borderRadius: theme.radius,
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                children: [
-                  if (icon != null) ...[
-                    Container(
-                      width: 28,
-                      height: 28,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? theme.colorScheme.secondaryForeground
-                                .withValues(alpha: 0.12)
-                            : theme.colorScheme.secondary,
-                        borderRadius: theme.radius,
-                      ),
-                      child: Icon(
-                        icon,
-                        size: 15,
-                        color: selected
-                            ? theme.colorScheme.secondaryForeground
-                            : theme.colorScheme.primary,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                  ],
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.large.copyWith(
-                            color: foreground,
-                          ),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    if (icon != null) ...[
+                      Container(
+                        width: 28,
+                        height: 28,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? theme.colorScheme.secondaryForeground
+                                  .withValues(alpha: 0.12)
+                              : theme.colorScheme.secondary,
+                          borderRadius: theme.radius,
                         ),
-                        if (meta != null) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            meta!,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.small.copyWith(
-                              color: muted,
-                            ),
+                        child: Icon(
+                          icon,
+                          size: 15,
+                          color: selected
+                              ? theme.colorScheme.secondaryForeground
+                              : theme.colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                    ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.large.copyWith(
+                                    color: foreground,
+                                  ),
+                                ),
+                              ),
+                              if (badge != null) ...[
+                                const SizedBox(width: 8),
+                                badge!,
+                              ],
+                            ],
                           ),
+                          if (meta != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              meta!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.small.copyWith(
+                                color: muted,
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
-                  ),
-                  Icon(
-                    LucideIcons.chevronRight,
-                    size: 16,
-                    color: muted,
-                  ),
-                ],
+                    Icon(
+                      LucideIcons.chevronRight,
+                      size: 16,
+                      color: muted,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -219,6 +280,7 @@ class MasterDetailContentPane extends StatelessWidget {
     required this.body,
     this.showBack = false,
     this.onBack,
+    this.backLabel,
     this.trailing,
   });
 
@@ -227,11 +289,37 @@ class MasterDetailContentPane extends StatelessWidget {
   final Widget body;
   final bool showBack;
   final VoidCallback? onBack;
+
+  /// Parent destination label when [showBack] (e.g. "Markets", exchange name).
+  final String? backLabel;
   final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
+    final titleRow = Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: theme.textTheme.h4),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: theme.textTheme.small.copyWith(
+                  color: theme.colorScheme.mutedForeground,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (trailing != null) ...[
+          const SizedBox(width: 8),
+          trailing!,
+        ],
+      ],
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -243,38 +331,23 @@ class MasterDetailContentPane extends StatelessWidget {
             ),
           ),
           child: Padding(
-            padding: EdgeInsets.fromLTRB(showBack ? 8 : 20, 8, 12, 12),
-            child: Row(
-              children: [
-                if (showBack) ...[
-                  ShadButton.ghost(
-                    size: ShadButtonSize.sm,
-                    onPressed: onBack,
-                    child: const Text('Back'),
-                  ),
-                  const SizedBox(width: 4),
-                ],
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            padding: EdgeInsets.fromLTRB(showBack ? 12 : 20, 8, 12, 12),
+            child: showBack
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(title, style: theme.textTheme.h4),
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle,
-                        style: theme.textTheme.small.copyWith(
-                          color: theme.colorScheme.mutedForeground,
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: NavBackButton(
+                          label: backLabel ?? 'Back',
+                          onPressed: onBack,
                         ),
                       ),
+                      const SizedBox(height: 4),
+                      titleRow,
                     ],
-                  ),
-                ),
-                if (trailing != null) ...[
-                  const SizedBox(width: 8),
-                  trailing!,
-                ],
-              ],
-            ),
+                  )
+                : titleRow,
           ),
         ),
         Expanded(child: body),

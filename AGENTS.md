@@ -49,7 +49,7 @@ lib/
 - Map provider-specific JSON **inside** the Yahoo / crypto exchange client, not in widgets.
 - Feature folders own their screens; shared chart stays under `widgets/`.
 - **Screen-scoped `ChangeNotifier`s** (provided at the route/screen with `ChangeNotifierProvider`, not in `main.dart`) own feature async: [`QuotesListController`](lib/features/quotes/quotes_list_controller.dart), [`PortfolioScreenController`](lib/features/portfolio/portfolio_screen_controller.dart), [`AssetDetailController`](lib/features/asset_detail/asset_detail_controller.dart), [`AgentChatController`](lib/features/agents/agent_chat_controller.dart). Use load-generation tokens so stale responses are ignored.
-- Shared chrome: `TabPageHeader`, `SubscreenAppBar`, `AppEmptyView`, `QuotesAsyncBody`, `MetricStat`, `SummaryWell`, `ThemedAccordionItem`, [`MasterDetailShell`](lib/widgets/master_detail_shell.dart) / `MasterDetailNavTile` / `MasterDetailContentPane` (Settings, Markets, Crypto — wide sidebar + content at ≥720; narrow list → detail with Back), `pushFadePage` / `FadePageRoute`. Prefer [`showAppToast`](lib/widgets/app_toast.dart) over raw `ShadToaster`.
+- Shared chrome: `TabPageHeader`, `SubscreenAppBar`, `AppEmptyView`, `QuotesAsyncBody`, `MetricStat`, `SummaryWell`, `ThemedAccordionItem`, [`MasterDetailShell`](lib/widgets/master_detail_shell.dart) / `MasterDetailNavList` / `MasterDetailNavTile` / `MasterDetailContentPane` (Markets, Crypto, Portfolio, Agents, Settings — wide sidebar + content at ≥720; narrow list → detail with Back), `pushFadePage` / `FadePageRoute`, [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart) (in-context Investigate / Trade check). Prefer [`showAppToast`](lib/widgets/app_toast.dart) over raw `ShadToaster`.
 - Quote lists (Markets kind + Crypto exchange) always go through [`MarketDataClient`](lib/data/market/market_data_client.dart) — never call `CryptoExchangeClient.getQuotes` from UI.
 
 ## Market data — always use `MarketDataClient`
@@ -128,6 +128,7 @@ lib/data/crypto/
 - Public (no key): `get-tickers`, `get-candlestick`
 - Optional private credentials (dual sync): `OMNISCOPE_CRYPTO_COM_API_KEY`, `_API_SECRET`, `_API_TOKEN` via `.env` **or** Settings → Crypto → Configure (persisted in `omniscope.json` + best-effort `.env` write on desktop)
 - Live portfolio (key **and** secret): `POST /private/user-balance` (HMAC-SHA256) → Portfolio tab **Live** subgroup
+- Live orders (same credentials): `POST /private/create-order` (+ cancel / get-order-detail) via [`canPlaceOrders`](lib/data/crypto/crypto_exchange_client.dart) → agent Confirm / Autopilot through [`TradeExecutor`](lib/data/trading/trade_executor.dart)
 - Spot symbols: `BTC_USD`, `ETH_USD`, … Curated `defaultSymbols` plus live catalog from `public/get-instruments` (`browseSymbols`); exchange screen paginates quote fetches.
 - Educational use; do not scrape aggressively.
 
@@ -139,7 +140,9 @@ lib/data/crypto/
 
 ## Agents (AI helpers)
 
-Optional local LLM connections for roles listed in the agents package manifest. Educational / paper-trading context only — **no real brokerage**.
+Optional local LLM connections for roles listed in the agents package manifest. Educational context — users Confirm live suggestions; Autopilot is opt-in per agent.
+
+**Paper practice is never used for AI orders.** Suggestions and Confirm / Autopilot target a **connected live exchange** only (credentials under Settings → Data sources). Configure an exchange before trading agents will Run a trade check.
 
 ### Role → framework (fixed — do not swap)
 
@@ -170,12 +173,20 @@ assets/agents/llm_models.json   # selectable models per provider (data-driven)
 .env.example / .env             # optional local secrets: LLM + exchange/market (gitignored)
 
 lib/data/agents/                # Flutter models + AgentsRepository + catalog loaders
-lib/features/agents/            # Agents tab UI
+lib/data/trading/               # TradeExecutor, order models, BrokerExchangeRegistry
+lib/features/agents/            # Agents tab UI (Roles + Activity)
 ```
 
-### Hedge Fund Desk
+### Live trade suggestions (in-app)
 
-Paper-only multi-agent pipeline inspired by TradingAgents-style role separation:
+- Trading roles (`intradayTrading`, `hedgeFundDesk`) emit a fenced JSON block `{ticker, action, quantity, rationale, risk_approved}` parsed into [`TradeProposal`](lib/data/agents/trade_proposal.dart).
+- [`TradeExecutor`](lib/data/trading/trade_executor.dart) routes Confirm / Autopilot to venues with `canPlaceOrders` (Crypto.com first; brokers via [`BrokerExchangeRegistry`](lib/data/trading/broker_exchange_registry.dart)).
+- Chat shows Confirm / Dismiss; Autopilot is configured on Connect/Edit (default **off**).
+- Agents → **Activity** pane lists proposals and events (`tradeProposals` / `agentActivity` config slices).
+
+### Hedge Fund Desk (Python CLI)
+
+CLI multi-agent pipeline inspired by TradingAgents-style role separation (not spawned from Flutter):
 
 1. **Analysts (CrewAI)** — Technical (yfinance + pandas-ta), Sentiment & News (Yahoo news + public RSS), Fundamental (SEC EDGAR via edgartools).
 2. **Researchers (CrewAI)** — Bullish vs Bearish dialectical debate over the analyst packet.
@@ -201,22 +212,35 @@ CLI: `python -m omniscope_agents.hedge_fund.run --symbol AAPL ...` (see [`agents
 
 - Connected role → **Open chat** → [`AgentChatScreen`](lib/features/agents/agent_chat_screen.dart).
 - Flutter calls provider HTTPS directly via [`LlmChatClient`](lib/data/agents/llm_chat_client.dart) (OpenAI-compatible, Anthropic, Gemini) using the stored connection — **does not** spawn Python CrewAI/LangGraph.
-- Freeform messages plus a role-aware **Run** shortcut (symbol → structured turn). Before the LLM call, a compact quote/history snapshot may be injected from [`MarketDataClient`](lib/data/market/market_data_client.dart).
+- Freeform messages plus a role-aware **Run** shortcut (symbol → structured turn). Before the LLM call, a compact quote/history snapshot may be injected from [`MarketDataClient`](lib/data/market/market_data_client.dart); trading roles also get live exchange balances when available.
+- Trading Runs require a tradable exchange; otherwise the UI gates with a CTA to Settings → Data sources.
+- Proposal cards under assistant bubbles: Confirm → [`TradeExecutor.submit`](lib/data/trading/trade_executor.dart) (live only); Dismiss updates status. Never calls [`PortfolioRepository`](lib/data/portfolio/portfolio_repository.dart).
 - One persisted thread per role; reload on reopen. Clear chat is optional and local-only.
 - Full multi-agent Python pipelines remain CLI-only under `agents/` (see [`agents/README.md`](agents/README.md)).
 
 ### UI
 
-- Shell tab **Agents** → one card per manifest role; connect/disconnect with suggested model presets; **Open chat** when connected.
+- Shell tab **Agents** → master–detail **Roles** / **Activity**; connect/edit/disconnect with suggested model presets + Autopilot for trading roles; **Open chat** when connected.
+- **In-app launches** — other screens deep-link into chat via [`AgentLaunchActions`](lib/features/agents/agent_launch_actions.dart) + [`AgentLaunchIntent`](lib/data/agents/agent_launch.dart) (`investigate` → Market Research + Hedge Fund Desk; `tradeCheck` → Intraday + Desk). Shared CTA: [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart).
+  - Asset detail app bar **Investigate**; Practice trade card **Trade check**; successful paper trade offers a Trade check dialog.
+  - Quote rows (Markets / Crypto) sparkles icon → Investigate.
+  - Portfolio practice holdings sparkles → Trade check.
+  - Settings → Connections **Try Investigate** when a research-capable agent is connected (sample symbol from the default watchlist).
+  - One connected applicable agent → open chat and auto-**Run** the symbol; several → picker dialog; none → switch to Agents tab and open **Connect** for the preferred role ([`ShellNavigationController.goToAgents`](lib/core/shell_navigation.dart)).
+  - [`AgentChatScreen`](lib/features/agents/agent_chat_screen.dart) accepts `initialSymbol` / `autoRun` (and optional side/qty) for these launches.
+
+### Roadmap (more agent surfaces)
+
+When adding UI that involves a symbol, P&L decision, or “what does this mean?”, prefer wiring an `AgentLaunchIntent` CTA rather than a dead-end copy-only tip. Shipped: Settings → Connections **Try Investigate**, Asset detail chart period explainers, post-trade → Trade check dialog. Candidates still open: live balance explainers.
 
 ## User config file
 
 Single JSON document for secrets, favorites, and all customizations ([`UserConfigStore`](lib/data/settings/user_config_store.dart)):
 
 - **Default path (native):** `{getApplicationSupportDirectory()}/omniscope.json` via `path_provider`.
-- **Custom path:** desktop only (Linux / Windows / macOS) — Settings → Data file; override stored in prefs key `omniscope.config_path.v1`.
-- **Web:** no filesystem path — full document in prefs blob `omniscope.config.v1`; Import / Export in Settings.
-- **Slices:** `theme`, `display`, `dataSources`, `secrets`, `agents`, `agentChats`, `paperPortfolio`, `favorites`.
+- **Custom path:** desktop only (Linux / Windows / macOS) — Settings → Data & privacy; override stored in prefs key `omniscope.config_path.v1`.
+- **Web:** no filesystem path — full document in prefs blob `omniscope.config.v1`; Import / Export in Settings → Data & privacy.
+- **Slices:** `theme`, `display`, `dataSources`, `secrets`, `agents`, `agentChats`, `tradeProposals`, `agentActivity`, `paperPortfolio`, `favorites`.
 - **Legacy migration:** first load absorbs old per-feature prefs keys then removes them.
 - **`.env` dual-write:** secrets still upsert into the project `.env` when writable (Python CLI). On startup, non-empty `.env` / asset keys that are missing or empty in the config are **promoted** into `omniscope.json` so checkout edits persist for Flutter.
 - Treat the file as secrets — it may contain API keys.
@@ -228,24 +252,22 @@ Favorites ([`FavoritesRepository`](lib/data/settings/favorites_repository.dart))
 Shell tab **Settings** (and Markets / Crypto) use [`MasterDetailShell`](lib/widgets/master_detail_shell.dart): wide (≥720) = persistent sidebar + content pane; narrow = list → detail with Back. Switching sections unloads the previous body ([`settings_screen.dart`](lib/features/settings/settings_screen.dart)).
 
 - **About** — tagline ([`AppCopy`](lib/core/app_copy.dart)), version ([`AppInfo`](lib/core/app_info.dart)), educational disclaimer.
-- **Appearance** — theme ([`ThemeSettings`](lib/data/settings/theme_settings.dart)), list density / price format / default chart range ([`DisplaySettings`](lib/data/settings/display_settings.dart)).
+- **Appearance** — brightness + color set ([`ThemeSettings`](lib/data/settings/theme_settings.dart) / [`BrandPalette`](lib/core/brand_colors.dart)), list density / price format / default chart range ([`DisplaySettings`](lib/data/settings/display_settings.dart)).
 - **Data sources** — equities / crypto enable toggles + Crypto.com credentials (existing).
 - **Portfolios** — practice starting cash / reset, plus status of live exchange portfolios (credentials under Data sources).
-- **API keys** — all LLM providers with local key status (red = missing, green = saved); Add/Edit via dialog; keys stay on-device only ([`EnvSecretsRepository.setLlmApiKey`](lib/data/settings/env_secrets_repository.dart)).
-- **Connections** — summary of exchange credentials and connected agents.
-- **Data file** — effective config path, desktop custom path, Import / Export JSON.
-- **Privacy & data** — clear favorites, chats, disconnect agents, reset paper, clear exchange credentials.
+- **Connections** — LLM provider keys (red = missing, green = saved; Add/Edit via dialog; on-device only via [`EnvSecretsRepository.setLlmApiKey`](lib/data/settings/env_secrets_repository.dart)) plus a summary of exchange credentials and connected agents.
+- **Data & privacy** — config path, desktop custom path, Import / Export JSON, plus clear favorites / chats / disconnect agents / reset paper / clear exchange credentials.
 
 ## Portfolio
 
 - **Unified list** — [`PortfolioCatalog`](lib/data/portfolio/portfolio_catalog.dart) lists Practice plus each live exchange portfolio for Settings and the Portfolio tab.
-- **Practice (paper)** — `paperPortfolio` slice in the unified config file.
+- **Practice (paper)** — `paperPortfolio` slice in the unified config file. **Manual only** — agents never submit here.
   - Default starting cash: **$10,000** (`PortfolioState.defaultStartingCash`); configurable via Settings → Portfolios / `PortfolioRepository.startingCash` (stored in the same JSON blob).
   - Holdings: `{ symbol, shares, avgCost }`; buy averages cost; sell removes the row at zero shares.
   - Mark-to-market using `MarketDataClient.getQuotes` — never hard-code prices in the repository.
   - Reset restores configured starting cash and clears holdings (confirm in UI; does not touch live balances).
   - UI: secondary / muted chrome + **Paper** badge.
-- **Live (exchange)** — when a registered `CryptoExchangeClient` has `canFetchPortfolio` (e.g. Crypto.com key+secret) and the venue is enabled in Settings, Portfolio shows another accordion subgroup (`supportsLivePortfolio` marks venues that can unlock Live once credentials are set).
+- **Live (exchange)** — when a registered `CryptoExchangeClient` has `canFetchPortfolio` (e.g. Crypto.com key+secret) and the venue is enabled in Settings, Portfolio’s master–detail sidebar adds another destination (`supportsLivePortfolio` marks venues that can unlock Live once credentials are set).
   - Fetch via `CryptoExchangeClient.fetchPortfolio()` → [`ExchangePortfolioSnapshot`](lib/data/crypto/exchange_portfolio.dart); never call venue URLs from UI.
   - UI: primary chrome + **Live** badge; read-only balances.
 
@@ -265,21 +287,17 @@ Shell tab **Settings** (and Markets / Crypto) use [`MasterDetailShell`](lib/widg
 
 ### Brand colors (required)
 
-Canonical tokens live in [`lib/core/brand_colors.dart`](lib/core/brand_colors.dart) and are wired into `ShadThemeData` in [`lib/app.dart`](lib/app.dart). **Every** new icon, image tint, border, shadow, fill, focus ring, and chart accent must use this palette — no one-off hex colors.
+Canonical tokens live in [`lib/core/brand_colors.dart`](lib/core/brand_colors.dart) as selectable [`BrandPalette`](lib/core/brand_colors.dart)s (Teal default, Ocean, Forest, Slate, Amber), each with light **and** dark variants. [`ThemeSettings`](lib/data/settings/theme_settings.dart) stores palette id separately from ThemeMode. Wired into `ShadThemeData` in [`lib/app.dart`](lib/app.dart). **Every** new icon, image tint, border, shadow, fill, focus ring, and chart accent must use the active scheme — no one-off hex colors.
 
-| Token | Light | Dark | Use |
-|-------|-------|------|-----|
-| **Primary** | `#0F766E` | `#2DD4BF` | Brand, icons, CTAs, focus/ring, shadows (primary @ ~16% alpha) |
-| **Primary foreground** | `#F0FDFA` | `#042F2E` | Text/icons on primary |
-| **Secondary** | `#CCFBF1` | `#134E4A` | Soft wells, selected nav, icon backgrounds |
-| **Secondary foreground** | `#134E4A` | `#99F6E4` | Text on secondary |
-| **Border / input** | `#B7C9C5` | `#3A5552` | Dividers, card edges, inputs (quiet slate-teal) |
-| **Gain** | `#15803D` | `#4ADE80` | Positive numbers, up charts only |
-| **Loss** | `#DC2626` | `#F87171` | Negative numbers, down charts (`destructive`) |
+| Token | Use |
+|-------|-----|
+| **Primary / secondary / border** | Active palette via `colorScheme` (Settings → Appearance → Color set) |
+| **Gain** | `#15803D` / `#4ADE80` — positive numbers only (fixed across palettes) |
+| **Loss** | `#DC2626` / `#F87171` — negative numbers / `destructive` (fixed) |
 
 - Prefer `theme.colorScheme.primary` / `.secondary` / `.border` / `.destructive`, or `BrandColors.gainOf` / `lossOf` / `shadowOf`.
 - Do **not** use primary for P&L up/down — keep gain/loss distinct so numbers stay easy to read.
-- Do not invent new accent colors (no purple, terracotta, freeform grays for chrome).
+- Do not invent new accent hex in widgets — add a palette in `BrandColors` if a new set is needed.
 - See also `.cursor/rules/brand-colors.mdc`.
 
 ### Product UX
@@ -308,12 +326,16 @@ make run DEVICE=android # needs Android SDK / device
 make run DEVICE=ios     # needs Xcode / Apple toolchain (macOS host)
 make run DEVICE=macos   # needs Xcode / macOS desktop toolchain
 make run DEVICE=chrome  # Web (or edge / web-server)
+make build              # host-capable release builds (skips other OS targets)
+make build-linux        # or: build-windows / build-macos / build-ios / build-apk / build-appbundle / build-web
 make icons
 make agents-setup       # agents/ venv + pip install -e .
 make bump-patch         # local patch bump (pubspec + AppInfo); CI also runs this on main
 # equivalents: flutter pub get | flutter analyze | flutter test
 #              tool/flutter_checks.sh all | tool/regen_icons.sh
 ```
+
+Release builds need the matching host toolchain (Linux/Windows/macOS desktop and iOS are not cross-compiled). See README **Release builds**.
 
 ### Versioning
 

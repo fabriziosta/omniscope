@@ -12,9 +12,13 @@ import '../../data/market/market_data_links.dart';
 import '../../data/market/models.dart';
 import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/display_settings.dart';
+import '../../data/agents/agent_launch.dart';
+import '../agents/agent_launch_actions.dart';
+import '../../widgets/agent_launch_button.dart';
 import '../../widgets/app_error_view.dart';
 import '../../widgets/app_progress.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/app_tooltip.dart';
 import '../../widgets/metric_stat.dart';
 import '../../widgets/price_line_chart.dart';
 import '../../widgets/subscreen_app_bar.dart';
@@ -79,6 +83,35 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
       description: result.description,
       destructive: !result.success,
     );
+    if (!result.success || !mounted) return;
+    final runCheck = await showShadDialog<bool>(
+      context: context,
+      builder: (context) => ShadDialog(
+        title: const Text('Trade check?'),
+        description: Text(
+          '${result.description} Run a Trade check with an agent for '
+          '${result.symbol}?',
+        ),
+        actions: [
+          ShadButton.outline(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Not now'),
+          ),
+          ShadButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Trade check'),
+          ),
+        ],
+      ),
+    );
+    if (runCheck != true || !mounted) return;
+    await AgentLaunchActions.launch(
+      context,
+      intent: AgentLaunchIntent.tradeCheck,
+      symbol: result.symbol,
+      side: result.buy ? 'buy' : 'sell',
+      quantity: result.shares,
+    );
   }
 
   Future<void> _openExternalUri(Uri uri) async {
@@ -129,7 +162,11 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
           children: [
             SubscreenAppBar(
               title: widget.symbol,
-              endPadding: 16,
+              endPadding: 8,
+              trailing: AgentLaunchButton(
+                symbol: widget.symbol,
+                intent: AgentLaunchIntent.investigate,
+              ),
             ),
             if (controller.loading)
               const Expanded(child: Center(child: AppProgress()))
@@ -137,7 +174,7 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
               Expanded(
                 child: AppErrorView(
                   title: 'Could not load ${widget.symbol}',
-                  message: AppCopy.checkConnection,
+                  message: controller.loadErrorMessage,
                   onRetry: controller.load,
                 ),
               )
@@ -170,6 +207,16 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
                                     : BrandColors.lossOf(context),
                               ),
                             ),
+                            const SizedBox(height: 4),
+                            Text(
+                              controller.fetchedAt == null
+                                  ? AppCopy.delayedDataCaption
+                                  : '${AppCopy.delayedDataCaption} '
+                                      'As of ${_formatAsOf(controller.fetchedAt!)}.',
+                              style: theme.textTheme.small.copyWith(
+                                color: theme.colorScheme.mutedForeground,
+                              ),
+                            ),
                             if (_hasQuoteMeta(quote)) ...[
                               const SizedBox(height: 10),
                               Wrap(
@@ -178,9 +225,8 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
                                 children: [
                                   if (quote!.exchange != null &&
                                       quote.exchange!.trim().isNotEmpty)
-                                    _MetaChip(
-                                      label:
-                                          displayExchangeName(quote.exchange),
+                                    _ExchangeMetaChip(
+                                      exchange: quote.exchange,
                                     ),
                                   if (quote.currency != null &&
                                       quote.currency!.trim().isNotEmpty)
@@ -204,9 +250,18 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
                                 style: theme.textTheme.muted,
                               ),
                             ],
-                            if (overview != null) ...[
-                              const SizedBox(height: 12),
-                              Text(overview, style: theme.textTheme.muted),
+                            const SizedBox(height: 12),
+                            Text(
+                              overview ?? AppCopy.assetOverviewFallback,
+                              style: theme.textTheme.muted,
+                            ),
+                            if (overview == null) ...[
+                              const SizedBox(height: 8),
+                              AgentLaunchButton(
+                                symbol: widget.symbol,
+                                intent: AgentLaunchIntent.investigate,
+                                outline: true,
+                              ),
                             ],
                             if (researchLinks.isNotEmpty) ...[
                               const SizedBox(height: 10),
@@ -228,25 +283,41 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
                         ),
                       ),
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
                         child: Row(
                           children: [
                             for (var i = 0;
                                 i < AssetDetailController.ranges.length;
                                 i++) ...[
                               if (i > 0) const SizedBox(width: 8),
-                              ShadButton.raw(
-                                size: ShadButtonSize.sm,
-                                variant: i == controller.rangeIndex
-                                    ? ShadButtonVariant.primary
-                                    : ShadButtonVariant.outline,
-                                onPressed: () => controller.setRange(i),
-                                child: Text(
+                              AppTooltip(
+                                message: AssetDetailController.rangeTooltip(
                                   AssetDetailController.ranges[i].$1,
+                                ),
+                                child: ShadButton.raw(
+                                  size: ShadButtonSize.sm,
+                                  variant: i == controller.rangeIndex
+                                      ? ShadButtonVariant.primary
+                                      : ShadButtonVariant.outline,
+                                  onPressed: () => controller.setRange(i),
+                                  child: Text(
+                                    AssetDetailController.ranges[i].$1,
+                                  ),
                                 ),
                               ),
                             ],
                           ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        child: Text(
+                          AssetDetailController.rangeExplainer(
+                            controller.currentRange.$1,
+                          ),
+                          style: theme.textTheme.small.copyWith(
+                            color: theme.colorScheme.mutedForeground,
+                          ),
                         ),
                       ),
                       Padding(
@@ -277,8 +348,12 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
                                 child: Text('Practice trade'),
                               ),
                               SizedBox(width: 8),
-                              ShadBadge.secondary(
-                                child: Text('Paper'),
+                              AppTooltip(
+                                message: 'Paper — practice money only',
+                                wrapDetector: true,
+                                child: ShadBadge.secondary(
+                                  child: Text('Paper'),
+                                ),
                               ),
                             ],
                           ),
@@ -317,6 +392,15 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
                                   ),
                                 ],
                               ),
+                              const SizedBox(height: 10),
+                              AgentLaunchButton(
+                                symbol: widget.symbol,
+                                intent: AgentLaunchIntent.tradeCheck,
+                                outline: true,
+                                quantity: double.tryParse(
+                                  _sharesController.text.trim(),
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -337,6 +421,32 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
         (quote.currency != null && quote.currency!.trim().isNotEmpty) ||
         quote.previousClose != null ||
         (quote.dataSource != null && quote.dataSource!.trim().isNotEmpty);
+  }
+
+  String _formatAsOf(DateTime time) {
+    final local = time.toLocal();
+    final h = local.hour.toString().padLeft(2, '0');
+    final m = local.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+}
+
+class _ExchangeMetaChip extends StatelessWidget {
+  const _ExchangeMetaChip({required this.exchange});
+
+  final String? exchange;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = displayExchangeName(exchange);
+    final blurb = exchangeDescription(name);
+    final chip = _MetaChip(label: name);
+    if (blurb == null) return chip;
+    return AppTooltip(
+      message: blurb,
+      wrapDetector: true,
+      child: chip,
+    );
   }
 }
 

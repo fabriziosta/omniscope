@@ -7,6 +7,8 @@ abstract final class UserConfigKeys {
   static const secrets = 'secrets';
   static const agents = 'agents';
   static const agentChats = 'agentChats';
+  static const tradeProposals = 'tradeProposals';
+  static const agentActivity = 'agentActivity';
   static const paperPortfolio = 'paperPortfolio';
   static const favorites = 'favorites';
 

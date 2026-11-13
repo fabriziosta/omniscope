@@ -1,27 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscope/data/crypto/crypto_exchange_registry.dart';
-import 'package:omniscope/data/market/market_data_client.dart';
-import 'package:omniscope/data/market/models.dart';
 import 'package:omniscope/data/portfolio/portfolio_repository.dart';
 import 'package:omniscope/data/settings/data_source_settings.dart';
 import 'package:omniscope/features/portfolio/portfolio_screen_controller.dart';
 
+import 'support/fake_market_data_client.dart';
 import 'support/memory_config.dart';
-
-class _FakeMarketDataClient implements MarketDataClient {
-  @override
-  Future<List<Candle>> getHistory(
-    String symbol, {
-    required String range,
-    required String interval,
-  }) async =>
-      const [];
-
-  @override
-  Future<List<Quote>> getQuotes(List<String> symbols) async => [
-        for (final s in symbols) Quote(symbol: s, price: 200, name: s),
-      ];
-}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -33,7 +17,7 @@ void main() {
     await portfolio.buy(symbol: 'AAPL', shares: 2, price: 100);
 
     final controller = PortfolioScreenController(
-      marketData: _FakeMarketDataClient(),
+      marketData: FakeMarketDataClient(basePrice: 200),
       portfolio: portfolio,
       cryptoRegistry: CryptoExchangeRegistry(const []),
       dataSources: DataSourceSettings(store: store),
@@ -54,7 +38,7 @@ void main() {
     await portfolio.load();
 
     final controller = PortfolioScreenController(
-      marketData: _FakeMarketDataClient(),
+      marketData: FakeMarketDataClient(basePrice: 200),
       portfolio: portfolio,
       cryptoRegistry: CryptoExchangeRegistry(const []),
       dataSources: DataSourceSettings(store: store),

@@ -2,13 +2,18 @@ import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../data/agents/agent_launch.dart';
 import '../../data/agents/agents_repository.dart';
 import '../../data/agents/models.dart';
 import '../../data/crypto/crypto_exchange_registry.dart';
+import '../../data/market/models.dart';
 import '../../data/settings/env_secrets_repository.dart';
 import '../../widgets/app_toast.dart';
+import '../agents/agent_launch_actions.dart';
+import 'llm_api_keys_section.dart';
 import 'settings_option_tiles.dart';
 
+/// LLM API keys plus a summary of connected agents and exchange credentials.
 class ConnectionsSectionBody extends StatelessWidget {
   const ConnectionsSectionBody({super.key});
 
@@ -31,13 +36,51 @@ class ConnectionsSectionBody extends StatelessWidget {
 
     final empty = connectedAgents.isEmpty && connectedExchanges.isEmpty;
 
+    final investigateRoles = AgentLaunchResolver.rolesForIntent(
+      availableRoles: agents.availableRoles,
+      intent: AgentLaunchIntent.investigate,
+    );
+    final investigateConnected = AgentLaunchResolver.connectedAmong(
+      roles: investigateRoles,
+      isConnected: (id) => agents.forRoleId(id).connected,
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Agents you connected in the Agents tab, and exchanges '
-          'with API credentials from .env or Settings.',
+          'LLM keys, agent roles, and exchange credentials stay on this '
+          'device only (and in the project .env when writable). Nothing is '
+          'sent to an Omniscope server.',
           style: theme.textTheme.muted,
+        ),
+        const SizedBox(height: 16),
+        const LlmApiKeysSectionBody(),
+        if (investigateConnected.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          ShadButton.outline(
+            onPressed: () => AgentLaunchActions.launch(
+              context,
+              intent: AgentLaunchIntent.investigate,
+              symbol: defaultWatchlist.first,
+            ),
+            child: const Text('Try Investigate'),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Opens a connected research agent with a sample symbol '
+            '(${defaultWatchlist.first}).',
+            style: theme.textTheme.small.copyWith(
+              color: theme.colorScheme.mutedForeground,
+            ),
+          ),
+        ],
+        const SizedBox(height: 24),
+        const SettingsSubsectionLabel(
+          'Active',
+          description:
+              'Agents connected in the Agents tab, and exchanges with '
+              'API credentials from .env or Data sources.',
         ),
         const SizedBox(height: 12),
         if (empty)
@@ -53,7 +96,9 @@ class ConnectionsSectionBody extends StatelessWidget {
               if (i > 0) const SizedBox(height: 8),
               SettingsConnectionCard(
                 title: connectedExchanges[i].exchange.displayName,
-                subtitle: 'API credentials configured',
+                subtitle: connectedExchanges[i].canPlaceOrders
+                    ? 'Trading enabled · credentials configured'
+                    : 'API credentials configured',
                 icon: LucideIcons.coins,
               ),
             ],

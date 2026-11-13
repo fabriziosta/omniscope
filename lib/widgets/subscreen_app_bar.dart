@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import 'nav_back_button.dart';
+
 /// Back | centered title | optional trailing action for pushed subscreens.
 class SubscreenAppBar extends StatelessWidget {
   const SubscreenAppBar({
@@ -8,12 +10,14 @@ class SubscreenAppBar extends StatelessWidget {
     required this.title,
     this.trailing,
     this.onBack,
+    this.backLabel = 'Back',
     this.endPadding = 12,
   });
 
   final String title;
   final Widget? trailing;
   final VoidCallback? onBack;
+  final String backLabel;
 
   /// Right padding when [trailing] is present (Refresh / Clear).
   final double endPadding;
@@ -25,10 +29,9 @@ class SubscreenAppBar extends StatelessWidget {
       padding: EdgeInsets.fromLTRB(8, 8, endPadding, 0),
       child: Row(
         children: [
-          ShadButton.ghost(
-            size: ShadButtonSize.sm,
+          NavBackButton(
+            label: backLabel,
             onPressed: onBack ?? () => Navigator.of(context).pop(),
-            child: const Text('Back'),
           ),
           Expanded(
             child: Text(

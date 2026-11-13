@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:omniscope/core/app_copy.dart';
 import 'package:omniscope/core/brand_colors.dart';
+import 'package:omniscope/core/shell_navigation.dart';
 import 'package:omniscope/data/crypto/crypto_com/crypto_com_exchange_client.dart';
 import 'package:omniscope/data/crypto/crypto_exchange.dart';
 import 'package:omniscope/data/crypto/crypto_exchange_client.dart';
@@ -12,27 +14,13 @@ import 'package:omniscope/data/portfolio/portfolio_repository.dart';
 import 'package:omniscope/data/settings/data_source_settings.dart';
 import 'package:omniscope/data/settings/display_settings.dart';
 import 'package:omniscope/data/settings/env_secrets_repository.dart';
+import 'package:omniscope/data/trading/order_models.dart';
 import 'package:omniscope/features/portfolio/portfolio_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import 'support/fake_market_data_client.dart';
 import 'support/memory_config.dart';
-
-class _FakeMarketDataClient implements MarketDataClient {
-  @override
-  Future<List<Candle>> getHistory(
-    String symbol, {
-    required String range,
-    required String interval,
-  }) async =>
-      const [];
-
-  @override
-  Future<List<Quote>> getQuotes(List<String> symbols) async => [
-        for (final s in symbols)
-          Quote(symbol: s, name: s, price: 100, exchange: 'Test'),
-      ];
-}
 
 class _LiveCryptoClient implements CryptoExchangeClient {
   @override
@@ -85,59 +73,118 @@ class _LiveCryptoClient implements CryptoExchangeClient {
       ],
     );
   }
+
+  @override
+  bool get supportsLiveTrading => false;
+
+  @override
+  bool get canPlaceOrders => false;
+
+  @override
+  Future<OrderResult> placeOrder(OrderRequest request) async =>
+      const OrderResult.fail('not supported');
+
+  @override
+  Future<OrderResult> cancelOrder(String orderId) async =>
+      const OrderResult.fail('not supported');
+
+  @override
+  Future<OrderResult> getOrder(String orderId) async =>
+      const OrderResult.fail('not supported');
+}
+
+Future<void> _pumpPortfolio(WidgetTester tester) async {
+  final store = await memoryConfig();
+  final portfolio = PortfolioRepository(store: store);
+  await portfolio.load();
+  final dataSources = DataSourceSettings(store: store);
+  await dataSources.load();
+  final displaySettings = DisplaySettings(store: store);
+  await displaySettings.load();
+  final envSecrets = EnvSecretsRepository(store: store, syncEnvFile: false);
+  await envSecrets.load(additionalBootstrap: const {});
+
+  await tester.pumpWidget(
+    MultiProvider(
+      providers: [
+        Provider<MarketDataClient>.value(
+          value: FakeMarketDataClient(
+            basePrice: 100,
+            exchange: 'Test',
+            emptyHistory: true,
+          ),
+        ),
+        Provider<CryptoExchangeRegistry>.value(
+          value: CryptoExchangeRegistry([_LiveCryptoClient()]),
+        ),
+        ChangeNotifierProvider<PortfolioRepository>.value(value: portfolio),
+        ChangeNotifierProvider<DataSourceSettings>.value(value: dataSources),
+        ChangeNotifierProvider<DisplaySettings>.value(value: displaySettings),
+        ChangeNotifierProvider<EnvSecretsRepository>.value(value: envSecrets),
+        ChangeNotifierProvider<ShellNavigationController>(
+          create: (_) => ShellNavigationController(),
+        ),
+      ],
+      child: ShadApp(
+        theme: ShadThemeData(
+          brightness: Brightness.light,
+          colorScheme: BrandColors.lightScheme(),
+        ),
+        home: const PortfolioScreen(),
+      ),
+    ),
+  );
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 400));
 }
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('shows Practice paper and Live exchange subgroups', (
-    tester,
-  ) async {
-    final store = await memoryConfig();
-    final portfolio = PortfolioRepository(store: store);
-    await portfolio.load();
-    final dataSources = DataSourceSettings(store: store);
-    await dataSources.load();
-    final displaySettings = DisplaySettings(store: store);
-    await displaySettings.load();
-    final envSecrets = EnvSecretsRepository(store: store, syncEnvFile: false);
-    await envSecrets.load(additionalBootstrap: const {});
+  testWidgets('portfolio master-detail: wide and narrow', (tester) async {
+    // Wide: sidebar + Practice content share the viewport.
+    await tester.binding.setSurfaceSize(const Size(1024, 800));
+    await _pumpPortfolio(tester);
 
-    await tester.binding.setSurfaceSize(const Size(390, 844));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+    expect(find.text('Practice'), findsWidgets);
+    expect(find.text('Crypto.com'), findsOneWidget);
+    expect(find.text('Practice portfolio'), findsOneWidget);
 
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          Provider<MarketDataClient>.value(value: _FakeMarketDataClient()),
-          Provider<CryptoExchangeRegistry>.value(
-            value: CryptoExchangeRegistry([_LiveCryptoClient()]),
-          ),
-          ChangeNotifierProvider<PortfolioRepository>.value(value: portfolio),
-          ChangeNotifierProvider<DataSourceSettings>.value(value: dataSources),
-          ChangeNotifierProvider<DisplaySettings>.value(value: displaySettings),
-          ChangeNotifierProvider<EnvSecretsRepository>.value(value: envSecrets),
-        ],
-        child: ShadApp(
-          theme: ShadThemeData(
-            brightness: Brightness.light,
-            colorScheme: BrandColors.lightScheme(),
-          ),
-          home: const PortfolioScreen(),
-        ),
-      ),
-    );
+    await tester.tap(find.text('Crypto.com'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('Live · Crypto.com'), findsOneWidget);
+    expect(find.text('BTC'), findsOneWidget);
+
+    // Narrow: list first, then one pane at a time.
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    await _pumpPortfolio(tester);
 
     expect(find.text('Practice'), findsOneWidget);
     expect(find.text('Paper'), findsOneWidget);
-    expect(find.text('Live'), findsWidgets);
-    expect(find.text('Live · Crypto.com'), findsOneWidget);
+    expect(find.text('Crypto.com'), findsOneWidget);
+    expect(find.text('Live'), findsOneWidget);
+    expect(find.text(AppCopy.connectLivePortfolioTitle), findsNothing);
+    expect(find.text('Practice portfolio'), findsNothing);
+    expect(find.text('Balances'), findsNothing);
+
+    await tester.tap(find.text('Practice'));
+    await tester.pump();
+
     expect(find.text('Practice portfolio'), findsOneWidget);
-    expect(find.textContaining('Fake money for learning'), findsOneWidget);
+    expect(find.textContaining('Fake money for learning'), findsWidgets);
+
+    await tester.tap(find.text('Portfolio'));
+    await tester.pump();
+
+    await tester.tap(find.text('Crypto.com'));
+    await tester.pump();
+
+    expect(find.text('Live · Crypto.com'), findsOneWidget);
     expect(find.textContaining('Real exchange balances'), findsOneWidget);
     expect(find.text('BTC'), findsOneWidget);
     expect(find.text('Balances'), findsOneWidget);
+
+    await tester.binding.setSurfaceSize(null);
   });
 }

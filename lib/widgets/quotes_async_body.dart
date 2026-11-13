@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../core/app_copy.dart';
 import '../data/market/models.dart';
@@ -15,11 +16,15 @@ class QuotesAsyncBody extends StatelessWidget {
     required this.builder,
     this.emptyMessage = AppCopy.noQuotes,
     this.errorTitle,
+    this.showAsOfCaption = true,
   });
 
   final Widget Function(BuildContext context, List<Quote> quotes) builder;
   final String emptyMessage;
   final String? errorTitle;
+
+  /// Shows a delayed-data / as-of line above the quote list when available.
+  final bool showAsOfCaption;
 
   @override
   Widget build(BuildContext context) {
@@ -41,6 +46,31 @@ class QuotesAsyncBody extends StatelessWidget {
     if (!controller.hasLoaded) {
       return const Center(child: AppProgress());
     }
-    return builder(context, controller.quotes);
+
+    final body = builder(context, controller.quotes);
+    if (!showAsOfCaption || controller.fetchedAt == null) {
+      return body;
+    }
+
+    final theme = ShadTheme.of(context);
+    final local = controller.fetchedAt!.toLocal();
+    final h = local.hour.toString().padLeft(2, '0');
+    final m = local.minute.toString().padLeft(2, '0');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+          child: Text(
+            '${AppCopy.delayedDataCaption} As of $h:$m.',
+            style: theme.textTheme.small.copyWith(
+              color: theme.colorScheme.mutedForeground,
+            ),
+          ),
+        ),
+        Expanded(child: body),
+      ],
+    );
   }
 }

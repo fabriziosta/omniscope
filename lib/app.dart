@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import 'core/brand_colors.dart';
 import 'data/settings/theme_settings.dart';
 import 'features/shell/home_shell.dart';
 import 'widgets/app_error_gate.dart';
@@ -15,17 +14,18 @@ class OmniscopeApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeMode = context.watch<ThemeSettings>().mode;
+    final themeSettings = context.watch<ThemeSettings>();
+    final palette = themeSettings.palette;
 
     return ShadApp(
       title: 'Omniscope',
       navigatorKey: navigatorKey,
-      themeMode: themeMode,
+      themeMode: themeSettings.mode,
       theme: ShadThemeData(
         brightness: Brightness.light,
-        colorScheme: BrandColors.lightScheme(),
+        colorScheme: palette.lightScheme(),
         cardTheme: ShadCardTheme(
-          border: ShadBorder.all(color: BrandColors.borderLight),
+          border: ShadBorder.all(color: palette.borderLight),
         ),
         primaryToastTheme: const ShadToastTheme(
           alignment: Alignment.topCenter,
@@ -36,9 +36,9 @@ class OmniscopeApp extends StatelessWidget {
       ),
       darkTheme: ShadThemeData(
         brightness: Brightness.dark,
-        colorScheme: BrandColors.darkScheme(),
+        colorScheme: palette.darkScheme(),
         cardTheme: ShadCardTheme(
-          border: ShadBorder.all(color: BrandColors.borderDark),
+          border: ShadBorder.all(color: palette.borderDark),
         ),
         primaryToastTheme: const ShadToastTheme(
           alignment: Alignment.topCenter,

@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import '../../market/exchange_credentials.dart';
 import '../../market/market_data_client.dart';
 import '../../market/models.dart';
+import '../../trading/order_models.dart';
 import '../crypto_exchange.dart';
 import '../crypto_exchange_client.dart';
 import '../exchange_portfolio.dart';
@@ -15,12 +16,14 @@ import '../exchange_portfolio.dart';
 ///
 /// Public market data (tickers / candlesticks) needs no key. Optional
 /// [credentials] from `.env` (`OMNISCOPE_CRYPTO_COM_API_KEY` / `_SECRET` /
-/// `_TOKEN`) enable authenticated portfolio via `private/user-balance`.
+/// `_TOKEN`) enable authenticated portfolio via `private/user-balance` and
+/// live orders via `private/create-order`.
 ///
 /// Base: `https://api.crypto.com/exchange/v1/`
 /// - `GET /public/get-tickers`
 /// - `GET /public/get-candlestick`
 /// - `POST /private/user-balance` (HMAC-SHA256 signed)
+/// - `POST /private/create-order` / `cancel-order` / `get-order-detail`
 class CryptoComExchangeClient implements CryptoExchangeClient {
   CryptoComExchangeClient({
     http.Client? httpClient,
@@ -94,6 +97,13 @@ class CryptoComExchangeClient implements CryptoExchangeClient {
 
   @override
   bool get canFetchPortfolio =>
+      credentials.hasApiKey && credentials.hasApiSecret;
+
+  @override
+  bool get supportsLiveTrading => true;
+
+  @override
+  bool get canPlaceOrders =>
       credentials.hasApiKey && credentials.hasApiSecret;
 
   @override
@@ -232,6 +242,157 @@ class CryptoComExchangeClient implements CryptoExchangeClient {
       exchangeId: meta.id,
       exchangeName: meta.displayName,
     );
+  }
+
+  @override
+  Future<OrderResult> placeOrder(OrderRequest request) async {
+    if (!canPlaceOrders) {
+      return const OrderResult.fail(
+        'Crypto.com API key and secret are required to place orders',
+      );
+    }
+    if (request.exchangeId.isNotEmpty && request.exchangeId != meta.id) {
+      return OrderResult.fail(
+        'Order exchange ${request.exchangeId} does not match Crypto.com',
+      );
+    }
+    final symbol = request.symbol.trim().toUpperCase();
+    if (symbol.isEmpty || !handlesSymbol(symbol)) {
+      return OrderResult.fail('Unsupported Crypto.com symbol: $symbol');
+    }
+    if (request.quantity <= 0) {
+      return const OrderResult.fail('Quantity must be greater than zero.');
+    }
+
+    final params = <String, dynamic>{
+      'instrument_name': symbol,
+      'side': request.side.apiValue,
+      'type': request.type == OrderType.limit ? 'LIMIT' : 'MARKET',
+      'quantity': _qtyString(request.quantity),
+    };
+    if (request.type == OrderType.limit) {
+      final price = request.limitPrice;
+      if (price == null || price <= 0) {
+        return const OrderResult.fail('Limit price is required for limit orders');
+      }
+      params['price'] = _qtyString(price);
+    }
+    final clientId = request.clientOrderId?.trim();
+    if (clientId != null && clientId.isNotEmpty) {
+      params['client_oid'] = clientId;
+    }
+
+    try {
+      final body = await _postPrivate('private/create-order', params);
+      return orderResultFromCreate(body);
+    } on MarketDataException catch (e) {
+      return OrderResult.fail(e.message);
+    } catch (e) {
+      return OrderResult.fail('$e');
+    }
+  }
+
+  @override
+  Future<OrderResult> cancelOrder(String orderId) async {
+    if (!canPlaceOrders) {
+      return const OrderResult.fail(
+        'Crypto.com API key and secret are required to cancel orders',
+      );
+    }
+    final id = orderId.trim();
+    if (id.isEmpty) {
+      return const OrderResult.fail('Order id is required.');
+    }
+    try {
+      final body = await _postPrivate(
+        'private/cancel-order',
+        {'order_id': id},
+      );
+      return orderResultFromCreate(body, fallbackOrderId: id);
+    } on MarketDataException catch (e) {
+      return OrderResult.fail(e.message);
+    } catch (e) {
+      return OrderResult.fail('$e');
+    }
+  }
+
+  @override
+  Future<OrderResult> getOrder(String orderId) async {
+    if (!canPlaceOrders) {
+      return const OrderResult.fail(
+        'Crypto.com API key and secret are required for order status',
+      );
+    }
+    final id = orderId.trim();
+    if (id.isEmpty) {
+      return const OrderResult.fail('Order id is required.');
+    }
+    try {
+      final body = await _postPrivate(
+        'private/get-order-detail',
+        {'order_id': id},
+      );
+      return orderResultFromDetail(body, fallbackOrderId: id);
+    } on MarketDataException catch (e) {
+      return OrderResult.fail(e.message);
+    } catch (e) {
+      return OrderResult.fail('$e');
+    }
+  }
+
+  /// Visible for unit tests — map create-order envelope → [OrderResult].
+  static OrderResult orderResultFromCreate(
+    Map<String, dynamic> body, {
+    String? fallbackOrderId,
+  }) {
+    final result = body['result'] as Map<String, dynamic>? ?? const {};
+    final orderId = (result['order_id'] as String?) ??
+        (result['orderId'] as String?) ??
+        fallbackOrderId;
+    if (orderId == null || orderId.isEmpty) {
+      return const OrderResult.fail('Crypto.com create-order returned no order id');
+    }
+    final status = result['status'] as String? ??
+        result['order_status'] as String?;
+    return OrderResult.ok(
+      orderId: orderId,
+      rawStatus: status,
+      message: body['message'] as String?,
+    );
+  }
+
+  /// Visible for unit tests — map get-order-detail envelope → [OrderResult].
+  static OrderResult orderResultFromDetail(
+    Map<String, dynamic> body, {
+    String? fallbackOrderId,
+  }) {
+    final result = body['result'] as Map<String, dynamic>? ?? const {};
+    final orderInfo = result['order_info'] as Map<String, dynamic>? ?? result;
+    final orderId = (orderInfo['order_id'] as String?) ??
+        (orderInfo['orderId'] as String?) ??
+        fallbackOrderId;
+    if (orderId == null || orderId.isEmpty) {
+      return const OrderResult.fail('Crypto.com order detail returned no order id');
+    }
+    final status = orderInfo['status'] as String? ??
+        orderInfo['order_status'] as String?;
+    return OrderResult.ok(
+      orderId: orderId,
+      rawStatus: status,
+      message: body['message'] as String?,
+    );
+  }
+
+  static String _qtyString(double value) {
+    if (value == value.roundToDouble()) {
+      return value.toInt().toString();
+    }
+    var s = value.toStringAsFixed(8);
+    if (s.contains('.')) {
+      s = s.replaceFirst(RegExp(r'0+$'), '');
+      s = s.replaceFirst(RegExp(r'\.$'), '');
+    }
+    return s;
   }
 
   Future<Map<String, dynamic>> _getJson(
@@ -417,7 +578,7 @@ class CryptoComExchangeClient implements CryptoExchangeClient {
 
     return Quote(
       symbol: symbol,
-      name: base,
+      name: '$base / $quoteCcy',
       price: price,
       currency: quoteCcy,
       change: change,

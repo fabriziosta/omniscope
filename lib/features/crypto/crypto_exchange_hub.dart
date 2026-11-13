@@ -4,7 +4,9 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../data/crypto/crypto_exchange_client.dart';
 import '../../data/settings/favorites_repository.dart';
+import '../../widgets/in_tab_back.dart';
 import '../../widgets/master_detail_shell.dart';
+import '../../widgets/nav_back_button.dart';
 import 'crypto_exchange_favorites_body.dart';
 import 'crypto_exchange_pairs_body.dart';
 
@@ -80,120 +82,127 @@ class _CryptoExchangeHubState extends State<CryptoExchangeHub> {
     final favorites = context.watch<FavoritesRepository>();
     final theme = ShadTheme.of(context);
     final exchangeName = widget.client.exchange.displayName;
+    VoidCallback? systemBack;
+    if (_narrowSelected != null) {
+      systemBack = _backToSectionList;
+    } else if (widget.showGroupBack) {
+      systemBack = widget.onGroupBack;
+    }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final nestedWide = constraints.maxWidth >=
-            MasterDetailShell.wideBreakpointDefault;
-        // On narrow, hide exchange chrome while a section pane is open so
-        // only one Back control is visible (section → hub → group).
-        final showHubHeader = nestedWide || _narrowSelected == null;
+    return InTabBackEffect(
+      onBack: systemBack,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final nestedWide = constraints.maxWidth >=
+              MasterDetailShell.wideBreakpointDefault;
+          // On narrow, hide exchange chrome while a section pane is open so
+          // only one Back control is visible (section → hub → group).
+          final showHubHeader = nestedWide || _narrowSelected == null;
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (showHubHeader)
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(color: theme.colorScheme.border),
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (showHubHeader)
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(color: theme.colorScheme.border),
+                    ),
                   ),
-                ),
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    widget.showGroupBack ? 8 : 20,
-                    8,
-                    20,
-                    12,
-                  ),
-                  child: Row(
-                    children: [
-                      if (widget.showGroupBack) ...[
-                        ShadButton.ghost(
-                          size: ShadButtonSize.sm,
-                          onPressed: widget.onGroupBack,
-                          child: const Text('Back'),
-                        ),
-                        const SizedBox(width: 4),
-                      ],
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(exchangeName, style: theme.textTheme.h4),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Favorites and spot pairs for this venue.',
-                              style: theme.textTheme.small.copyWith(
-                                color: theme.colorScheme.mutedForeground,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      widget.showGroupBack ? 12 : 20,
+                      8,
+                      20,
+                      12,
+                    ),
+                    child: widget.showGroupBack
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: NavBackButton(
+                                  label: 'Crypto',
+                                  onPressed: widget.onGroupBack,
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                              const SizedBox(height: 4),
+                              Text(exchangeName, style: theme.textTheme.h4),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Favorites and spot pairs for this venue.',
+                                style: theme.textTheme.small.copyWith(
+                                  color: theme.colorScheme.mutedForeground,
+                                ),
+                              ),
+                            ],
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(exchangeName, style: theme.textTheme.h4),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Favorites and spot pairs for this venue.',
+                                style: theme.textTheme.small.copyWith(
+                                  color: theme.colorScheme.mutedForeground,
+                                ),
+                              ),
+                            ],
+                          ),
                   ),
                 ),
-              ),
-            Expanded(
-              child: MasterDetailShell<CryptoExchangeSection>(
-                selected: _selected,
-                narrowSelected: _narrowSelected,
-                onNarrowBack: _backToSectionList,
-                sidebarWidth: 200,
-                sidebarBuilder: (context, highlighted, {required wide}) {
-                  return ListView(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-                    children: [
-                      for (var i = 0;
-                          i < CryptoExchangeSection.values.length;
-                          i++) ...[
-                        if (i > 0) const SizedBox(height: 6),
-                        MasterDetailNavTile(
-                          title: CryptoExchangeSection.values[i].title,
-                          meta: _metaFor(
-                            CryptoExchangeSection.values[i],
-                            favorites,
+              Expanded(
+                child: MasterDetailShell<CryptoExchangeSection>(
+                  selected: _selected,
+                  narrowSelected: _narrowSelected,
+                  onNarrowBack: _backToSectionList,
+                  sidebarWidth: 200,
+                  sidebarBuilder: (context, highlighted, {required wide}) {
+                    return MasterDetailNavList(
+                      tiles: [
+                        for (final section in CryptoExchangeSection.values)
+                          MasterDetailNavTile(
+                            title: section.title,
+                            meta: _metaFor(section, favorites),
+                            icon: section.icon,
+                            selected: highlighted == section,
+                            onTap: () => _select(section, wide: wide),
                           ),
-                          icon: CryptoExchangeSection.values[i].icon,
-                          selected: highlighted ==
-                              CryptoExchangeSection.values[i],
-                          onTap: () => _select(
-                            CryptoExchangeSection.values[i],
-                            wide: wide,
-                          ),
-                        ),
                       ],
-                    ],
-                  );
-                },
-                contentBuilder:
-                    (context, section, {required showBack, onBack}) {
-                  return switch (section) {
-                    CryptoExchangeSection.favorites =>
-                      CryptoExchangeFavoritesPane(
-                        key: ValueKey(
-                          'fav-${widget.client.exchange.id}',
+                    );
+                  },
+                  contentBuilder:
+                      (context, section, {required showBack, onBack}) {
+                    return switch (section) {
+                      CryptoExchangeSection.favorites =>
+                        CryptoExchangeFavoritesPane(
+                          key: ValueKey(
+                            'fav-${widget.client.exchange.id}',
+                          ),
+                          client: widget.client,
+                          showBack: showBack,
+                          onBack: onBack,
+                          backLabel: exchangeName,
                         ),
-                        client: widget.client,
-                        showBack: showBack,
-                        onBack: onBack,
-                      ),
-                    CryptoExchangeSection.pairs => CryptoExchangePairsPane(
-                        key: ValueKey(
-                          'pairs-${widget.client.exchange.id}',
+                      CryptoExchangeSection.pairs => CryptoExchangePairsPane(
+                          key: ValueKey(
+                            'pairs-${widget.client.exchange.id}',
+                          ),
+                          client: widget.client,
+                          showBack: showBack,
+                          onBack: onBack,
+                          backLabel: exchangeName,
                         ),
-                        client: widget.client,
-                        showBack: showBack,
-                        onBack: onBack,
-                      ),
-                  };
-                },
+                    };
+                  },
+                ),
               ),
-            ),
-          ],
-        );
-      },
+            ],
+          );
+        },
+      ),
     );
   }
 }

@@ -68,20 +68,29 @@ class YahooMarketDataClient implements MarketDataClient {
     return _candlesFromChart(chart);
   }
 
-  Future<Map<String, dynamic>> _fetchChart(
+  /// Builds the HTTP URI used for chart requests (CORS proxy on Web).
+  Uri chartRequestUri(
     String symbol, {
     required String range,
     required String interval,
-  }) async {
+    bool? forceWeb,
+  }) {
     final encoded = Uri.encodeComponent(symbol);
     final yahooUri = Uri.parse(
       '$_base/v8/finance/chart/$encoded'
       '?range=$range&interval=$interval',
     );
+    final useWeb = forceWeb ?? kIsWeb;
+    return useWeb ? Uri.parse('$webCorsProxyPrefix$yahooUri') : yahooUri;
+  }
+
+  Future<Map<String, dynamic>> _fetchChart(
+    String symbol, {
+    required String range,
+    required String interval,
+  }) async {
     // Browsers enforce CORS; Yahoo chart responses omit ACAO. Native IO does not.
-    final uri = kIsWeb
-        ? Uri.parse('$webCorsProxyPrefix$yahooUri')
-        : yahooUri;
+    final uri = chartRequestUri(symbol, range: range, interval: interval);
 
     // Free CORS proxies reject / browsers forbid setting User-Agent from JS.
     final headers = <String, String>{

@@ -36,6 +36,7 @@ class PortfolioScreenController extends ChangeNotifier {
   final Map<String, String> _liveErrors = {};
   var _loadingLive = false;
   var _liveGen = 0;
+  var _disposed = false;
 
   Map<String, Quote> get quotes => _quotes;
   bool get loadingQuotes => _loadingQuotes;
@@ -108,6 +109,18 @@ class PortfolioScreenController extends ChangeNotifier {
     ]);
   }
 
+  void _emit() {
+    if (!_disposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _quotesGen++;
+    _liveGen++;
+    super.dispose();
+  }
+
   Future<void> refreshQuotes() async {
     final gen = ++_quotesGen;
     final symbols = _portfolio.state.holdings
@@ -118,26 +131,26 @@ class PortfolioScreenController extends ChangeNotifier {
       _quotes = const {};
       _quoteError = null;
       _loadingQuotes = false;
-      notifyListeners();
+      _emit();
       return;
     }
 
     _loadingQuotes = true;
     _quoteError = null;
-    notifyListeners();
+    _emit();
 
     try {
       final list = await _marketData.getQuotes(symbols);
       if (gen != _quotesGen) return;
       _quotes = {for (final q in list) q.symbol: q};
       _loadingQuotes = false;
-      notifyListeners();
+      _emit();
     } catch (e, st) {
       debugPrint('Portfolio quotes failed: $e\n$st');
       if (gen != _quotesGen) return;
       _quoteError = AppCopy.portfolioQuoteError;
       _loadingQuotes = false;
-      notifyListeners();
+      _emit();
     }
   }
 
@@ -152,13 +165,13 @@ class PortfolioScreenController extends ChangeNotifier {
       _liveByExchange.clear();
       _liveErrors.clear();
       _loadingLive = false;
-      notifyListeners();
+      _emit();
       return;
     }
 
     _loadingLive = true;
     _liveErrors.clear();
-    notifyListeners();
+    _emit();
 
     final next = <String, ExchangePortfolioSnapshot>{};
     final errors = <String, String>{};
@@ -174,7 +187,7 @@ class PortfolioScreenController extends ChangeNotifier {
       ..clear()
       ..addAll(errors);
     _loadingLive = false;
-    notifyListeners();
+    _emit();
   }
 
   Future<void> _loadOneLive(

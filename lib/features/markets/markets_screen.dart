@@ -8,6 +8,7 @@ import '../../data/market/models.dart';
 import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/favorites_repository.dart';
 import '../../widgets/app_empty_view.dart';
+import '../../widgets/in_tab_back.dart';
 import '../../widgets/master_detail_shell.dart';
 import '../../widgets/tab_page_header.dart';
 import 'market_favorites_body.dart';
@@ -88,67 +89,61 @@ class _MarketsScreenState extends State<MarketsScreen> {
         equities.enabledWhere(dataSources.isMarketEnabled);
     final hasSources = enabledEquities.isNotEmpty;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const TabPageHeader(
-          title: 'Markets',
-          subtitle:
-              'Browse by type. Favorites, Indices, ETFs, or Stocks.',
-        ),
-        Expanded(
-          child: !hasSources
-              ? const AppEmptyView(AppCopy.noMarketSourcesEnabled)
-              : MasterDetailShell<MarketsNavItem>(
-                  selected: _selected,
-                  narrowSelected: _narrowSelected,
-                  onNarrowBack: _backToNavList,
-                  sidebarBuilder: (context, highlighted, {required wide}) {
-                    return ListView(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-                      children: [
-                        for (var i = 0;
-                            i < MarketsNavItem.values.length;
-                            i++) ...[
-                          if (i > 0) const SizedBox(height: 6),
-                          MasterDetailNavTile(
-                            title: MarketsNavItem.values[i].title,
-                            meta: _metaFor(
-                              MarketsNavItem.values[i],
-                              favorites,
+    return InTabBackEffect(
+      onBack: _narrowSelected != null ? _backToNavList : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_narrowSelected == null)
+            const TabPageHeader(
+              title: 'Markets',
+              subtitle:
+                  'Browse by type. Favorites, Indices, ETFs, or Stocks.',
+            ),
+          Expanded(
+            child: !hasSources
+                ? const AppEmptyView(AppCopy.noMarketSourcesEnabled)
+                : MasterDetailShell<MarketsNavItem>(
+                    selected: _selected,
+                    narrowSelected: _narrowSelected,
+                    onNarrowBack: _backToNavList,
+                    sidebarBuilder: (context, highlighted, {required wide}) {
+                      return MasterDetailNavList(
+                        tiles: [
+                          for (final item in MarketsNavItem.values)
+                            MasterDetailNavTile(
+                              title: item.title,
+                              meta: _metaFor(item, favorites),
+                              icon: item.icon,
+                              selected: highlighted == item,
+                              onTap: () => _select(item, wide: wide),
                             ),
-                            icon: MarketsNavItem.values[i].icon,
-                            selected:
-                                highlighted == MarketsNavItem.values[i],
-                            onTap: () => _select(
-                              MarketsNavItem.values[i],
-                              wide: wide,
-                            ),
-                          ),
                         ],
-                      ],
-                    );
-                  },
-                  contentBuilder:
-                      (context, item, {required showBack, onBack}) {
-                    if (item == MarketsNavItem.favorites) {
-                      return MarketFavoritesPane(
-                        key: const ValueKey('markets-favorites'),
+                      );
+                    },
+                    contentBuilder:
+                        (context, item, {required showBack, onBack}) {
+                      if (item == MarketsNavItem.favorites) {
+                        return MarketFavoritesPane(
+                          key: const ValueKey('markets-favorites'),
+                          showBack: showBack,
+                          onBack: onBack,
+                          backLabel: 'Markets',
+                        );
+                      }
+                      final kind = item.kind!;
+                      return MarketKindPane(
+                        key: ValueKey(kind),
+                        kind: kind,
                         showBack: showBack,
                         onBack: onBack,
+                        backLabel: 'Markets',
                       );
-                    }
-                    final kind = item.kind!;
-                    return MarketKindPane(
-                      key: ValueKey(kind),
-                      kind: kind,
-                      showBack: showBack,
-                      onBack: onBack,
-                    );
-                  },
-                ),
-        ),
-      ],
+                    },
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }

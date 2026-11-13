@@ -8,6 +8,7 @@ import 'package:omniscope/data/market/exchange_credentials.dart';
 import 'package:omniscope/data/market/models.dart';
 import 'package:omniscope/data/portfolio/portfolio_catalog.dart';
 import 'package:omniscope/data/settings/data_source_settings.dart';
+import 'package:omniscope/data/trading/order_models.dart';
 
 import 'support/memory_config.dart';
 
@@ -46,6 +47,24 @@ class _NoLiveClient implements CryptoExchangeClient {
   Future<ExchangePortfolioSnapshot> fetchPortfolio() async {
     throw UnsupportedError('no live portfolio');
   }
+
+  @override
+  bool get supportsLiveTrading => false;
+
+  @override
+  bool get canPlaceOrders => false;
+
+  @override
+  Future<OrderResult> placeOrder(OrderRequest request) async =>
+      const OrderResult.fail('not supported');
+
+  @override
+  Future<OrderResult> cancelOrder(String orderId) async =>
+      const OrderResult.fail('not supported');
+
+  @override
+  Future<OrderResult> getOrder(String orderId) async =>
+      const OrderResult.fail('not supported');
 }
 
 class _PendingLiveClient implements CryptoExchangeClient {
@@ -79,6 +98,24 @@ class _PendingLiveClient implements CryptoExchangeClient {
   Future<ExchangePortfolioSnapshot> fetchPortfolio() async {
     throw UnsupportedError('pending credentials');
   }
+
+  @override
+  bool get supportsLiveTrading => false;
+
+  @override
+  bool get canPlaceOrders => false;
+
+  @override
+  Future<OrderResult> placeOrder(OrderRequest request) async =>
+      const OrderResult.fail('not supported');
+
+  @override
+  Future<OrderResult> cancelOrder(String orderId) async =>
+      const OrderResult.fail('not supported');
+
+  @override
+  Future<OrderResult> getOrder(String orderId) async =>
+      const OrderResult.fail('not supported');
 }
 
 class _ReadyLiveClient implements CryptoExchangeClient {
@@ -116,6 +153,24 @@ class _ReadyLiveClient implements CryptoExchangeClient {
       balances: const [],
     );
   }
+
+  @override
+  bool get supportsLiveTrading => false;
+
+  @override
+  bool get canPlaceOrders => false;
+
+  @override
+  Future<OrderResult> placeOrder(OrderRequest request) async =>
+      const OrderResult.fail('not supported');
+
+  @override
+  Future<OrderResult> cancelOrder(String orderId) async =>
+      const OrderResult.fail('not supported');
+
+  @override
+  Future<OrderResult> getOrder(String orderId) async =>
+      const OrderResult.fail('not supported');
 }
 
 void main() {

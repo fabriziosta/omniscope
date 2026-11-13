@@ -7,32 +7,28 @@ import '../../data/agents/llm_api_key_config.dart';
 import '../../data/agents/models.dart';
 import '../../data/settings/env_secrets_repository.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/app_tooltip.dart';
 import 'settings_option_tiles.dart';
 
 /// Lists every LLM provider and whether a local API key is stored.
+///
+/// Embedded under Settings → Connections; the parent owns the page intro.
 class LlmApiKeysSectionBody extends StatelessWidget {
   const LlmApiKeysSectionBody({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
     final secrets = context.watch<EnvSecretsRepository>();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'API keys are never sent to an Omniscope server. They stay on this '
-          'device only (and in the project .env when writable). Uninstalling '
-          'the app removes them.',
-          style: theme.textTheme.muted,
-        ),
-        const SizedBox(height: 16),
         const SettingsSubsectionLabel(
-          'Providers',
+          'LLM API keys',
           description:
               'Add a key for each provider you want Agents to use. '
-              'A red mark means no key yet; green means a key is saved locally.',
+              'A red mark means no key yet; green means a key is saved locally. '
+              'Uninstalling the app removes them.',
         ),
         const SizedBox(height: 12),
         for (var i = 0; i < LlmProvider.values.length; i++) ...[
@@ -109,15 +105,25 @@ class _ProviderKeyRow extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
           child: Row(
             children: [
-              Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  color: statusColor,
-                  shape: BoxShape.circle,
+              AppTooltip(
+                message: subtitle,
+                wrapDetector: true,
+                child: SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: Center(
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: statusColor,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 4),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

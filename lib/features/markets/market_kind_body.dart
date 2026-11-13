@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -13,7 +15,10 @@ import '../../widgets/app_empty_view.dart';
 import '../../widgets/master_detail_shell.dart';
 import '../../widgets/quote_list_tile.dart';
 import '../../widgets/quotes_async_body.dart';
+import '../../widgets/quotes_filter_field.dart';
 import '../../widgets/quotes_load_more_bar.dart';
+import '../../widgets/quotes_paging_error_listener.dart';
+import '../../widgets/quotes_refresh_body.dart';
 import '../../widgets/section_caption.dart';
 import '../../widgets/themed_accordion_item.dart';
 import '../asset_detail/asset_detail_screen.dart';
@@ -28,11 +33,13 @@ class MarketKindPane extends StatelessWidget {
     required this.kind,
     required this.showBack,
     this.onBack,
+    this.backLabel = 'Markets',
   });
 
   final MarketAssetKind kind;
   final bool showBack;
   final VoidCallback? onBack;
+  final String backLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -47,6 +54,7 @@ class MarketKindPane extends StatelessWidget {
         kind: kind,
         showBack: showBack,
         onBack: onBack,
+        backLabel: backLabel,
       ),
     );
   }
@@ -57,11 +65,13 @@ class _MarketKindPaneView extends StatefulWidget {
     required this.kind,
     required this.showBack,
     this.onBack,
+    this.backLabel = 'Markets',
   });
 
   final MarketAssetKind kind;
   final bool showBack;
   final VoidCallback? onBack;
+  final String backLabel;
 
   @override
   State<_MarketKindPaneView> createState() => _MarketKindPaneViewState();
@@ -69,6 +79,8 @@ class _MarketKindPaneView extends StatefulWidget {
 
 class _MarketKindPaneViewState extends State<_MarketKindPaneView> {
   DataSourceSettings? _dataSources;
+  final _filterController = TextEditingController();
+  Timer? _filterDebounce;
 
   @override
   void didChangeDependencies() {
@@ -82,6 +94,8 @@ class _MarketKindPaneViewState extends State<_MarketKindPaneView> {
 
   @override
   void dispose() {
+    _filterDebounce?.cancel();
+    _filterController.dispose();
     _dataSources?.removeListener(_onDataSourcesChanged);
     super.dispose();
   }
@@ -95,6 +109,14 @@ class _MarketKindPaneViewState extends State<_MarketKindPaneView> {
     } else {
       setState(() {});
     }
+  }
+
+  void _onFilterChanged(String value) {
+    _filterDebounce?.cancel();
+    _filterDebounce = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      context.read<QuotesListController>().setSymbolQuery(value);
+    });
   }
 
   void _openAsset(String symbol) {
@@ -116,6 +138,7 @@ class _MarketKindPaneViewState extends State<_MarketKindPaneView> {
           'Grouped by exchange. Load more for the next page of symbols.',
       showBack: widget.showBack,
       onBack: widget.onBack,
+      backLabel: widget.backLabel,
       trailing: ShadButton.outline(
         size: ShadButtonSize.sm,
         enabled: enabledEquities.isNotEmpty &&
@@ -126,27 +149,50 @@ class _MarketKindPaneViewState extends State<_MarketKindPaneView> {
       ),
       body: enabledEquities.isEmpty
           ? const AppEmptyView(AppCopy.noMarketSourcesEnabled)
-          : QuotesAsyncBody(
-              errorTitle: 'Could not load $title',
-              builder: (context, quotes) {
-                final matching = groupQuotesByKindAndExchange(quotes)
-                    .where((g) => g.kind == widget.kind);
-                final group = matching.isEmpty ? null : matching.first;
-                if (group == null || group.exchanges.isEmpty) {
-                  return const AppEmptyView(AppCopy.noQuotes);
-                }
+          : QuotesPagingErrorListener(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  QuotesFilterField(
+                    controller: _filterController,
+                    onChanged: _onFilterChanged,
+                  ),
+                  Expanded(
+                    child: QuotesAsyncBody(
+                      errorTitle: 'Could not load $title',
+                      builder: (context, quotes) {
+                        final matching =
+                            groupQuotesByKindAndExchange(quotes)
+                                .where((g) => g.kind == widget.kind);
+                        final group =
+                            matching.isEmpty ? null : matching.first;
+                        if (group == null || group.exchanges.isEmpty) {
+                          return AppEmptyView(
+                            controller.symbolQuery.isEmpty
+                                ? AppCopy.noQuotes
+                                : AppCopy.noQuotesMatchFilter,
+                          );
+                        }
 
-                return ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  children: [
-                    _ExchangeSubgroups(
-                      group: group,
-                      onOpenAsset: _openAsset,
+                        return QuotesRefreshBody(
+                          child: ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding:
+                                const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                            children: [
+                              _ExchangeSubgroups(
+                                group: group,
+                                onOpenAsset: _openAsset,
+                              ),
+                              const QuotesLoadMoreBar(),
+                            ],
+                          ),
+                        );
+                      },
                     ),
-                    const QuotesLoadMoreBar(),
-                  ],
-                );
-              },
+                  ),
+                ],
+              ),
             ),
     );
   }
@@ -163,7 +209,6 @@ class _ExchangeSubgroups extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
     final exchanges = group.exchanges;
 
     // Single exchange: skip a redundant nested accordion header.
@@ -181,16 +226,52 @@ class _ExchangeSubgroups extends StatelessWidget {
         for (final exchangeGroup in exchanges)
           ThemedAccordionItem<String>(
             value: exchangeGroup.exchange,
-            title: Text(
-              '${exchangeGroup.exchange}  ·  ${exchangeGroup.quotes.length}',
-              style: theme.textTheme.large,
-              overflow: TextOverflow.ellipsis,
+            title: _ExchangeHeaderTitle(
+              name: exchangeGroup.exchange,
+              count: exchangeGroup.quotes.length,
             ),
             child: _QuoteList(
               quotes: exchangeGroup.quotes,
               onOpenAsset: onOpenAsset,
             ),
           ),
+      ],
+    );
+  }
+}
+
+/// Exchange name + count, with a muted one-line blurb when we have one.
+class _ExchangeHeaderTitle extends StatelessWidget {
+  const _ExchangeHeaderTitle({
+    required this.name,
+    required this.count,
+  });
+
+  final String name;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final blurb = exchangeDescription(name);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '$name  ·  $count',
+          style: theme.textTheme.large,
+          overflow: TextOverflow.ellipsis,
+        ),
+        if (blurb != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            blurb,
+            style: theme.textTheme.small.copyWith(
+              color: theme.colorScheme.mutedForeground,
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -220,7 +301,7 @@ class _QuoteList extends StatelessWidget {
             padding: EdgeInsets.only(
               bottom: density == ListDensity.compact ? 6 : 8,
             ),
-            child: SectionCaption(exchangeLabel!),
+            child: _ExchangeCaption(exchangeLabel!),
           ),
         ],
         for (var i = 0; i < quotes.length; i++) ...[
@@ -232,6 +313,35 @@ class _QuoteList extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 8),
+      ],
+    );
+  }
+}
+
+/// Single-exchange caption: name plus muted blurb when known.
+class _ExchangeCaption extends StatelessWidget {
+  const _ExchangeCaption(this.name);
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final blurb = exchangeDescription(name);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionCaption(name),
+        if (blurb != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            blurb,
+            style: theme.textTheme.small.copyWith(
+              color: theme.colorScheme.mutedForeground,
+            ),
+          ),
+        ],
       ],
     );
   }

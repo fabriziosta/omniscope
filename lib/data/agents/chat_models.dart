@@ -34,6 +34,7 @@ class AgentChatMessage {
     required this.content,
     required this.createdAt,
     this.kind = AgentChatMessageKind.freeform,
+    this.proposalId,
   });
 
   final String id;
@@ -42,12 +43,16 @@ class AgentChatMessage {
   final DateTime createdAt;
   final AgentChatMessageKind kind;
 
+  /// Linked [TradeProposal.id] when this assistant turn suggested a trade.
+  final String? proposalId;
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'role': role.name,
         'content': content,
         'createdAt': createdAt.toIso8601String(),
         'kind': kind.name,
+        if (proposalId != null) 'proposalId': proposalId,
       };
 
   factory AgentChatMessage.fromJson(Map<String, dynamic> json) {
@@ -58,6 +63,7 @@ class AgentChatMessage {
       createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
       kind: AgentChatMessageKindX.parse(json['kind'] as String?),
+      proposalId: json['proposalId'] as String?,
     );
   }
 

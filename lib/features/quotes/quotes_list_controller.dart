@@ -1,10 +1,14 @@
 import 'package:flutter/foundation.dart';
 
 import '../../core/app_copy.dart';
+import '../../core/market_error_copy.dart';
 import '../../data/market/market_data_client.dart';
 import '../../data/market/models.dart';
 
 /// Screen-scoped quotes loader with page-sized fetches and race-safe gens.
+///
+/// Optional [symbolQuery] filters the in-memory catalog first, then pages
+/// [MarketDataClient.getQuotes] over matches only.
 class QuotesListController extends ChangeNotifier {
   QuotesListController({
     required this._client,
@@ -25,25 +29,64 @@ class QuotesListController extends ChangeNotifier {
   var _loadingMore = false;
   var _hasLoaded = false;
   var _fetchedCount = 0;
+  String _symbolQuery = '';
   String? _error;
+  String? _lastPagingError;
+  DateTime? _fetchedAt;
   List<Quote> _quotes = const [];
 
   List<String> get symbols => _symbols;
+
+  /// Normalized catalog filter (trimmed, lowercased). Empty = browse all.
+  String get symbolQuery => _symbolQuery;
+
   bool get loading => _loading;
   bool get loadingMore => _loadingMore;
   bool get hasLoaded => _hasLoaded;
   String? get error => _error;
+  String? get lastPagingError => _lastPagingError;
+  DateTime? get fetchedAt => _fetchedAt;
   List<Quote> get quotes => _quotes;
   bool get hasError => _error != null;
   bool get isEmpty => _hasLoaded && !hasError && _quotes.isEmpty;
-  bool get hasMore => _fetchedCount < _symbols.length;
-  int get totalSymbols => _symbols.length;
+
+  /// Symbols currently being paged (full catalog or query matches).
+  List<String> get activeSymbols => _activeSymbols;
+
+  bool get hasMore => _fetchedCount < _activeSymbols.length;
+
+  /// Count of symbols in the active (possibly filtered) list.
+  int get totalSymbols => _activeSymbols.length;
   int get fetchedCount => _fetchedCount;
 
+  List<String> get _activeSymbols {
+    if (_symbolQuery.isEmpty) return _symbols;
+    return [
+      for (final s in _symbols)
+        if (s.toLowerCase().contains(_symbolQuery)) s,
+    ];
+  }
+
   /// Replace the browse list (e.g. after Crypto.com instrument discovery).
-  /// Does not fetch — call [refresh] afterward.
+  /// Does not fetch — call [refresh] afterward. Keeps [symbolQuery].
   void updateSymbols(List<String> symbols) {
     _symbols = List<String>.unmodifiable(symbols);
+    notifyListeners();
+  }
+
+  /// Filter the catalog by symbol substring, then fetch the first page of
+  /// matches. No-op when the normalized query is unchanged.
+  Future<void> setSymbolQuery(String query) async {
+    final normalized = query.trim().toLowerCase();
+    if (normalized == _symbolQuery) return;
+    _symbolQuery = normalized;
+    await refresh();
+  }
+
+  /// Clears a soft paging error after the UI has shown it (e.g. toast).
+  void clearPagingError() {
+    if (_lastPagingError == null) return;
+    _lastPagingError = null;
     notifyListeners();
   }
 
@@ -52,6 +95,7 @@ class QuotesListController extends ChangeNotifier {
     _loading = true;
     _loadingMore = false;
     _error = null;
+    _lastPagingError = null;
     _fetchedCount = 0;
     _quotes = const [];
     _hasLoaded = false;
@@ -65,7 +109,7 @@ class QuotesListController extends ChangeNotifier {
       _hasLoaded = true;
       _loading = false;
       _loadingMore = false;
-      _error = AppCopy.checkConnection;
+      _error = userFacingMarketError(e);
       notifyListeners();
     }
   }
@@ -74,6 +118,7 @@ class QuotesListController extends ChangeNotifier {
     if (_loading || _loadingMore || !hasMore || hasError) return;
     final gen = _loadGen;
     _loadingMore = true;
+    _lastPagingError = null;
     notifyListeners();
     try {
       await _fetchNextPage(gen: gen, replace: false);
@@ -81,7 +126,7 @@ class QuotesListController extends ChangeNotifier {
       debugPrint('QuotesListController loadMore failed: $e\n$st');
       if (gen != _loadGen) return;
       _loadingMore = false;
-      // Keep existing quotes; surface a soft error via debug only.
+      _lastPagingError = AppCopy.couldNotLoadMoreQuotes;
       notifyListeners();
     }
   }
@@ -90,7 +135,8 @@ class QuotesListController extends ChangeNotifier {
     required int gen,
     required bool replace,
   }) async {
-    if (_symbols.isEmpty) {
+    final active = _activeSymbols;
+    if (active.isEmpty) {
       if (gen != _loadGen) return;
       _quotes = const [];
       _fetchedCount = 0;
@@ -98,11 +144,13 @@ class QuotesListController extends ChangeNotifier {
       _loading = false;
       _loadingMore = false;
       _error = null;
+      _lastPagingError = null;
+      _fetchedAt = DateTime.now();
       notifyListeners();
       return;
     }
 
-    final slice = _symbols.skip(_fetchedCount).take(pageSize).toList();
+    final slice = active.skip(_fetchedCount).take(pageSize).toList();
     if (slice.isEmpty) {
       if (gen != _loadGen) return;
       _loading = false;
@@ -127,6 +175,8 @@ class QuotesListController extends ChangeNotifier {
     _loading = false;
     _loadingMore = false;
     _error = null;
+    _lastPagingError = null;
+    _fetchedAt = DateTime.now();
     notifyListeners();
   }
 }

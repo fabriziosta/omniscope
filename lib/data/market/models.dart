@@ -30,6 +30,49 @@ class Quote {
   final String? dataSourceId;
 
   bool get isUp => (change ?? 0) >= 0;
+
+  /// Compact identity line for list rows (name / pair · venue).
+  ///
+  /// Prefer a human name when it adds information beyond [symbol]; fall back to
+  /// `BASE / QUOTE` for underscore pairs (e.g. `BTC_USD`). Append [exchange]
+  /// when present so the asset is identifiable before opening detail.
+  String? get listSubtitle {
+    final bits = <String>[];
+    final pairLabel = _pairLabelFromSymbol(symbol);
+    final rawName = name?.trim();
+    if (rawName != null && rawName.isNotEmpty) {
+      final upper = rawName.toUpperCase();
+      final sameAsSymbol = upper == symbol.toUpperCase();
+      final sameAsPairBase = pairLabel != null &&
+          upper == pairLabel.split(' / ').first.toUpperCase();
+      if (!sameAsSymbol && !sameAsPairBase) {
+        bits.add(rawName);
+      } else if (pairLabel != null) {
+        bits.add(pairLabel);
+      }
+    } else if (pairLabel != null) {
+      bits.add(pairLabel);
+    }
+
+    final venue = exchange?.trim();
+    if (venue != null &&
+        venue.isNotEmpty &&
+        (bits.isEmpty || bits.last.toUpperCase() != venue.toUpperCase())) {
+      bits.add(venue);
+    }
+    if (bits.isEmpty) return null;
+    return bits.join(' · ');
+  }
+}
+
+/// `BTC_USD` → `BTC / USD`; returns null when [symbol] is not a pair.
+String? _pairLabelFromSymbol(String symbol) {
+  final parts = symbol.split('_');
+  if (parts.length < 2) return null;
+  final base = parts.first.trim();
+  final quote = parts.sublist(1).join('_').trim();
+  if (base.isEmpty || quote.isEmpty) return null;
+  return '$base / $quote';
 }
 
 class Candle {
@@ -217,6 +260,34 @@ String displayExchangeName(String? exchange) {
     'XETRA' || 'GER' => 'Xetra',
     'CCC' => 'Crypto',
     _ => raw,
+  };
+}
+
+/// Short plain-language note for a [displayExchangeName] label.
+///
+/// Used next to exchange headers in Markets so acronyms like NYSE / Nasdaq
+/// are not a dead end for learners. Returns null when we have no blurb.
+String? exchangeDescription(String displayName) {
+  return switch (displayName) {
+    'NYSE' =>
+      'New York Stock Exchange — major U.S. listed company stocks.',
+    'Nasdaq' =>
+      'U.S. electronic exchange — many tech and growth stocks.',
+    'NYSE Arca' =>
+      'Lists many ETFs and other exchange-traded products.',
+    'Nasdaq Indices' =>
+      'Benchmark indexes tracked on Nasdaq.',
+    'S&P' =>
+      'Standard & Poor’s — publisher of widely followed market indexes.',
+    'Dow Jones' =>
+      'Publisher of the Dow Jones Industrial Average and related indexes.',
+    'Xetra' =>
+      'German electronic exchange for stocks and ETFs (Frankfurt).',
+    'Crypto' =>
+      'Digital-asset trading venues — not a traditional stock exchange.',
+    'Other' =>
+      'Listings without a known exchange label.',
+    _ => null,
   };
 }
 

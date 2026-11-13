@@ -4,12 +4,18 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../core/brand_colors.dart';
 import '../core/formatting.dart';
+import '../data/agents/agent_launch.dart';
 import '../data/market/models.dart';
 import '../data/settings/display_settings.dart';
 import '../data/settings/favorites_repository.dart';
+import 'agent_launch_button.dart';
+import 'app_tooltip.dart';
 import 'tappable_nav_row.dart';
 
 /// Shared Markets / Crypto quote row — respects [ListDensity] and [PriceFormat].
+///
+/// Both densities keep a two-line identity (symbol + name/venue) so the row is
+/// readable before opening asset detail; compact only tightens padding/gaps.
 class QuoteListTile extends StatelessWidget {
   const QuoteListTile({
     super.key,
@@ -18,6 +24,7 @@ class QuoteListTile extends StatelessWidget {
     this.density = ListDensity.comfortable,
     this.cryptoExchangeId,
     this.showFavorite = true,
+    this.showInvestigate = true,
   });
 
   final Quote quote;
@@ -31,6 +38,9 @@ class QuoteListTile extends StatelessWidget {
   /// Hide the star (e.g. non-quote surfaces). Defaults to on.
   final bool showFavorite;
 
+  /// Sparkles control that deep-links into Investigate for this symbol.
+  final bool showInvestigate;
+
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
@@ -42,6 +52,10 @@ class QuoteListTile extends StatelessWidget {
     final compact = density == ListDensity.compact;
     final changeText =
         '${formatSignedMoney(quote.change)}  ${formatPercent(quote.changePercent)}';
+    final subtitle = quote.listSubtitle;
+    final semanticsLabel =
+        '${quote.symbol}${subtitle == null ? '' : ', $subtitle'}, '
+        'price $priceText, change $changeText';
 
     final favoriteButton = showFavorite
         ? _FavoriteStarButton(
@@ -50,117 +64,79 @@ class QuoteListTile extends StatelessWidget {
             compact: compact,
           )
         : null;
+    final investigateButton = showInvestigate
+        ? AgentLaunchButton(
+            symbol: quote.symbol,
+            intent: AgentLaunchIntent.investigate,
+            iconOnly: true,
+          )
+        : null;
 
-    if (compact) {
-      final source = quote.dataSource?.trim();
-      return TappableNavRow(
-        onTap: onTap,
-        compact: true,
-        leading: Text.rich(
-          TextSpan(
-            children: [
-              TextSpan(
-                text: quote.symbol,
-                style: theme.textTheme.large,
-              ),
-              if (source != null && source.isNotEmpty) ...[
-                TextSpan(
-                  text: '  ·  ',
-                  style: theme.textTheme.small.copyWith(
-                    color: theme.colorScheme.mutedForeground,
-                  ),
-                ),
-                TextSpan(
-                  text: source,
-                  style: theme.textTheme.small.copyWith(
-                    color: theme.colorScheme.mutedForeground,
-                  ),
-                ),
-              ],
-            ],
-          ),
+    final leading = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          quote.symbol,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.large,
         ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (favoriteButton != null) ...[
-              favoriteButton,
-              const SizedBox(width: 4),
-            ],
-            Flexible(
-              child: Text.rich(
-                TextSpan(
-                  children: [
-                    TextSpan(
-                      text: priceText,
-                      style: theme.textTheme.large,
-                    ),
-                    TextSpan(
-                      text: '  $changeText',
-                      style: theme.textTheme.small.copyWith(color: changeColor),
-                    ),
-                  ],
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.end,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return TappableNavRow(
-      onTap: onTap,
-      leading: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(quote.symbol, style: theme.textTheme.large),
-          if (quote.name != null) ...[
-            const SizedBox(height: 2),
-            Text(
-              quote.name!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.muted,
-            ),
-          ],
-          if (quote.dataSource != null) ...[
-            const SizedBox(height: 2),
-            Text(
-              quote.dataSource!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.small.copyWith(
-                color: theme.colorScheme.mutedForeground,
-              ),
-            ),
-          ],
+        if (subtitle != null) ...[
+          SizedBox(height: compact ? 1 : 2),
+          Text(
+            subtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.muted,
+          ),
         ],
-      ),
+      ],
+    );
+
+    final priceColumn = Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          priceText,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.end,
+          style: theme.textTheme.large,
+        ),
+        SizedBox(height: compact ? 1 : 2),
+        Text(
+          changeText,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.end,
+          style: theme.textTheme.small.copyWith(color: changeColor),
+        ),
+      ],
+    );
+
+    final row = TappableNavRow(
+      onTap: onTap,
+      compact: compact,
+      leading: leading,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          ?investigateButton,
           if (favoriteButton != null) ...[
             favoriteButton,
-            const SizedBox(width: 8),
+            SizedBox(width: compact ? 4 : 8),
           ],
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(priceText, style: theme.textTheme.large),
-              const SizedBox(height: 2),
-              Text(
-                changeText,
-                style: theme.textTheme.small.copyWith(color: changeColor),
-              ),
-            ],
-          ),
+          Flexible(child: priceColumn),
         ],
       ),
+    );
+
+    return Semantics(
+      button: true,
+      label: semanticsLabel,
+      child: row,
     );
   }
 }
@@ -183,27 +159,37 @@ class _FavoriteStarButton extends StatelessWidget {
     final favorited = cryptoExchangeId == null
         ? favorites.isMarketFavorite(symbol)
         : favorites.isCryptoFavorite(cryptoExchangeId!, symbol);
+    final label =
+        favorited ? 'Remove $symbol from favorites' : 'Add $symbol to favorites';
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        final repo = context.read<FavoritesRepository>();
-        if (cryptoExchangeId == null) {
-          repo.toggleMarketFavorite(symbol);
-        } else {
-          repo.toggleCryptoFavorite(cryptoExchangeId!, symbol);
-        }
-      },
-      child: SizedBox(
-        width: 44,
-        height: 44,
-        child: Center(
-          child: Icon(
-            favorited ? LucideIcons.star : LucideIcons.starOff,
-            size: compact ? 18 : 20,
-            color: favorited
-                ? theme.colorScheme.primary
-                : theme.colorScheme.mutedForeground,
+    return Semantics(
+      button: true,
+      label: label,
+      child: AppTooltip(
+        message: favorited ? 'Remove from favorites' : 'Add to favorites',
+        wrapDetector: true,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            final repo = context.read<FavoritesRepository>();
+            if (cryptoExchangeId == null) {
+              repo.toggleMarketFavorite(symbol);
+            } else {
+              repo.toggleCryptoFavorite(cryptoExchangeId!, symbol);
+            }
+          },
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Center(
+              child: Icon(
+                favorited ? LucideIcons.star : LucideIcons.starOff,
+                size: compact ? 18 : 20,
+                color: favorited
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.mutedForeground,
+              ),
+            ),
           ),
         ),
       ),

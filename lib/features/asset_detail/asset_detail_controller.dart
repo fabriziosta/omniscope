@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../core/app_copy.dart';
 import '../../core/formatting.dart';
+import '../../core/market_error_copy.dart';
 import '../../data/market/market_data_client.dart';
 import '../../data/market/models.dart';
 import '../../data/portfolio/portfolio_repository.dart';
@@ -59,6 +60,26 @@ class AssetDetailController extends ChangeNotifier {
     ('1Y', '1y', '1d'),
   ];
 
+  /// Hover / a11y label for a [ranges] chip abbreviation.
+  static String rangeTooltip(String shortLabel) {
+    return switch (shortLabel) {
+      '1M' => '1 month',
+      '3M' => '3 months',
+      '1Y' => '1 year',
+      _ => shortLabel,
+    };
+  }
+
+  /// One-line explainer under chart range chips.
+  static String rangeExplainer(String shortLabel) {
+    return switch (shortLabel) {
+      '1M' => 'Daily closes for the last month.',
+      '3M' => 'Daily closes for the last three months.',
+      '1Y' => 'Daily closes for the last year.',
+      _ => 'Daily closes for this period.',
+    };
+  }
+
   final String symbol;
   final MarketDataClient _marketData;
   final PortfolioRepository _portfolio;
@@ -68,6 +89,8 @@ class AssetDetailController extends ChangeNotifier {
   List<Candle> _candles = const [];
   var _loading = true;
   var _hasError = false;
+  String? _errorMessage;
+  DateTime? _fetchedAt;
   var _loadGen = 0;
 
   int get rangeIndex => _rangeIndex;
@@ -76,11 +99,15 @@ class AssetDetailController extends ChangeNotifier {
   List<Candle> get candles => _candles;
   bool get loading => _loading;
   bool get hasError => _hasError;
+  DateTime? get fetchedAt => _fetchedAt;
+  String get loadErrorMessage =>
+      _errorMessage ?? AppCopy.checkConnection;
 
   Future<void> load() async {
     final gen = ++_loadGen;
     _loading = true;
     _hasError = false;
+    _errorMessage = null;
     notifyListeners();
 
     final range = ranges[_rangeIndex];
@@ -98,12 +125,15 @@ class AssetDetailController extends ChangeNotifier {
       _candles = results[1] as List<Candle>;
       _loading = false;
       _hasError = false;
+      _errorMessage = null;
+      _fetchedAt = DateTime.now();
       notifyListeners();
     } catch (e, st) {
       debugPrint('Asset detail load failed for $symbol: $e\n$st');
       if (gen != _loadGen) return;
       _hasError = true;
       _loading = false;
+      _errorMessage = userFacingMarketError(e);
       notifyListeners();
     }
   }
@@ -148,6 +178,4 @@ class AssetDetailController extends ChangeNotifier {
       error: result.error,
     );
   }
-
-  String get loadErrorMessage => AppCopy.checkConnection;
 }
