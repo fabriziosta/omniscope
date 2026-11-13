@@ -132,6 +132,15 @@ Selectable LLM models live in [`assets/agents/llm_models.json`](assets/agents/ll
 
 See [`AGENTS.md`](AGENTS.md) for conventions when extending Omniscope (UI rules, provider swaps, portfolio contract, AI agent roles).
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Please follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+Security reports: [SECURITY.md](SECURITY.md).
+
 ## License / disclaimer
 
-Not financial advice. Paper trading is simulated. Market data ownership remains with the originating exchanges and Yahoo Finance.
+Released under the [MIT License](LICENSE).
+
+**Use at your own risk.** Omniscope is an educational proof of concept, not a brokerage or financial-advice product. Nothing in the app (quotes, charts, paper trades, agent chat, or CLI pipelines) is investment, legal, or tax advice. You are solely responsible for any decisions you make. Authors and contributors accept no liability for losses, damages, or data issues arising from use of this software, market data, or third-party APIs.
+
+Not financial advice. Paper trading is simulated. Market data ownership remains with the originating exchanges and Yahoo Finance. API keys and secrets stay on your device — protect them accordingly.

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/fabriziosta/omniscope/blob/main/SECURITY.md
+    about: Please report vulnerabilities privately — see SECURITY.md
+  - name: Agent / architecture questions
+    url: https://github.com/fabriziosta/omniscope/blob/main/AGENTS.md
+    about: Conventions for extending Omniscope (UI, data, agents)
