@@ -7,10 +7,24 @@ Available roles (and model presets) live in [`omniscope_agents/manifest.json`](o
 | Role | Framework | Workload | Suggested models |
 |------|-----------|----------|------------------|
 | Market Research & Analysis | **CrewAI** | Investigation | Lighter (e.g. `gpt-6-luna`, `deepseek-flash`) |
+| Live Balance Explainer | **CrewAI** | Investigation | Lighter (e.g. `gpt-6-luna`, `deepseek-flash`) |
+| Portfolio & Allocation Guide | **CrewAI** | Investigation | Lighter (e.g. `gpt-6-luna`, `deepseek-flash`) |
+| Practice Portfolio Coach | **CrewAI** | Investigation | Lighter (e.g. `gpt-6-luna`, `deepseek-flash`) |
 | Intraday Execution & Risk Control | **LangGraph** | Trading | Heavier (e.g. `gpt-6-astra`, `grok-4.7`) |
 | Hedge Fund Desk | **LangGraph** (CrewAI for analyst/debate stages) | Trading | Heavier (e.g. `gpt-6-astra`, `grok-4.7`) |
 
 Flutter stores API keys and model choices locally; this package runs the agents from the command line today.
+
+### Prompt source of truth
+
+Do **not** put Flutter + CLI prompts in one mega JSON. Layers:
+
+| Layer | Location | Notes |
+|-------|----------|-------|
+| Role catalog | [`omniscope_agents/manifest.json`](omniscope_agents/manifest.json) | Metadata only |
+| In-app chat | Flutter `lib/data/agents/agent_role_prompts.dart` | Live exchange; not used here |
+| CLI harness | Per-package `prompts.py` (+ shared [`disclaimer.py`](omniscope_agents/disclaimer.py)) | Paper / educational |
+| Trade JSON keys | [`trade_schema.py`](omniscope_agents/trade_schema.py) | Shared field names only (`ticker`, `action`, `quantity`, `rationale`, `risk_approved`) |
 
 ## Setup
 
@@ -35,6 +49,39 @@ export OMNISCOPE_API_KEY='...'
 ```bash
 python -m omniscope_agents.market_research.run \
   --symbol AAPL \
+  --provider openai \
+  --model gpt-6-luna
+```
+
+## Live balance explainer (CrewAI)
+
+Prefer in-app chat (Portfolio Live / Settings → Portfolios injects live balances). CLI accepts a pasted snapshot:
+
+```bash
+python -m omniscope_agents.live_balance.run \
+  --snapshot $'Live exchange context...\n- Total value: $1000\n- BTC: qty 0.1' \
+  --provider openai \
+  --model gpt-6-luna
+```
+
+## Portfolio & allocation guide (CrewAI)
+
+Prefer in-app chat (Practice / Live **Allocation** CTAs). CLI:
+
+```bash
+python -m omniscope_agents.portfolio_guide.run \
+  --snapshot $'Practice portfolio...\n- Cash: $5000\n- AAPL: qty 10' \
+  --provider openai \
+  --model gpt-6-luna
+```
+
+## Practice portfolio coach (CrewAI)
+
+Prefer in-app chat (Practice **Coach** CTA). CLI:
+
+```bash
+python -m omniscope_agents.paper_portfolio.run \
+  --snapshot $'Practice portfolio...\n- Cash: $5000\n- AAPL: qty 10' \
   --provider openai \
   --model gpt-6-luna
 ```

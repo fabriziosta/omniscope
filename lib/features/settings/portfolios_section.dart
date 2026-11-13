@@ -3,11 +3,13 @@ import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../core/formatting.dart';
+import '../../data/agents/agent_launch.dart';
 import '../../data/crypto/crypto_exchange_registry.dart';
 import '../../data/portfolio/portfolio_catalog.dart';
 import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/env_secrets_repository.dart';
+import '../../widgets/agent_launch_button.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/app_tooltip.dart';
 import 'portfolio_actions.dart';
@@ -107,12 +109,29 @@ class _PortfoliosSectionBodyState extends State<PortfoliosSectionBody> {
           title: 'Practice',
           subtitle: 'Paper money for learning — stored only on this device.',
           icon: LucideIcons.wallet,
-          trailing: const AppTooltip(
-            message: 'Paper — practice money only',
-            wrapDetector: true,
-            child: ShadBadge.secondary(
-              child: Text('Paper'),
-            ),
+          trailing: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AgentLaunchButton(
+                intent: AgentLaunchIntent.explainPortfolio,
+                outline: true,
+                label: 'Allocation',
+              ),
+              SizedBox(width: 8),
+              AgentLaunchButton(
+                intent: AgentLaunchIntent.paperReview,
+                outline: true,
+                label: 'Coach',
+              ),
+              SizedBox(width: 8),
+              AppTooltip(
+                message: 'Paper — practice money only',
+                wrapDetector: true,
+                child: ShadBadge.secondary(
+                  child: Text('Paper'),
+                ),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 16),
@@ -198,6 +217,22 @@ class _PortfoliosSectionBodyState extends State<PortfoliosSectionBody> {
                           child: Text('Live'),
                         ),
                       ),
+                      if (ready) ...[
+                        const SizedBox(width: 8),
+                        AgentLaunchButton(
+                          exchangeId: desc.id,
+                          intent: AgentLaunchIntent.explainLive,
+                          outline: true,
+                          label: 'Balances',
+                        ),
+                        const SizedBox(width: 8),
+                        AgentLaunchButton(
+                          exchangeId: desc.id,
+                          intent: AgentLaunchIntent.explainPortfolio,
+                          outline: true,
+                          label: 'Allocation',
+                        ),
+                      ],
                       if (!ready && widget.onOpenDataSources != null) ...[
                         const SizedBox(width: 8),
                         ShadButton.outline(

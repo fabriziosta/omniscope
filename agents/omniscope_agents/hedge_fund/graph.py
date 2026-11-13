@@ -14,6 +14,8 @@ from typing import Any, Literal, TypedDict
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
 
+from omniscope_agents.disclaimer import EDUCATIONAL_DISCLAIMER
+from omniscope_agents.hedge_fund import prompts as desk_prompts
 from omniscope_agents.hedge_fund.analysts.crew import run_analyst_team
 from omniscope_agents.hedge_fund.research.crew import run_research_debate
 from omniscope_agents.hedge_fund.tools.risk_metrics import (
@@ -23,8 +25,6 @@ from omniscope_agents.hedge_fund.tools.risk_metrics import (
     evaluate_risk_gates,
 )
 from omniscope_agents.llm import Provider, build_chat_model
-
-_DISCLAIMER = "Not financial advice — educational paper trading only."
 
 
 class DeskState(TypedDict, total=False):
@@ -125,28 +125,17 @@ def _risk_manager_node(state: DeskState) -> DeskState:
         }
 
     llm = build_chat_model(**_llm_kwargs(state))
-    prompt = (
-        f"Symbol: {state.get('symbol')}\n"
-        f"Live price: {price}\n"
-        f"Proposed paper trade: {proposed_side} {proposed_qty}\n"
-        f"Cash: {state.get('cash')} | Held: {state.get('held_shares')}\n"
-        f"Realized vol: {metrics.get('realized_vol_annual')}\n"
-        f"Hard gate result: risk_ok={gates['risk_ok']}\n"
-        f"Gate notes: {gates['risk_notes']}\n\n"
-        f"Debate packet:\n{state.get('debate_report') or ''}\n\n"
-        "You are the Risk Manager with absolute veto power. "
-        "In under 150 words, explain whether the hard gates allow a paper trade. "
-        "Do not override a failed hard gate. "
-        f"End with: '{_DISCLAIMER}'"
+    prompt = desk_prompts.risk_manager_human_prompt(
+        state,
+        gates=gates,
+        metrics=metrics,
+        price=price,
+        proposed_side=proposed_side,
+        proposed_qty=proposed_qty,
     )
     response = llm.invoke(
         [
-            SystemMessage(
-                content=(
-                    "Omniscope educational Risk Manager. Hard constraints win. "
-                    "Plain language for learners."
-                )
-            ),
+            SystemMessage(content=desk_prompts.RISK_MANAGER_SYSTEM),
             HumanMessage(content=prompt),
         ]
     )
@@ -183,14 +172,9 @@ def _reject_node(state: DeskState) -> DeskState:
         "quantity": 0,
         "rationale": state.get("risk_notes") or "Risk Manager veto.",
         "risk_approved": False,
-        "disclaimer": _DISCLAIMER,
+        "disclaimer": EDUCATIONAL_DISCLAIMER,
     }
-    summary = (
-        f"Risk Manager VETO for {state.get('symbol')}.\n"
-        f"{state.get('risk_narrative') or ''}\n"
-        f"Notes: {state.get('risk_notes')}\n"
-        f"{_DISCLAIMER}"
-    )
+    summary = desk_prompts.reject_summary(state)
     return {
         **state,
         "decision": "reject",
@@ -211,38 +195,22 @@ def _head_trader_node(state: DeskState) -> DeskState:
         budget_shares = min(MAX_SHARES, (cash * MAX_POSITION_PCT) / price)
     cap = max(0.0, math.floor(min(max_qty, budget_shares)))
 
-    prompt = (
-        f"Symbol: {state.get('symbol')}\n"
-        f"Live price: {price}\n"
-        f"Paper cash: {cash} | held shares: {state.get('held_shares')}\n"
-        f"Risk Manager APPROVED. Max educational shares: {cap:g}\n"
-        f"Risk notes: {state.get('risk_notes')}\n\n"
-        f"Analyst packet:\n{state.get('analyst_report') or ''}\n\n"
-        f"Debate:\n{state.get('debate_report') or ''}\n\n"
-        "You are the Head Trader / Portfolio Manager for educational paper trading. "
-        "Choose action buy, sell, or hold. Quantity must be an integer ≤ "
-        f"{cap:g} for buys, and ≤ held shares for sells. "
-        "Prefer smaller size when the bear case is strong. "
-        "Respond with ONLY a JSON object:\n"
-        '{"ticker":"...","action":"buy|sell|hold","quantity":0,'
-        '"rationale":"...","risk_approved":true}\n'
-        f"Rationale under 120 words. Mention {_DISCLAIMER}."
+    prompt = desk_prompts.head_trader_human_prompt(
+        state,
+        price=price,
+        cash=cash,
+        cap=cap,
     )
     response = llm.invoke(
         [
-            SystemMessage(
-                content=(
-                    "Omniscope Head Trader. Output valid JSON only. "
-                    "No broker routing — paper trade proposal only."
-                )
-            ),
+            SystemMessage(content=desk_prompts.HEAD_TRADER_SYSTEM),
             HumanMessage(content=prompt),
         ]
     )
     raw = _content_to_str(response)
     trade = _parse_trade_json(raw, fallback_symbol=str(state.get("symbol") or ""))
     trade["risk_approved"] = True
-    trade["disclaimer"] = _DISCLAIMER
+    trade["disclaimer"] = EDUCATIONAL_DISCLAIMER
 
     # Enforce hard caps post-LLM.
     action = str(trade.get("action") or "hold").lower()
@@ -286,15 +254,11 @@ def _head_trader_node(state: DeskState) -> DeskState:
                     f"Original rationale: {trade.get('rationale')}"
                 ),
                 "risk_approved": False,
-                "disclaimer": _DISCLAIMER,
+                "disclaimer": EDUCATIONAL_DISCLAIMER,
             }
             decision = "reject"
 
-    summary = (
-        f"Head Trader paper proposal for {trade['ticker']}: "
-        f"{trade['action']} {trade['quantity']}.\n"
-        f"{trade.get('rationale')}\n{_DISCLAIMER}"
-    )
+    summary = desk_prompts.head_trader_summary(trade)
     return {
         **state,
         "decision": decision,
@@ -379,6 +343,7 @@ def _content_to_str(response: Any) -> str:
 
 
 def _parse_trade_json(raw: str, *, fallback_symbol: str) -> dict[str, Any]:
+    """Parse Head Trader JSON; keys must match trade_schema.TRADE_JSON_KEYS."""
     text = raw.strip()
     # Strip markdown fences if present.
     fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)

@@ -11,6 +11,8 @@ import '../../widgets/app_placeholder_icon.dart';
 import '../../widgets/app_tooltip.dart';
 import '../../widgets/in_tab_back.dart';
 import '../../widgets/master_detail_shell.dart';
+import '../../widgets/notification_inbox.dart';
+import '../agents/agent_schedule_coordinator.dart';
 import '../agents/agents_screen.dart';
 import '../crypto/crypto_group_screen.dart';
 import '../markets/markets_screen.dart';
@@ -24,7 +26,7 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   final _inTabBack = InTabBackRegistry();
 
   /// One stack per tab so pushes stay above the bottom nav.
@@ -56,6 +58,36 @@ class _HomeShellState extends State<HomeShell> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<AgentScheduleCoordinator>().resume();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final schedule = context.read<AgentScheduleCoordinator>();
+    switch (state) {
+      case AppLifecycleState.resumed:
+        schedule.resume();
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+        schedule.pause();
+    }
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     context.read<AppErrorController>().bindTabNavigators(_tabNavigatorKeys);
@@ -85,8 +117,7 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
     final index = context.watch<ShellNavigationController>().tabIndex;
-    final showBrandHeader =
-        MediaQuery.sizeOf(context).width >=
+    final wide = MediaQuery.sizeOf(context).width >=
         MasterDetailShell.wideBreakpointDefault;
 
     return InTabBackScope(
@@ -108,8 +139,9 @@ class _HomeShellState extends State<HomeShell> {
           child: SafeArea(
             child: Column(
               children: [
-                // Wide only — reclaim ~52px on phones; tab titles stay.
-                if (showBrandHeader) const _ShellHeader(),
+                // Always show shell chrome so the notification bell is reachable
+                // on phones; brand wordmark stays wide-only.
+                _ShellHeader(showBrand: wide),
                 Expanded(
                   child: IndexedStack(
                     index: index,
@@ -218,23 +250,31 @@ class _TabRouteObserver extends NavigatorObserver {
       _notify();
 }
 
-/// Slim brand bar for wide layouts — compact glyph + wordmark.
+/// Slim shell chrome — brand (wide) + always-visible notification bell.
 class _ShellHeader extends StatelessWidget {
-  const _ShellHeader();
+  const _ShellHeader({required this.showBrand});
+
+  final bool showBrand;
 
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      padding: const EdgeInsets.fromLTRB(12, 4, 8, 4),
       child: SizedBox(
         height: 40,
         child: Row(
           children: [
-            const AppPlaceholderIcon(size: 24),
-            const SizedBox(width: 10),
-            Text('Omniscope', style: theme.textTheme.large),
+            if (showBrand) ...[
+              const AppPlaceholderIcon(size: 24),
+              const SizedBox(width: 10),
+              Text('Omniscope', style: theme.textTheme.large),
+            ] else ...[
+              const AppPlaceholderIcon(size: 22),
+            ],
+            const Spacer(),
+            const NotificationBellButton(),
           ],
         ),
       ),

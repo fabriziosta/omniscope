@@ -15,6 +15,7 @@ import 'package:omniscope/data/agents/trade_proposal_repository.dart';
 import 'package:omniscope/data/crypto/crypto_exchange_registry.dart';
 import 'package:omniscope/data/market/market_data_client.dart';
 import 'package:omniscope/data/market/models.dart';
+import 'package:omniscope/data/portfolio/portfolio_repository.dart';
 import 'package:omniscope/data/settings/data_source_settings.dart';
 import 'package:omniscope/data/settings/env_secrets_repository.dart';
 import 'package:omniscope/data/trading/broker_exchange_registry.dart';
@@ -57,6 +58,36 @@ void main() {
       id: 'marketResearch',
       title: 'Market Research & Analysis',
       description: 'Research brief',
+      framework: AgentFramework.crewAi,
+      module: 'm',
+      packagePath: 'p',
+      workload: AgentWorkload.investigation,
+      suggestedModels: {},
+    ),
+    const AgentRoleDefinition(
+      id: 'liveBalanceExplainer',
+      title: 'Live Balance Explainer',
+      description: 'Explain balances',
+      framework: AgentFramework.crewAi,
+      module: 'm',
+      packagePath: 'p',
+      workload: AgentWorkload.investigation,
+      suggestedModels: {},
+    ),
+    const AgentRoleDefinition(
+      id: 'portfolioGuide',
+      title: 'Portfolio & Allocation Guide',
+      description: 'Allocation review',
+      framework: AgentFramework.crewAi,
+      module: 'm',
+      packagePath: 'p',
+      workload: AgentWorkload.investigation,
+      suggestedModels: {},
+    ),
+    const AgentRoleDefinition(
+      id: 'paperPortfolioCoach',
+      title: 'Practice Portfolio Coach',
+      description: 'Practice coach',
       framework: AgentFramework.crewAi,
       module: 'm',
       packagePath: 'p',
@@ -108,6 +139,34 @@ void main() {
       );
     });
 
+    test('maps explainLive to live balance explainer', () {
+      final roles = AgentLaunchResolver.rolesForIntent(
+        availableRoles: sampleRoles,
+        intent: AgentLaunchIntent.explainLive,
+      );
+      expect(roles.map((r) => r.id).toList(), ['liveBalanceExplainer']);
+      expect(AgentLaunchIntent.explainLive.ctaLabel, 'Explain balances');
+    });
+
+    test('maps explainPortfolio to portfolio guide', () {
+      final roles = AgentLaunchResolver.rolesForIntent(
+        availableRoles: sampleRoles,
+        intent: AgentLaunchIntent.explainPortfolio,
+      );
+      expect(roles.map((r) => r.id).toList(), ['portfolioGuide']);
+      expect(AgentLaunchIntent.explainPortfolio.ctaLabel, 'Review allocation');
+      expect(AgentLaunchIntent.explainPortfolio.isPortfolioLevel, isTrue);
+    });
+
+    test('maps paperReview to practice portfolio coach', () {
+      final roles = AgentLaunchResolver.rolesForIntent(
+        availableRoles: sampleRoles,
+        intent: AgentLaunchIntent.paperReview,
+      );
+      expect(roles.map((r) => r.id).toList(), ['paperPortfolioCoach']);
+      expect(AgentLaunchIntent.paperReview.ctaLabel, 'Practice coach');
+    });
+
     test('filters to connected roles only', () {
       final connected = AgentLaunchResolver.connectedAmong(
         roles: sampleRoles,
@@ -138,12 +197,17 @@ void main() {
     await activity.load();
     final dataSources = DataSourceSettings(store: store);
     await dataSources.load();
+    final portfolio = PortfolioRepository(store: store);
+    await portfolio.load();
     const cryptoRegistry = CryptoExchangeRegistry([]);
     const brokerRegistry = BrokerExchangeRegistry.empty;
+    final marketData = _agentMarketData();
     final tradeExecutor = RoutingTradeExecutor(
       cryptoRegistry: cryptoRegistry,
       brokerRegistry: brokerRegistry,
       dataSources: dataSources,
+      portfolio: portfolio,
+      marketData: marketData,
     );
 
     var llmCalls = 0;
@@ -164,11 +228,12 @@ void main() {
     await tester.pumpWidget(
       MultiProvider(
         providers: [
-          Provider<MarketDataClient>.value(value: _agentMarketData()),
+          Provider<MarketDataClient>.value(value: marketData),
           Provider<CryptoExchangeRegistry>.value(value: cryptoRegistry),
           Provider<BrokerExchangeRegistry>.value(value: brokerRegistry),
           Provider<TradeExecutor>.value(value: tradeExecutor),
           ChangeNotifierProvider<DataSourceSettings>.value(value: dataSources),
+          ChangeNotifierProvider<PortfolioRepository>.value(value: portfolio),
           ChangeNotifierProvider<AgentsRepository>.value(value: agents),
           ChangeNotifierProvider<AgentChatRepository>.value(value: agentChats),
           ChangeNotifierProvider<TradeProposalRepository>.value(

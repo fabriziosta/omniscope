@@ -8,6 +8,7 @@ enum AgentActivityKind {
   orderAck,
   orderFailed,
   runBlockedNoExchange,
+  scheduledRun,
 }
 
 extension AgentActivityKindX on AgentActivityKind {
@@ -20,6 +21,7 @@ extension AgentActivityKindX on AgentActivityKind {
         AgentActivityKind.orderAck => 'Order placed',
         AgentActivityKind.orderFailed => 'Order failed',
         AgentActivityKind.runBlockedNoExchange => 'Blocked',
+        AgentActivityKind.scheduledRun => 'Scheduled',
       };
 
   static AgentActivityKind parse(String? raw) {

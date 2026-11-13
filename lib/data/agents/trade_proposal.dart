@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import '../trading/order_models.dart';
 
-/// Lifecycle of an agent-suggested live trade.
+/// Lifecycle of an agent-suggested trade (Practice or live).
 enum TradeProposalStatus {
   pending,
   confirmed,
@@ -30,7 +30,21 @@ extension TradeProposalStatusX on TradeProposalStatus {
   }
 }
 
-/// Suggested live order from an agent (never paper).
+/// Canonical LLM JSON keys for trade proposals (snake_case).
+///
+/// Keep in sync with `agents/omniscope_agents/trade_schema.py` (`TRADE_JSON_KEYS`).
+/// Prompt prose differs by surface (Flutter = live; CLI = paper); only keys match.
+abstract final class TradeProposalLlmSchema {
+  static const List<String> canonicalLlmKeys = [
+    'ticker',
+    'action',
+    'quantity',
+    'rationale',
+    'risk_approved',
+  ];
+}
+
+/// Suggested order from an agent (Practice or live portfolio).
 enum TradeProposalSide {
   buy,
   sell,

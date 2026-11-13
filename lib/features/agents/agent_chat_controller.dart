@@ -14,6 +14,8 @@ import '../../data/agents/trade_proposal_repository.dart';
 import '../../data/crypto/crypto_exchange_client.dart';
 import '../../data/crypto/crypto_exchange_registry.dart';
 import '../../data/market/market_data_client.dart';
+import '../../data/portfolio/portfolio_catalog.dart';
+import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/data_source_settings.dart';
 import '../../data/trading/order_models.dart';
 import '../../data/trading/trade_executor.dart';
@@ -52,6 +54,7 @@ class AgentChatController extends ChangeNotifier {
     required this._activity,
     required this._cryptoRegistry,
     required this._dataSources,
+    required this._portfolio,
   });
 
   final AgentRoleDefinition role;
@@ -64,6 +67,7 @@ class AgentChatController extends ChangeNotifier {
   final AgentActivityRepository _activity;
   final CryptoExchangeRegistry _cryptoRegistry;
   final DataSourceSettings _dataSources;
+  final PortfolioRepository _portfolio;
 
   var _sending = false;
   var _actingOnProposal = false;
@@ -73,24 +77,74 @@ class AgentChatController extends ChangeNotifier {
 
   bool get hasTradableExchange => _tradeExecutor.canTrade;
 
-  String? resolveTargetExchangeId(AgentConnection connection) {
-    final preferred = connection.autopilotExchangeId?.trim();
+  List<TradableVenue> get tradableVenues => _tradeExecutor.tradableVenues;
+
+  /// Connect default when set and still valid; otherwise null if the user
+  /// must pick on Confirm (multiple targets, no default).
+  String? preferredPortfolioId([AgentConnection? connection]) {
+    final conn = connection ?? _agents.forRoleId(role.id);
+    final preferred = conn.autopilotExchangeId?.trim();
     if (preferred != null && preferred.isNotEmpty) {
       if (_tradeExecutor.venueForId(preferred) != null) return preferred;
     }
     final venues = _tradeExecutor.tradableVenues;
-    if (venues.isEmpty) return null;
-    return venues.first.id;
+    if (venues.length == 1) return venues.first.id;
+    if (_tradeExecutor.liveVenues.isEmpty) {
+      return PortfolioDescriptor.practiceId;
+    }
+    return null;
+  }
+
+  /// True when Confirm needs a portfolio picker (no default + multiple targets).
+  bool get needsPortfolioPicker => preferredPortfolioId() == null;
+
+  /// Resolve a concrete portfolio id for Confirm / Autopilot.
+  ///
+  /// Order: explicit [targetPortfolioId] → Connect default / single venue →
+  /// error when still ambiguous.
+  String? resolveConfirmPortfolioId({
+    String? targetPortfolioId,
+    AgentConnection? connection,
+  }) {
+    final explicit = targetPortfolioId?.trim();
+    if (explicit != null && explicit.isNotEmpty) {
+      if (_tradeExecutor.venueForId(explicit) != null) return explicit;
+      return null;
+    }
+    return preferredPortfolioId(connection);
+  }
+
+  /// Stamp id for a new proposal: preferred when known, else Practice hint.
+  String resolveTargetExchangeId(AgentConnection connection) {
+    return preferredPortfolioId(connection) ?? PortfolioDescriptor.practiceId;
   }
 
   CryptoExchangeClient? _clientForExchange(String exchangeId) {
+    if (exchangeId == PortfolioDescriptor.practiceId) return null;
     final client = _cryptoRegistry.clientForId(exchangeId);
     if (client == null) return null;
     if (!_dataSources.isCryptoEnabled(exchangeId)) return null;
     return client;
   }
 
-  Future<AgentChatSendResult> sendFreeform(String text) async {
+  /// Prefer [preferredId], else first enabled venue that can fetch balances.
+  String? resolveLiveBalanceExchangeId([String? preferredId]) {
+    final preferred = preferredId?.trim();
+    if (preferred != null && preferred.isNotEmpty) {
+      final client = _clientForExchange(preferred);
+      if (client != null && client.canFetchPortfolio) return preferred;
+    }
+    final ready = _cryptoRegistry.portfolioClientsWhere(
+      _dataSources.isCryptoEnabled,
+    );
+    if (ready.isEmpty) return null;
+    return ready.first.exchange.id;
+  }
+
+  Future<AgentChatSendResult> sendFreeform(
+    String text, {
+    String? exchangeId,
+  }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty || _sending) {
       return const AgentChatSendOk();
@@ -99,11 +153,13 @@ class AgentChatController extends ChangeNotifier {
       content: trimmed,
       kind: AgentChatMessageKind.freeform,
       symbolHint: MarketContextBuilder.extractSymbolHint(trimmed),
+      exchangeId: exchangeId,
     );
   }
 
   Future<AgentChatSendResult> sendRun({
-    required String symbol,
+    String symbol = '',
+    String? exchangeId,
     String? side,
     double? quantity,
   }) {
@@ -111,16 +167,32 @@ class AgentChatController extends ChangeNotifier {
         !_tradeExecutor.canTrade) {
       return _blockNoExchange();
     }
+    final sym = symbol.trim();
+    if (sym.isEmpty && !AgentRolePrompts.allowsRunWithoutSymbol(role.id)) {
+      return Future.value(
+        const AgentChatSendFailed('Enter a symbol to Run.'),
+      );
+    }
+    if (role.id == 'liveBalanceExplainer' &&
+        resolveLiveBalanceExchangeId(exchangeId) == null) {
+      return Future.value(
+        const AgentChatSendFailed(
+          'Connect a live exchange under Settings → Data sources to explain '
+          'balances.',
+        ),
+      );
+    }
     final prompt = AgentRolePrompts.runUserPrompt(
       roleId: role.id,
-      symbol: symbol,
+      symbol: sym,
       side: side,
       quantity: quantity,
     );
     return sendUserMessage(
       content: prompt,
       kind: AgentChatMessageKind.run,
-      symbolHint: symbol,
+      symbolHint: sym.isEmpty ? null : sym,
+      exchangeId: exchangeId,
     );
   }
 
@@ -132,8 +204,8 @@ class AgentChatController extends ChangeNotifier {
         roleId: role.id,
         createdAt: DateTime.now().toUtc(),
         summary:
-            'Configure a connected exchange under Settings → Data sources '
-            'before requesting trade suggestions.',
+            'No trade target available. Practice should always be listed; '
+            'try reopening the app.',
       ),
     );
     return const AgentChatSendBlockedNoExchange();
@@ -143,6 +215,7 @@ class AgentChatController extends ChangeNotifier {
     required String content,
     required AgentChatMessageKind kind,
     String? symbolHint,
+    String? exchangeId,
   }) async {
     final connection = _agents.forRoleId(role.id);
     if (!connection.connected) {
@@ -150,11 +223,17 @@ class AgentChatController extends ChangeNotifier {
     }
 
     final wantsTrade = AgentRolePrompts.supportsTradeProposals(role.id);
+    final wantsLiveExplain = AgentRolePrompts.usesLiveBalanceContext(role.id);
+    final wantsPractice =
+        AgentRolePrompts.usesPracticePortfolioContext(role.id);
     if (wantsTrade && !_tradeExecutor.canTrade) {
       return _blockNoExchange();
     }
 
-    final exchangeId = wantsTrade ? resolveTargetExchangeId(connection) : null;
+    final preferredId = wantsTrade ? preferredPortfolioId(connection) : null;
+    final stampedId = wantsTrade ? resolveTargetExchangeId(connection) : null;
+    final liveExplainId =
+        wantsLiveExplain ? resolveLiveBalanceExchangeId(exchangeId) : null;
 
     final userMessage = AgentChatMessage(
       id: AgentChatMessage.newId(),
@@ -170,7 +249,9 @@ class AgentChatController extends ChangeNotifier {
         kind: AgentActivityKind.messageSent,
         roleId: role.id,
         createdAt: DateTime.now().toUtc(),
-        exchangeId: exchangeId,
+        exchangeId: stampedId ??
+            liveExplainId ??
+            (wantsPractice ? PortfolioDescriptor.practiceId : null),
         messageId: userMessage.id,
         symbol: symbolHint?.trim().toUpperCase(),
         summary: content.length > 120 ? '${content.substring(0, 117)}…' : content,
@@ -184,21 +265,77 @@ class AgentChatController extends ChangeNotifier {
       String? marketContext;
       final hint = symbolHint?.trim();
       final builder = MarketContextBuilder(_marketData);
-      if (hint != null && hint.isNotEmpty) {
-        if (wantsTrade && exchangeId != null) {
+      if (wantsPractice || (wantsLiveExplain && role.id != 'liveBalanceExplainer')) {
+        final parts = <String>[];
+        if (wantsPractice) {
+          Map<String, double>? lastPrices;
+          if (AgentRolePrompts.usesAllocationContext(role.id) &&
+              _portfolio.state.holdings.isNotEmpty) {
+            try {
+              final quotes = await _marketData.getQuotes([
+                for (final h in _portfolio.state.holdings) h.symbol,
+              ]);
+              lastPrices = {
+                for (final q in quotes) q.symbol: q.price,
+              };
+            } catch (_) {
+              // Weights are optional enrichment.
+            }
+          }
+          final practiceCtx = builder.buildPracticePortfolioContext(
+            state: _portfolio.state,
+            symbolHint: hint,
+            listAllHoldings: true,
+            lastPrices: lastPrices,
+          );
+          if (practiceCtx != null) parts.add(practiceCtx);
+        }
+        if (wantsLiveExplain && liveExplainId != null) {
+          final client = _clientForExchange(liveExplainId);
+          if (client != null) {
+            final liveCtx = await builder.buildLiveExchangeContext(
+              client: client,
+              symbolHint: hint,
+              listAllBalances: true,
+            );
+            if (liveCtx != null) parts.add(liveCtx);
+          }
+        }
+        if (parts.isNotEmpty) marketContext = parts.join('\n\n');
+      } else if (wantsLiveExplain && liveExplainId != null) {
+        final client = _clientForExchange(liveExplainId);
+        if (client != null) {
+          marketContext = await builder.buildLiveExchangeContext(
+            client: client,
+            symbolHint: hint,
+            listAllBalances: true,
+          );
+        }
+      } else if (hint != null && hint.isNotEmpty) {
+        if (wantsTrade && stampedId != null) {
+          final usePractice = stampedId == PortfolioDescriptor.practiceId ||
+              preferredId == null;
           marketContext = await builder.buildForTradingSymbol(
             symbol: hint,
-            exchangeClient: _clientForExchange(exchangeId),
+            exchangeClient:
+                usePractice ? null : _clientForExchange(stampedId),
+            practiceState: usePractice ? _portfolio.state : null,
           );
         } else {
           marketContext = await builder.buildForSymbol(hint);
         }
-      } else if (wantsTrade && exchangeId != null) {
-        final client = _clientForExchange(exchangeId);
-        if (client != null) {
-          marketContext = await builder.buildLiveExchangeContext(
-            client: client,
+      } else if (wantsTrade && stampedId != null) {
+        if (stampedId == PortfolioDescriptor.practiceId || preferredId == null) {
+          marketContext = builder.buildPracticePortfolioContext(
+            state: _portfolio.state,
           );
+        } else {
+          final client = _clientForExchange(stampedId);
+          if (client != null) {
+            marketContext = await builder.buildLiveExchangeContext(
+              client: client,
+            );
+          }
         }
       }
 
@@ -212,13 +349,13 @@ class AgentChatController extends ChangeNotifier {
 
       final assistantId = AgentChatMessage.newId();
       TradeProposal? proposal;
-      if (wantsTrade && exchangeId != null) {
+      if (wantsTrade && stampedId != null) {
         final json = TradeProposalParser.extractJsonMap(reply);
         if (json != null) {
           proposal = TradeProposal.fromLlmJson(
             json,
             roleId: role.id,
-            exchangeId: exchangeId,
+            exchangeId: stampedId,
             sourceMessageId: assistantId,
             fallbackSymbol: hint,
           );
@@ -229,7 +366,7 @@ class AgentChatController extends ChangeNotifier {
               kind: AgentActivityKind.proposalParsed,
               roleId: role.id,
               createdAt: DateTime.now().toUtc(),
-              exchangeId: exchangeId,
+              exchangeId: stampedId,
               proposalId: proposal.id,
               messageId: assistantId,
               symbol: proposal.symbol,
@@ -277,6 +414,11 @@ class AgentChatController extends ChangeNotifier {
     AgentConnection connection,
     TradeProposal proposal,
   ) async {
+    final targetId = preferredPortfolioId(connection);
+    if (targetId == null) {
+      // Autopilot needs a Connect default (or a single available target).
+      return;
+    }
     final pending = _proposals.pendingForRole(role.id);
     if (pending.length > connection.autopilotMaxOpenProposals) {
       await _proposals.upsert(
@@ -294,19 +436,24 @@ class AgentChatController extends ChangeNotifier {
         kind: AgentActivityKind.autopilotSubmitted,
         roleId: role.id,
         createdAt: DateTime.now().toUtc(),
-        exchangeId: proposal.exchangeId,
+        exchangeId: targetId,
         proposalId: proposal.id,
         symbol: proposal.symbol,
         summary: 'Autopilot submitting ${proposal.side.label} '
             '${proposal.quantity} ${proposal.symbol}',
       ),
     );
-    await confirmProposal(proposal.id, autopilot: true);
+    await confirmProposal(
+      proposal.id,
+      autopilot: true,
+      targetPortfolioId: targetId,
+    );
   }
 
   Future<String?> confirmProposal(
     String proposalId, {
     bool autopilot = false,
+    String? targetPortfolioId,
   }) async {
     final proposal = _proposals.byId(proposalId);
     if (proposal == null) return 'Proposal not found.';
@@ -324,15 +471,24 @@ class AgentChatController extends ChangeNotifier {
       return 'Quantity must be greater than zero.';
     }
 
+    final connection = _agents.forRoleId(role.id);
+    final portfolioId = resolveConfirmPortfolioId(
+      targetPortfolioId: targetPortfolioId,
+      connection: connection,
+    );
+    if (portfolioId == null) {
+      return 'Choose a portfolio before confirming.';
+    }
+
     _actingOnProposal = true;
     notifyListeners();
     try {
-      await _proposals.upsert(
-        proposal.copyWith(
-          status: TradeProposalStatus.confirmed,
-          autopilot: autopilot,
-        ),
+      final confirmed = proposal.copyWith(
+        exchangeId: portfolioId,
+        status: TradeProposalStatus.confirmed,
+        autopilot: autopilot,
       );
+      await _proposals.upsert(confirmed);
       if (!autopilot) {
         await _activity.add(
           AgentActivityEvent(
@@ -340,7 +496,7 @@ class AgentChatController extends ChangeNotifier {
             kind: AgentActivityKind.proposalConfirmed,
             roleId: role.id,
             createdAt: DateTime.now().toUtc(),
-            exchangeId: proposal.exchangeId,
+            exchangeId: portfolioId,
             proposalId: proposal.id,
             symbol: proposal.symbol,
             summary:
@@ -351,7 +507,7 @@ class AgentChatController extends ChangeNotifier {
 
       final result = await _tradeExecutor.submit(
         OrderRequest(
-          exchangeId: proposal.exchangeId,
+          exchangeId: portfolioId,
           symbol: proposal.symbol,
           side: orderSide,
           quantity: proposal.quantity,
@@ -361,7 +517,7 @@ class AgentChatController extends ChangeNotifier {
 
       if (result.success) {
         await _proposals.upsert(
-          proposal.copyWith(
+          confirmed.copyWith(
             status: TradeProposalStatus.executed,
             orderId: result.orderId,
             autopilot: autopilot,
@@ -374,7 +530,7 @@ class AgentChatController extends ChangeNotifier {
             kind: AgentActivityKind.orderAck,
             roleId: role.id,
             createdAt: DateTime.now().toUtc(),
-            exchangeId: proposal.exchangeId,
+            exchangeId: portfolioId,
             proposalId: proposal.id,
             symbol: proposal.symbol,
             summary: 'Order ${result.orderId}'
@@ -386,7 +542,7 @@ class AgentChatController extends ChangeNotifier {
 
       final err = result.error ?? 'Order failed.';
       await _proposals.upsert(
-        proposal.copyWith(
+        confirmed.copyWith(
           status: TradeProposalStatus.failed,
           executionError: err,
           autopilot: autopilot,
@@ -398,7 +554,7 @@ class AgentChatController extends ChangeNotifier {
           kind: AgentActivityKind.orderFailed,
           roleId: role.id,
           createdAt: DateTime.now().toUtc(),
-          exchangeId: proposal.exchangeId,
+          exchangeId: portfolioId,
           proposalId: proposal.id,
           symbol: proposal.symbol,
           summary: err,

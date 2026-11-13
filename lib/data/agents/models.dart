@@ -41,6 +41,58 @@ enum ModelWeight {
   heavy,
 }
 
+/// How often a connected agent should Run while Omniscope is open.
+enum AgentScheduleInterval {
+  minutes15,
+  hour1,
+  hours4,
+  daily,
+}
+
+extension AgentScheduleIntervalX on AgentScheduleInterval {
+  Duration get duration => switch (this) {
+        AgentScheduleInterval.minutes15 => const Duration(minutes: 15),
+        AgentScheduleInterval.hour1 => const Duration(hours: 1),
+        AgentScheduleInterval.hours4 => const Duration(hours: 4),
+        AgentScheduleInterval.daily => const Duration(days: 1),
+      };
+
+  String get shortLabel => switch (this) {
+        AgentScheduleInterval.minutes15 => '15m',
+        AgentScheduleInterval.hour1 => '1h',
+        AgentScheduleInterval.hours4 => '4h',
+        AgentScheduleInterval.daily => 'Daily',
+      };
+
+  String get label => switch (this) {
+        AgentScheduleInterval.minutes15 => '15 minutes',
+        AgentScheduleInterval.hour1 => '1 hour',
+        AgentScheduleInterval.hours4 => '4 hours',
+        AgentScheduleInterval.daily => 'Daily',
+      };
+
+  static AgentScheduleInterval parse(String? raw) {
+    return AgentScheduleInterval.values.firstWhere(
+      (e) => e.name == raw,
+      orElse: () => AgentScheduleInterval.hour1,
+    );
+  }
+}
+
+/// Uppercase, trim, and dedupe schedule symbols from free text or lists.
+List<String> normalizeScheduleSymbols(Iterable<String> raw) {
+  final out = <String>[];
+  final seen = <String>{};
+  for (final piece in raw) {
+    for (final part in piece.split(RegExp(r'[,;\s]+'))) {
+      final s = part.trim().toUpperCase();
+      if (s.isEmpty || !seen.add(s)) continue;
+      out.add(s);
+    }
+  }
+  return out;
+}
+
 extension ModelWeightX on ModelWeight {
   static ModelWeight parse(String? raw) {
     if (raw == 'heavy') return ModelWeight.heavy;
@@ -137,6 +189,10 @@ class AgentConnection {
     this.autopilotExchangeId,
     this.autopilotMaxNotional,
     this.autopilotMaxOpenProposals = 3,
+    this.scheduleEnabled = false,
+    this.scheduleInterval = AgentScheduleInterval.hour1,
+    this.scheduleSymbols = const [],
+    this.scheduleLastRunAt,
   });
 
   final String roleId;
@@ -159,9 +215,31 @@ class AgentConnection {
   /// Cap concurrent pending proposals before Autopilot skips.
   final int autopilotMaxOpenProposals;
 
+  /// When true, the in-app scheduler Runs [scheduleSymbols] on [scheduleInterval]
+  /// while Omniscope is open (foreground only).
+  final bool scheduleEnabled;
+
+  final AgentScheduleInterval scheduleInterval;
+
+  final List<String> scheduleSymbols;
+
+  /// UTC timestamp of the last scheduled batch start (persisted across relaunch).
+  final DateTime? scheduleLastRunAt;
+
   /// True when both a model and an API key are assigned.
   bool get isConfigured =>
       apiKey.trim().isNotEmpty && modelId.trim().isNotEmpty;
+
+  /// Whether a scheduled batch should start at [now] (UTC-aware).
+  bool isScheduleDue(DateTime now) {
+    if (!scheduleEnabled || !connected || scheduleSymbols.isEmpty) {
+      return false;
+    }
+    final last = scheduleLastRunAt;
+    if (last == null) return true;
+    final elapsed = now.toUtc().difference(last.toUtc());
+    return !elapsed.isNegative && elapsed >= scheduleInterval.duration;
+  }
 
   AgentConnection copyWith({
     String? roleId,
@@ -177,6 +255,11 @@ class AgentConnection {
     double? autopilotMaxNotional,
     bool clearAutopilotMaxNotional = false,
     int? autopilotMaxOpenProposals,
+    bool? scheduleEnabled,
+    AgentScheduleInterval? scheduleInterval,
+    List<String>? scheduleSymbols,
+    DateTime? scheduleLastRunAt,
+    bool clearScheduleLastRunAt = false,
   }) {
     return AgentConnection(
       roleId: roleId ?? this.roleId,
@@ -194,6 +277,12 @@ class AgentConnection {
           : (autopilotMaxNotional ?? this.autopilotMaxNotional),
       autopilotMaxOpenProposals:
           autopilotMaxOpenProposals ?? this.autopilotMaxOpenProposals,
+      scheduleEnabled: scheduleEnabled ?? this.scheduleEnabled,
+      scheduleInterval: scheduleInterval ?? this.scheduleInterval,
+      scheduleSymbols: scheduleSymbols ?? this.scheduleSymbols,
+      scheduleLastRunAt: clearScheduleLastRunAt
+          ? null
+          : (scheduleLastRunAt ?? this.scheduleLastRunAt),
     );
   }
 
@@ -212,11 +301,21 @@ class AgentConnection {
         if (autopilotMaxNotional != null)
           'autopilotMaxNotional': autopilotMaxNotional,
         'autopilotMaxOpenProposals': autopilotMaxOpenProposals,
+        'scheduleEnabled': scheduleEnabled,
+        'scheduleInterval': scheduleInterval.name,
+        'scheduleSymbols': scheduleSymbols,
+        if (scheduleLastRunAt != null)
+          'scheduleLastRunAt': scheduleLastRunAt!.toUtc().toIso8601String(),
       };
 
   factory AgentConnection.fromJson(Map<String, dynamic> json) {
     final roleId =
         (json['roleId'] as String?) ?? (json['role'] as String?) ?? '';
+    final symbolsRaw = json['scheduleSymbols'];
+    final symbols = symbolsRaw is List
+        ? normalizeScheduleSymbols(symbolsRaw.map((e) => '$e'))
+        : const <String>[];
+    final lastRaw = json['scheduleLastRunAt'] as String?;
     return AgentConnection(
       roleId: roleId,
       llmProvider: LlmProvider.values.byName(json['llmProvider'] as String),
@@ -229,6 +328,12 @@ class AgentConnection {
       autopilotMaxNotional: (json['autopilotMaxNotional'] as num?)?.toDouble(),
       autopilotMaxOpenProposals:
           (json['autopilotMaxOpenProposals'] as num?)?.toInt() ?? 3,
+      scheduleEnabled: json['scheduleEnabled'] as bool? ?? false,
+      scheduleInterval:
+          AgentScheduleIntervalX.parse(json['scheduleInterval'] as String?),
+      scheduleSymbols: symbols,
+      scheduleLastRunAt:
+          lastRaw == null ? null : DateTime.tryParse(lastRaw)?.toUtc(),
     );
   }
 

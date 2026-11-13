@@ -44,6 +44,7 @@ case "$1" in
     flutter test
     ;;
   all)
+    "$ROOT/tool/bump_patch_version.sh" --verify
     flutter analyze
     flutter test
     ;;

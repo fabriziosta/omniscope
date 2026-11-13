@@ -10,6 +10,7 @@ from typing import Any
 from crewai import Agent, Crew, Process, Task
 
 from omniscope_agents.llm import Provider, build_crewai_llm
+from omniscope_agents.market_research import prompts as P
 
 
 def build_research_crew(
@@ -27,65 +28,44 @@ def build_research_crew(
     )
 
     macro = Agent(
-        role="Macro scanner",
-        goal="Summarize the broad market backdrop in plain language for learners.",
-        backstory=(
-            "You explain rates, risk appetite, and sector rotation without jargon. "
-            "You never give personalized financial advice."
-        ),
+        role=P.MACRO_ROLE,
+        goal=P.MACRO_GOAL,
+        backstory=P.MACRO_BACKSTORY,
         llm=llm,
         verbose=False,
         allow_delegation=False,
     )
     fundamentals = Agent(
-        role="Fundamentals summarizer",
-        goal="Describe what the company or topic is known for at a high level.",
-        backstory=(
-            "You focus on business model, competitive position, and obvious risks. "
-            "You use short sentences suitable for beginners."
-        ),
+        role=P.FUNDAMENTALS_ROLE,
+        goal=P.FUNDAMENTALS_GOAL,
+        backstory=P.FUNDAMENTALS_BACKSTORY,
         llm=llm,
         verbose=False,
         allow_delegation=False,
     )
     risk = Agent(
-        role="Risk narrator",
-        goal="List key uncertainties and what a cautious learner should watch.",
-        backstory=(
-            "You highlight downside scenarios and remind readers this is educational, "
-            "not a buy/sell recommendation."
-        ),
+        role=P.RISK_ROLE,
+        goal=P.RISK_GOAL,
+        backstory=P.RISK_BACKSTORY,
         llm=llm,
         verbose=False,
         allow_delegation=False,
     )
 
     macro_task = Task(
-        description=(
-            "Write a short macro backdrop for researching '{symbol}'. "
-            "Cover mood, rates/inflation themes if relevant, and sector context. "
-            "Keep it under 180 words."
-        ),
-        expected_output="A plain-language macro paragraph.",
+        description=P.MACRO_TASK,
+        expected_output=P.MACRO_EXPECTED,
         agent=macro,
     )
     fundamentals_task = Task(
-        description=(
-            "Summarize '{symbol}' for a beginner: what it does, why people follow it, "
-            "and one or two obvious risks. Keep it under 180 words. "
-            "Use the prior macro notes as context."
-        ),
-        expected_output="A plain-language fundamentals paragraph.",
+        description=P.FUNDAMENTALS_TASK,
+        expected_output=P.FUNDAMENTALS_EXPECTED,
         agent=fundamentals,
         context=[macro_task],
     )
     risk_task = Task(
-        description=(
-            "Combine the prior notes into a final research brief for '{symbol}'. "
-            "Include: Snapshot, What matters, Risks to watch, Learning tip. "
-            "End with: 'Not financial advice — educational paper trading only.'"
-        ),
-        expected_output="A structured markdown research brief.",
+        description=P.RISK_TASK,
+        expected_output=P.RISK_EXPECTED,
         agent=risk,
         context=[macro_task, fundamentals_task],
     )

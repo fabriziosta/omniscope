@@ -15,7 +15,8 @@ endif
 .PHONY: help ensure-env get analyze test check run doctor icons \
 	hooks hooks-run agents-setup bump-patch clean \
 	build build-linux build-windows build-macos build-ios \
-	build-apk build-appbundle build-web
+	build-apk build-appbundle build-web \
+	container-build container-run
 
 help:
 	@echo "Omniscope developer targets:"
@@ -38,8 +39,10 @@ help:
 	@echo "  make hooks            install pre-commit + pre-push hooks"
 	@echo "  make hooks-run        pre-commit run --all-files"
 	@echo "  make agents-setup     agents/ venv + pip install -e ."
-	@echo "  make bump-patch       bump pubspec + AppInfo patch (CI does this on main)"
+	@echo "  make bump-patch       bump patch; AppInfo gets +short SHA (CI on main)"
 	@echo "  make clean            flutter clean"
+	@echo "  make container-build  podman build slim Linux runtime image (omniscope:runtime)"
+	@echo "  make container-run    podman run omniscope:runtime (needs DISPLAY)"
 	@echo ""
 	@echo "Note: Flutter does not cross-compile every desktop/iOS binary from one OS."
 	@echo "  Linux host → linux + apk + web; macOS → macos + ios + apk + web;"
@@ -132,3 +135,14 @@ bump-patch:
 
 clean:
 	flutter clean
+
+# Slim Linux desktop runtime image (multi-stage; Flutter SDK discarded).
+container-build:
+	podman build -t omniscope:runtime -f Containerfile .
+
+# GUI app — forwards host X11 display. Wayland hosts may need extra flags.
+container-run:
+	podman run --rm -it \
+		-e DISPLAY \
+		-v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+		omniscope:runtime

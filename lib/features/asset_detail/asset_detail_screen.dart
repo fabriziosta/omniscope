@@ -393,13 +393,28 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
                                 ],
                               ),
                               const SizedBox(height: 10),
-                              AgentLaunchButton(
-                                symbol: widget.symbol,
-                                intent: AgentLaunchIntent.tradeCheck,
-                                outline: true,
-                                quantity: double.tryParse(
-                                  _sharesController.text.trim(),
-                                ),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  AgentLaunchButton(
+                                    symbol: widget.symbol,
+                                    intent: AgentLaunchIntent.paperReview,
+                                    outline: true,
+                                    side: 'buy',
+                                    quantity: double.tryParse(
+                                      _sharesController.text.trim(),
+                                    ),
+                                  ),
+                                  AgentLaunchButton(
+                                    symbol: widget.symbol,
+                                    intent: AgentLaunchIntent.tradeCheck,
+                                    outline: true,
+                                    quantity: double.tryParse(
+                                      _sharesController.text.trim(),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),

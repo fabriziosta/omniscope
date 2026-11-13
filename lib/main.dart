@@ -11,6 +11,7 @@ import 'data/agents/agent_role_catalog.dart';
 import 'data/agents/agents_repository.dart';
 import 'data/agents/llm_chat_client.dart';
 import 'data/agents/trade_proposal_repository.dart';
+import 'data/notifications/app_notification_repository.dart';
 import 'data/crypto/crypto_com/crypto_com_exchange_client.dart';
 import 'data/crypto/crypto_exchange_registry.dart';
 import 'data/market/equity_data_source.dart';
@@ -26,6 +27,7 @@ import 'data/settings/theme_settings.dart';
 import 'data/settings/user_config_store.dart';
 import 'data/trading/broker_exchange_registry.dart';
 import 'data/trading/trade_executor.dart';
+import 'features/agents/agent_schedule_coordinator.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -64,6 +66,9 @@ Future<void> main() async {
 
   final agentActivity = AgentActivityRepository(store: config);
   await agentActivity.load();
+
+  final appNotifications = AppNotificationRepository(store: config);
+  await appNotifications.load();
 
   final llmChat = LlmChatClient();
 
@@ -104,6 +109,22 @@ Future<void> main() async {
     cryptoRegistry: cryptoRegistry,
     brokerRegistry: brokerRegistry,
     dataSources: dataSourceSettings,
+    portfolio: portfolio,
+    marketData: marketData,
+  );
+
+  final agentSchedule = AgentScheduleCoordinator(
+    agents: agents,
+    chats: agentChats,
+    marketData: marketData,
+    llm: llmChat,
+    tradeExecutor: tradeExecutor,
+    proposals: tradeProposals,
+    activity: agentActivity,
+    notifications: appNotifications,
+    cryptoRegistry: cryptoRegistry,
+    dataSources: dataSourceSettings,
+    portfolio: portfolio,
   );
 
   runApp(
@@ -126,6 +147,9 @@ Future<void> main() async {
         ChangeNotifierProvider<AgentActivityRepository>.value(
           value: agentActivity,
         ),
+        ChangeNotifierProvider<AppNotificationRepository>.value(
+          value: appNotifications,
+        ),
         Provider<LlmChatClient>.value(value: llmChat),
         ChangeNotifierProvider<ThemeSettings>.value(value: themeSettings),
         ChangeNotifierProvider<DisplaySettings>.value(value: displaySettings),
@@ -135,6 +159,9 @@ Future<void> main() async {
         ChangeNotifierProvider<AppErrorController>.value(value: appErrors),
         ChangeNotifierProvider<ShellNavigationController>(
           create: (_) => ShellNavigationController(),
+        ),
+        ChangeNotifierProvider<AgentScheduleCoordinator>.value(
+          value: agentSchedule,
         ),
       ],
       child: OmniscopeApp(navigatorKey: navigatorKey),

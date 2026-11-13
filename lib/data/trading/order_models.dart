@@ -1,4 +1,4 @@
-/// Side for live exchange orders (not paper).
+/// Side for Practice or live exchange orders.
 enum OrderSide {
   buy,
   sell,
@@ -27,7 +27,7 @@ enum OrderType {
   limit,
 }
 
-/// Request to place a live order on a connected exchange.
+/// Request to place an order on Practice or a connected exchange.
 class OrderRequest {
   const OrderRequest({
     required this.exchangeId,
@@ -48,7 +48,7 @@ class OrderRequest {
   final String? clientOrderId;
 }
 
-/// Result of a live order submission (or failure).
+/// Result of an order submission (or failure).
 class OrderResult {
   const OrderResult.ok({
     required this.orderId,

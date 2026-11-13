@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../core/brand_colors.dart';
-import '../../core/shell_navigation.dart';
 import '../../data/agents/agent_activity_repository.dart';
 import '../../data/agents/agent_chat_repository.dart';
 import '../../data/agents/agent_role_prompts.dart';
@@ -15,6 +14,7 @@ import '../../data/agents/trade_proposal.dart';
 import '../../data/agents/trade_proposal_repository.dart';
 import '../../data/crypto/crypto_exchange_registry.dart';
 import '../../data/market/market_data_client.dart';
+import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/env_secrets_repository.dart';
 import '../../data/trading/trade_executor.dart';
@@ -30,6 +30,7 @@ class AgentChatScreen extends StatelessWidget {
     super.key,
     required this.role,
     this.initialSymbol,
+    this.initialExchangeId,
     this.autoRun = false,
     this.initialSide,
     this.initialQuantity,
@@ -40,7 +41,11 @@ class AgentChatScreen extends StatelessWidget {
   /// Optional symbol for deep-link / Investigate launches.
   final String? initialSymbol;
 
-  /// When true and [initialSymbol] is set, send a Run on first open.
+  /// Optional live exchange id for balance-explainer launches.
+  final String? initialExchangeId;
+
+  /// When true, send a Run on first open (needs [initialSymbol], or a
+  /// venue-level role with [initialExchangeId]).
   final bool autoRun;
 
   final String? initialSide;
@@ -60,10 +65,12 @@ class AgentChatScreen extends StatelessWidget {
         activity: context.read<AgentActivityRepository>(),
         cryptoRegistry: context.read<CryptoExchangeRegistry>(),
         dataSources: context.read<DataSourceSettings>(),
+        portfolio: context.read<PortfolioRepository>(),
       ),
       child: _AgentChatView(
         role: role,
         initialSymbol: initialSymbol,
+        initialExchangeId: initialExchangeId,
         autoRun: autoRun,
         initialSide: initialSide,
         initialQuantity: initialQuantity,
@@ -76,6 +83,7 @@ class _AgentChatView extends StatefulWidget {
   const _AgentChatView({
     required this.role,
     this.initialSymbol,
+    this.initialExchangeId,
     this.autoRun = false,
     this.initialSide,
     this.initialQuantity,
@@ -83,6 +91,7 @@ class _AgentChatView extends StatefulWidget {
 
   final AgentRoleDefinition role;
   final String? initialSymbol;
+  final String? initialExchangeId;
   final bool autoRun;
   final String? initialSide;
   final double? initialQuantity;
@@ -105,13 +114,16 @@ class _AgentChatViewState extends State<_AgentChatView> {
   Future<void> _maybeAutoRun() async {
     if (_autoRunStarted || !mounted) return;
     if (!widget.autoRun) return;
-    final symbol = widget.initialSymbol?.trim();
-    if (symbol == null || symbol.isEmpty) return;
+    final symbol = widget.initialSymbol?.trim() ?? '';
+    final canSkipSymbol =
+        AgentRolePrompts.allowsRunWithoutSymbol(widget.role.id);
+    if (symbol.isEmpty && !canSkipSymbol) return;
     final controller = context.read<AgentChatController>();
     if (controller.sending) return;
     _autoRunStarted = true;
     final result = await controller.sendRun(
       symbol: symbol,
+      exchangeId: widget.initialExchangeId,
       side: widget.initialSide,
       quantity: widget.initialQuantity,
     );
@@ -148,10 +160,10 @@ class _AgentChatViewState extends State<_AgentChatView> {
     } else if (result is AgentChatSendBlockedNoExchange) {
       showAppToast(
         context,
-        title: 'Connect an exchange',
+        title: 'No trade target',
         description:
-            'Trade suggestions need a live exchange. Open Settings → '
-            'Data sources to add API credentials.',
+            'Practice should always be available. Try reopening the app, or '
+            'add a live exchange under Settings → Data sources.',
         destructive: true,
       );
     }
@@ -163,7 +175,10 @@ class _AgentChatViewState extends State<_AgentChatView> {
     final controller = context.read<AgentChatController>();
     if (controller.sending) return;
     _composer.clear();
-    final result = await controller.sendFreeform(text);
+    final result = await controller.sendFreeform(
+      text,
+      exchangeId: widget.initialExchangeId,
+    );
     await _handleSendResult(result);
   }
 
@@ -173,6 +188,16 @@ class _AgentChatViewState extends State<_AgentChatView> {
     if (AgentRolePrompts.supportsTradeProposals(widget.role.id) &&
         !controller.hasTradableExchange) {
       await _handleSendResult(const AgentChatSendBlockedNoExchange());
+      return;
+    }
+    if (AgentRolePrompts.allowsRunWithoutSymbol(widget.role.id)) {
+      final sendResult = await controller.sendRun(
+        symbol: widget.initialSymbol?.trim() ?? '',
+        exchangeId: widget.initialExchangeId,
+        side: widget.initialSide,
+        quantity: widget.initialQuantity,
+      );
+      await _handleSendResult(sendResult);
       return;
     }
     final result = await showShadDialog<_RunSheetResult>(
@@ -185,6 +210,7 @@ class _AgentChatViewState extends State<_AgentChatView> {
     if (result == null || !mounted) return;
     final sendResult = await controller.sendRun(
       symbol: result.symbol,
+      exchangeId: widget.initialExchangeId,
       side: result.side,
       quantity: result.quantity,
     );
@@ -207,15 +233,33 @@ class _AgentChatViewState extends State<_AgentChatView> {
 
   Future<void> _confirmProposal(TradeProposal proposal) async {
     final controller = context.read<AgentChatController>();
-    final err = await controller.confirmProposal(proposal.id);
+    String? targetId = controller.resolveConfirmPortfolioId();
+    if (targetId == null) {
+      final venues = controller.tradableVenues;
+      targetId = await showShadDialog<String>(
+        context: context,
+        builder: (context) => _PortfolioPickerDialog(venues: venues),
+      );
+      if (targetId == null || !mounted) return;
+    }
+    String label = targetId;
+    for (final v in controller.tradableVenues) {
+      if (v.id == targetId) {
+        label = v.displayName;
+        break;
+      }
+    }
+    final err = await controller.confirmProposal(
+      proposal.id,
+      targetPortfolioId: targetId,
+    );
     if (!mounted) return;
     if (err != null) {
       showAppToast(context, description: err, destructive: true);
     } else {
       showAppToast(
         context,
-        description:
-            'Order submitted to ${proposal.exchangeId} for ${proposal.symbol}',
+        description: 'Submitted to $label for ${proposal.symbol}',
       );
     }
   }
@@ -244,7 +288,6 @@ class _AgentChatViewState extends State<_AgentChatView> {
     final tradeExecutor = context.read<TradeExecutor>();
     final sending = controller.sending;
     final wantsTrade = AgentRolePrompts.supportsTradeProposals(widget.role.id);
-    final canTrade = tradeExecutor.canTrade;
 
     return ColoredBox(
       color: theme.colorScheme.background,
@@ -261,68 +304,28 @@ class _AgentChatViewState extends State<_AgentChatView> {
                 child: const Text('Clear'),
               ),
             ),
-            if (wantsTrade && !canTrade)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.secondary,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: theme.colorScheme.border),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          'Configure a live exchange to get trade suggestions. '
-                          'Practice (paper) portfolio is separate and never '
-                          'used for AI orders.',
-                          style: theme.textTheme.small.copyWith(
-                            color: theme.colorScheme.secondaryForeground,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          height: 44,
-                          child: ShadButton(
-                            onPressed: () {
-                              context.read<ShellNavigationController>().goToSettings(
-                                    sectionId: 'dataSources',
-                                  );
-                              Navigator.of(context).pop();
-                            },
-                            child: const Text('Open Data sources'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              )
-            else
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-                child: Text(
-                  connected
-                      ? (wantsTrade
-                          ? 'Suggestions target a connected exchange. '
-                              'Confirm before any live order.'
-                          : 'Chat is saved on this device. Use Run for a symbol.')
-                      : 'This agent is disconnected.',
-                  style: theme.textTheme.muted,
-                  textAlign: TextAlign.center,
-                ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+              child: Text(
+                connected
+                    ? (wantsTrade
+                        ? (tradeExecutor.liveVenues.isEmpty
+                            ? 'Suggestions can fill the Practice portfolio. '
+                                'Confirm before any order. Add a live exchange '
+                                'under Settings → Data sources anytime.'
+                            : 'Confirm chooses Practice or a live portfolio '
+                                '(or uses your Connect default).')
+                        : 'Chat is saved on this device. Use Run for a symbol.')
+                    : 'This agent is disconnected.',
+                style: theme.textTheme.muted,
+                textAlign: TextAlign.center,
               ),
+            ),
             Expanded(
               child: thread.messages.isEmpty
-                  ? AppEmptyView(
-                      wantsTrade && !canTrade
-                          ? 'Connect an exchange under Settings → Data sources, '
-                              'then run a symbol for live suggestions.'
-                          : 'Ask a question or run a symbol investigation. '
-                              'Messages stay on this device.',
+                  ? const AppEmptyView(
+                      'Ask a question or run a symbol investigation. '
+                      'Messages stay on this device.',
                     )
                   : ListView.builder(
                       controller: _scrollController,
@@ -494,6 +497,87 @@ class _ChatBubble extends StatelessWidget {
   }
 }
 
+String _portfolioLabel(BuildContext context, String portfolioId) {
+  try {
+    final venues = context.read<TradeExecutor>().tradableVenues;
+    for (final v in venues) {
+      if (v.id == portfolioId) return v.displayName;
+    }
+  } catch (_) {
+    // Provider may be absent in isolated tests.
+  }
+  if (portfolioId == 'practice') return 'Practice';
+  return portfolioId;
+}
+
+class _PortfolioPickerDialog extends StatefulWidget {
+  const _PortfolioPickerDialog({required this.venues});
+
+  final List<TradableVenue> venues;
+
+  @override
+  State<_PortfolioPickerDialog> createState() => _PortfolioPickerDialogState();
+}
+
+class _PortfolioPickerDialogState extends State<_PortfolioPickerDialog> {
+  late String? _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.venues.isEmpty ? null : widget.venues.first.id;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return ShadDialog(
+      title: const Text('Choose portfolio'),
+      description: const Text(
+        'Where should this buy or sell apply?',
+      ),
+      actions: [
+        ShadButton.outline(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ShadButton(
+          enabled: _selected != null,
+          onPressed: () => Navigator.of(context).pop(_selected),
+          child: const Text('Confirm'),
+        ),
+      ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Portfolio', style: theme.textTheme.small),
+          const SizedBox(height: 6),
+          ShadSelect<String>(
+            minWidth: double.infinity,
+            initialValue: _selected,
+            placeholder: const Text('Select portfolio'),
+            options: [
+              for (final v in widget.venues)
+                ShadOption(value: v.id, child: Text(v.displayName)),
+            ],
+            selectedOptionBuilder: (context, value) {
+              for (final v in widget.venues) {
+                if (v.id == value) return Text(v.displayName);
+              }
+              return Text(value);
+            },
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => _selected = value);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TradeProposalCard extends StatelessWidget {
   const _TradeProposalCard({
     required this.proposal,
@@ -532,7 +616,8 @@ class _TradeProposalCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Exchange: ${proposal.exchangeId} · ${proposal.status.label}'
+            'Portfolio: ${_portfolioLabel(context, proposal.exchangeId)} · '
+            '${proposal.status.label}'
             '${proposal.autopilot ? ' · Autopilot' : ''}',
             style: theme.textTheme.muted,
           ),
@@ -672,8 +757,8 @@ class _RunAgentDialogState extends State<_RunAgentDialog> {
       title: Text(AgentRolePrompts.runChipLabel(widget.roleId)),
       description: Text(
         AgentRolePrompts.supportsTradeProposals(widget.roleId)
-            ? 'Enter a symbol. Suggestions target a connected live exchange '
-                '(not paper). Confirm in chat before any order.'
+            ? 'Enter a symbol. Suggestions can target Practice or a live '
+                'portfolio. Confirm in chat before any order.'
             : 'Enter a symbol. Omniscope will add a market snapshot when available.',
       ),
       actions: [

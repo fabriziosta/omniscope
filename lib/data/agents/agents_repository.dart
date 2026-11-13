@@ -83,6 +83,9 @@ class AgentsRepository extends ChangeNotifier {
     String? autopilotExchangeId,
     double? autopilotMaxNotional,
     int autopilotMaxOpenProposals = 3,
+    bool scheduleEnabled = false,
+    AgentScheduleInterval scheduleInterval = AgentScheduleInterval.hour1,
+    List<String> scheduleSymbols = const [],
   }) async {
     if (_roleCatalog != null && _roleCatalog!.byId(roleId) == null) {
       return 'Unknown agent role.';
@@ -97,6 +100,12 @@ class AgentsRepository extends ChangeNotifier {
       if (url.isEmpty) return 'Base URL is required for Custom.';
     }
 
+    final symbols = normalizeScheduleSymbols(scheduleSymbols);
+    if (scheduleEnabled && symbols.isEmpty) {
+      return 'Schedule needs at least one symbol.';
+    }
+
+    final existing = _state.forRoleId(roleId);
     final connection = AgentConnection(
       roleId: roleId,
       llmProvider: llmProvider,
@@ -112,6 +121,11 @@ class AgentsRepository extends ChangeNotifier {
       autopilotMaxOpenProposals: autopilotMaxOpenProposals < 1
           ? 1
           : autopilotMaxOpenProposals,
+      scheduleEnabled: scheduleEnabled,
+      scheduleInterval: scheduleInterval,
+      scheduleSymbols: symbols,
+      // Keep last-run stamp across Edit so reconnect does not immediately re-fire.
+      scheduleLastRunAt: existing.scheduleLastRunAt,
     );
     _state = _state.withConnection(connection);
     await _persist();
@@ -119,7 +133,17 @@ class AgentsRepository extends ChangeNotifier {
     return null;
   }
 
-  /// Disconnect and clear the stored API key (keeps Autopilot prefs off).
+  /// Record when a scheduled batch started for [roleId].
+  Future<void> updateScheduleLastRunAt(String roleId, DateTime at) async {
+    final existing = _state.forRoleId(roleId);
+    _state = _state.withConnection(
+      existing.copyWith(scheduleLastRunAt: at.toUtc()),
+    );
+    await _persist();
+    notifyListeners();
+  }
+
+  /// Disconnect and clear the stored API key (turns Autopilot / Schedule off).
   Future<void> disconnect(String roleId) async {
     final existing = _state.forRoleId(roleId);
     _state = _state.withConnection(
@@ -134,6 +158,10 @@ class AgentsRepository extends ChangeNotifier {
         autopilotExchangeId: existing.autopilotExchangeId,
         autopilotMaxNotional: existing.autopilotMaxNotional,
         autopilotMaxOpenProposals: existing.autopilotMaxOpenProposals,
+        scheduleEnabled: false,
+        scheduleInterval: existing.scheduleInterval,
+        scheduleSymbols: existing.scheduleSymbols,
+        scheduleLastRunAt: existing.scheduleLastRunAt,
       ),
     );
     await _persist();

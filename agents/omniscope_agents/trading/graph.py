@@ -12,6 +12,10 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
 
 from omniscope_agents.llm import Provider, build_chat_model
+from omniscope_agents.trading.prompts import (
+    RISK_NARRATOR_SYSTEM,
+    summarize_human_prompt,
+)
 
 # Hard educational risk limits (paper portfolio defaults).
 MAX_POSITION_PCT = 0.25
@@ -94,29 +98,10 @@ def _paper_decision(state: TradeState) -> TradeState:
 
 def _make_summarize(llm: Any):
     def _summarize(state: TradeState) -> TradeState:
-        prompt = (
-            f"Symbol: {state.get('symbol')}\n"
-            f"Side: {state.get('side')}\n"
-            f"Qty: {state.get('qty')}\n"
-            f"Price: {state.get('price')}\n"
-            f"Cash: {state.get('cash')}\n"
-            f"Held shares: {state.get('held_shares')}\n"
-            f"Risk OK: {state.get('risk_ok')}\n"
-            f"Risk notes: {state.get('risk_notes')}\n"
-            f"Decision: {state.get('decision')}\n\n"
-            "Write a short plain-language summary for a learner. "
-            "If rejected, explain which gate failed. "
-            "Remind them this is paper trading only, not financial advice."
-        )
         response = llm.invoke(
             [
-                SystemMessage(
-                    content=(
-                        "You are Omniscope's educational risk narrator. "
-                        "Be concise and clear."
-                    )
-                ),
-                HumanMessage(content=prompt),
+                SystemMessage(content=RISK_NARRATOR_SYSTEM),
+                HumanMessage(content=summarize_human_prompt(state)),
             ]
         )
         content = getattr(response, "content", str(response))

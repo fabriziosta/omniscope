@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-11-12",
+  "updated": "2026-11-13",
   "roles": [
     {
       "id": "marketResearch",
@@ -18,6 +18,57 @@
         "grok": "grok-4.3"
       },
       "suggestionNote": "Prefer a lighter model for market investigation — faster and cheaper for scanning."
+    },
+    {
+      "id": "liveBalanceExplainer",
+      "title": "Live Balance Explainer",
+      "description": "Plain-language walkthrough of live exchange totals, available cash, and per-asset balances.",
+      "framework": "crewAi",
+      "module": "omniscope_agents.live_balance",
+      "packagePath": "live_balance",
+      "workload": "investigation",
+      "suggestedModels": {
+        "gemini": "gemini-3.5-flash-lite",
+        "openAi": "gpt-6-luna",
+        "anthropic": "claude-haiku-5-5",
+        "deepSeek": "deepseek-flash",
+        "grok": "grok-4.3"
+      },
+      "suggestionNote": "Prefer a lighter model for balance explainers — faster and cheaper for portfolio narration."
+    },
+    {
+      "id": "portfolioGuide",
+      "title": "Portfolio & Allocation Guide",
+      "description": "Plain-language review of diversification, concentration, and cash drag across Practice and Live.",
+      "framework": "crewAi",
+      "module": "omniscope_agents.portfolio_guide",
+      "packagePath": "portfolio_guide",
+      "workload": "investigation",
+      "suggestedModels": {
+        "gemini": "gemini-3.5-flash-lite",
+        "openAi": "gpt-6-luna",
+        "anthropic": "claude-haiku-5-5",
+        "deepSeek": "deepseek-flash",
+        "grok": "grok-4.3"
+      },
+      "suggestionNote": "Prefer a lighter model for allocation explainers — faster and cheaper for portfolio narration."
+    },
+    {
+      "id": "paperPortfolioCoach",
+      "title": "Practice Portfolio Coach",
+      "description": "Plain-language coaching on practice cash, holdings, size, and avg cost — educational only.",
+      "framework": "crewAi",
+      "module": "omniscope_agents.paper_portfolio",
+      "packagePath": "paper_portfolio",
+      "workload": "investigation",
+      "suggestedModels": {
+        "gemini": "gemini-3.5-flash-lite",
+        "openAi": "gpt-6-luna",
+        "anthropic": "claude-haiku-5-5",
+        "deepSeek": "deepseek-flash",
+        "grok": "grok-4.3"
+      },
+      "suggestionNote": "Prefer a lighter model for practice coaching — faster and cheaper for learning turns."
     },
     {
       "id": "intradayTrading",

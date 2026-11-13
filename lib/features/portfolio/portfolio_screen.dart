@@ -249,6 +249,7 @@ class _PortfolioViewState extends State<_PortfolioView> {
                             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                             children: [
                               _LiveBody(
+                                exchangeId: desc.id,
                                 exchangeName: desc.displayName,
                                 snapshot:
                                     controller.liveByExchange[desc.id],
@@ -372,10 +373,27 @@ class _PracticeBody extends StatelessWidget {
             cash + holdingsValue,
             priceFormat,
           ),
-          trailing: ShadButton.outline(
-            size: ShadButtonSize.sm,
-            onPressed: onReset,
-            child: const Text('Reset'),
+          trailing: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              const AgentLaunchButton(
+                intent: AgentLaunchIntent.explainPortfolio,
+                outline: true,
+                label: 'Allocation',
+              ),
+              const AgentLaunchButton(
+                intent: AgentLaunchIntent.paperReview,
+                outline: true,
+                label: 'Coach',
+              ),
+              ShadButton.outline(
+                size: ShadButtonSize.sm,
+                onPressed: onReset,
+                child: const Text('Reset'),
+              ),
+            ],
           ),
           stats: [
             MetricStat(
@@ -433,6 +451,7 @@ class _PracticeBody extends StatelessWidget {
 
 class _LiveBody extends StatelessWidget {
   const _LiveBody({
+    required this.exchangeId,
     required this.exchangeName,
     required this.snapshot,
     required this.error,
@@ -440,6 +459,7 @@ class _LiveBody extends StatelessWidget {
     required this.onRetry,
   });
 
+  final String exchangeId;
   final String exchangeName;
   final ExchangePortfolioSnapshot? snapshot;
   final String? error;
@@ -498,6 +518,25 @@ class _LiveBody extends StatelessWidget {
           blurb:
               'Real exchange balances from your API credentials. '
               'Read-only in Omniscope.',
+          trailing: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              AgentLaunchButton(
+                exchangeId: exchangeId,
+                intent: AgentLaunchIntent.explainLive,
+                outline: true,
+                label: 'Balances',
+              ),
+              AgentLaunchButton(
+                exchangeId: exchangeId,
+                intent: AgentLaunchIntent.explainPortfolio,
+                outline: true,
+                label: 'Allocation',
+              ),
+            ],
+          ),
           totalLabel: 'Total cash balance',
           totalValue: formatDisplayMoney(data.totalValue, priceFormat),
           stats: [
@@ -538,7 +577,10 @@ class _LiveBody extends StatelessWidget {
         else
           for (var i = 0; i < data.balances.length; i++) ...[
             if (i > 0) const SizedBox(height: 10),
-            _BalanceTile(balance: data.balances[i]),
+            _BalanceTile(
+              exchangeId: exchangeId,
+              balance: data.balances[i],
+            ),
           ],
       ],
     );
@@ -633,8 +675,12 @@ class _HoldingTile extends StatelessWidget {
 }
 
 class _BalanceTile extends StatelessWidget {
-  const _BalanceTile({required this.balance});
+  const _BalanceTile({
+    required this.exchangeId,
+    required this.balance,
+  });
 
+  final String exchangeId;
   final ExchangeBalance balance;
 
   @override
@@ -660,7 +706,13 @@ class _BalanceTile extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(width: 8),
+            AgentLaunchButton(
+              exchangeId: exchangeId,
+              symbol: balance.asset,
+              intent: AgentLaunchIntent.explainLive,
+              iconOnly: true,
+            ),
+            const SizedBox(width: 4),
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [

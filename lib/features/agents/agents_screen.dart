@@ -5,6 +5,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../core/brand_colors.dart';
 import '../../core/fade_page_route.dart';
 import '../../core/shell_navigation.dart';
+import '../../data/agents/agent_robustness.dart';
 import '../../data/agents/agents_repository.dart';
 import '../../data/agents/llm_api_key_config.dart';
 import '../../data/agents/llm_model_catalog.dart';
@@ -20,6 +21,7 @@ import '../../widgets/master_detail_shell.dart';
 import '../../widgets/tab_page_header.dart';
 import 'agent_activity_pane.dart';
 import 'agent_chat_screen.dart';
+import 'agent_launch_actions.dart';
 
 enum AgentsNavSection {
   roles,
@@ -54,6 +56,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
   LlmModelCatalog? _models;
   ShellNavigationController? _shellNav;
   var _openingPendingConnect = false;
+  var _openingPendingChat = false;
 
   AgentsNavSection _selected = AgentsNavSection.roles;
   AgentsNavSection? _narrowSelected;
@@ -70,6 +73,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _maybeOpenPendingConnect();
       _maybeOpenPendingActivity();
+      _maybeOpenPendingChat();
     });
   }
 
@@ -82,6 +86,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
   void _onShellNavChanged() {
     _maybeOpenPendingConnect();
     _maybeOpenPendingActivity();
+    _maybeOpenPendingChat();
   }
 
   void _maybeOpenPendingActivity() {
@@ -127,6 +132,50 @@ class _AgentsScreenState extends State<AgentsScreen> {
       await _openConnect(role);
     } finally {
       _openingPendingConnect = false;
+    }
+  }
+
+  Future<void> _maybeOpenPendingChat() async {
+    if (!mounted || _openingPendingChat) return;
+    final shellNav = _shellNav;
+    if (shellNav == null) return;
+    if (shellNav.tabIndex != ShellNavigationController.agentsTabIndex) return;
+    final pending = shellNav.takePendingAgentChatOpen();
+    if (pending == null) return;
+
+    AgentRoleDefinition? role;
+    for (final r in context.read<AgentsRepository>().availableRoles) {
+      if (r.id == pending.roleId) {
+        role = r;
+        break;
+      }
+    }
+    if (role == null) {
+      showAppToast(
+        context,
+        description: 'That agent is no longer available.',
+        destructive: true,
+      );
+      return;
+    }
+
+    final wide = MediaQuery.sizeOf(context).width >=
+        MasterDetailShell.wideBreakpointDefault;
+    setState(() {
+      _selected = AgentsNavSection.roles;
+      if (!wide) _narrowSelected = AgentsNavSection.roles;
+    });
+
+    _openingPendingChat = true;
+    try {
+      await AgentLaunchActions.openAgentChat(
+        context,
+        role: role,
+        initialSymbol: pending.symbol,
+        autoRun: false,
+      );
+    } finally {
+      _openingPendingChat = false;
     }
   }
 
@@ -190,6 +239,9 @@ class _AgentsScreenState extends State<AgentsScreen> {
           autopilotExchangeId: result.autopilotExchangeId,
           autopilotMaxNotional: result.autopilotMaxNotional,
           autopilotMaxOpenProposals: result.autopilotMaxOpenProposals,
+          scheduleEnabled: result.scheduleEnabled,
+          scheduleInterval: result.scheduleInterval,
+          scheduleSymbols: result.scheduleSymbols,
         );
     if (!mounted) return;
     if (error != null) {
@@ -225,14 +277,15 @@ class _AgentsScreenState extends State<AgentsScreen> {
       title: 'Roles',
       subtitle:
           'Connect an AI helper, then open chat. Keys and chats stay on this '
-          'device. Trade suggestions need a live exchange — not paper.',
+          'device. Trading agents can target Practice or a live portfolio.',
       showBack: showBack,
       onBack: _backToNavList,
       backLabel: 'Agents',
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (!canTrade)
+          if (canTrade &&
+              context.read<TradeExecutor>().liveVenues.isEmpty)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: DecoratedBox(
@@ -249,9 +302,9 @@ class _AgentsScreenState extends State<AgentsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Text(
-                        'Configure an exchange under Settings → Data sources '
-                        'to start getting buy/sell suggestions from trading '
-                        'agents. Practice money stays manual only.',
+                        'No live exchange connected yet — trading agents '
+                        'default to Practice (paper). Add credentials under '
+                        'Settings → Data sources for live Confirm / Autopilot.',
                         style: ShadTheme.of(context).textTheme.small.copyWith(
                               color: ShadTheme.of(context)
                                   .colorScheme
@@ -314,8 +367,8 @@ class _AgentsScreenState extends State<AgentsScreen> {
             const TabPageHeader(
               title: 'Agents',
               subtitle:
-                  'Connect helpers, confirm live suggestions, and track '
-                  'activity. Paper practice stays separate.',
+                  'Connect helpers, confirm suggestions into Practice or live '
+                  'portfolios, and track activity.',
               subtitleSpacing: 6,
             ),
           Expanded(
@@ -387,6 +440,8 @@ class _AgentCard extends StatelessWidget {
         ? null
         : (catalog?.labelFor(LlmProvider.openAi, suggested) ?? suggested);
 
+    final robustness = AgentRobustness.score(role);
+
     return ShadCard(
       title: Row(
         children: [
@@ -395,6 +450,19 @@ class _AgentCard extends StatelessWidget {
             const SizedBox(width: 8),
           ],
           Expanded(child: Text(role.title)),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: AppTooltip(
+                message: AgentRobustness.tooltipMessage,
+                wrapDetector: true,
+                child: ShadBadge.secondary(
+                  child: Text('Robustness $robustness'),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
       description: Text(
@@ -409,6 +477,7 @@ class _AgentCard extends StatelessWidget {
                 ? 'Connected · ${connection.llmProvider.label}'
                     '${modelLabel != null && modelLabel.isNotEmpty ? ' · $modelLabel' : ''}'
                     '${connection.autopilotEnabled ? ' · Autopilot on' : ''}'
+                    '${connection.scheduleEnabled ? ' · Schedule · ${connection.scheduleInterval.shortLabel}' : ''}'
                 : 'Not connected'
                     '${suggestedLabel != null ? ' · Suggested: $suggestedLabel' : ''}',
             style: theme.textTheme.small.copyWith(
@@ -493,6 +562,9 @@ class _ConnectResult {
     this.autopilotExchangeId,
     this.autopilotMaxNotional,
     this.autopilotMaxOpenProposals = 3,
+    this.scheduleEnabled = false,
+    this.scheduleInterval = AgentScheduleInterval.hour1,
+    this.scheduleSymbols = const [],
   });
 
   final LlmProvider provider;
@@ -503,6 +575,9 @@ class _ConnectResult {
   final String? autopilotExchangeId;
   final double? autopilotMaxNotional;
   final int autopilotMaxOpenProposals;
+  final bool scheduleEnabled;
+  final AgentScheduleInterval scheduleInterval;
+  final List<String> scheduleSymbols;
 }
 
 class _ConnectAgentDialog extends StatefulWidget {
@@ -531,9 +606,12 @@ class _ConnectAgentDialogState extends State<_ConnectAgentDialog> {
   late final TextEditingController _customModelController;
   late final TextEditingController _baseUrlController;
   late final TextEditingController _maxNotionalController;
+  late final TextEditingController _scheduleSymbolsController;
   late bool _autopilotEnabled;
   String? _autopilotExchangeId;
   late int _maxOpen;
+  late bool _scheduleEnabled;
+  late AgentScheduleInterval _scheduleInterval;
 
   String? _preloadedKey;
 
@@ -563,15 +641,23 @@ class _ConnectAgentDialogState extends State<_ConnectAgentDialog> {
     _maxNotionalController = TextEditingController(
       text: widget.initial.autopilotMaxNotional?.toString() ?? '',
     );
+    _scheduleEnabled = widget.initial.scheduleEnabled;
+    _scheduleInterval = widget.initial.scheduleInterval;
+    _scheduleSymbolsController = TextEditingController(
+      text: widget.initial.scheduleSymbols.join(', '),
+    );
     if (_autopilotExchangeId != null &&
         !widget.tradableExchangeIds.any((e) => e.$1 == _autopilotExchangeId)) {
       _autopilotExchangeId = null;
     }
+    // Only auto-pick when a single target exists (Practice alone).
     if (_autopilotExchangeId == null &&
-        widget.tradableExchangeIds.isNotEmpty) {
+        widget.tradableExchangeIds.length == 1) {
       _autopilotExchangeId = widget.tradableExchangeIds.first.$1;
     }
   }
+
+  static const _nonePortfolio = '__none__';
 
   @override
   void dispose() {
@@ -579,6 +665,7 @@ class _ConnectAgentDialogState extends State<_ConnectAgentDialog> {
     _customModelController.dispose();
     _baseUrlController.dispose();
     _maxNotionalController.dispose();
+    _scheduleSymbolsController.dispose();
     super.dispose();
   }
 
@@ -621,6 +708,31 @@ class _ConnectAgentDialogState extends State<_ConnectAgentDialog> {
     final notionalRaw = _maxNotionalController.text.trim();
     final notional =
         notionalRaw.isEmpty ? null : double.tryParse(notionalRaw);
+    if (_autopilotEnabled &&
+        (_autopilotExchangeId == null || _autopilotExchangeId!.isEmpty) &&
+        widget.tradableExchangeIds.length != 1) {
+      showAppToast(
+        context,
+        description:
+            'Autopilot needs a default portfolio. Pick one, or turn Autopilot off.',
+        destructive: true,
+      );
+      return;
+    }
+    final symbols =
+        normalizeScheduleSymbols([_scheduleSymbolsController.text]);
+    if (_scheduleEnabled && symbols.isEmpty) {
+      showAppToast(
+        context,
+        description: 'Schedule needs at least one symbol.',
+        destructive: true,
+      );
+      return;
+    }
+    final defaultId = _autopilotExchangeId ??
+        (widget.tradableExchangeIds.length == 1
+            ? widget.tradableExchangeIds.first.$1
+            : null);
     Navigator.of(context).pop(
       _ConnectResult(
         provider: _provider,
@@ -630,9 +742,12 @@ class _ConnectAgentDialogState extends State<_ConnectAgentDialog> {
             ? _baseUrlController.text.trim()
             : null,
         autopilotEnabled: _autopilotEnabled,
-        autopilotExchangeId: _autopilotExchangeId,
+        autopilotExchangeId: defaultId,
         autopilotMaxNotional: notional,
         autopilotMaxOpenProposals: _maxOpen,
+        scheduleEnabled: _scheduleEnabled,
+        scheduleInterval: _scheduleInterval,
+        scheduleSymbols: symbols,
       ),
     );
   }
@@ -673,7 +788,7 @@ class _ConnectAgentDialogState extends State<_ConnectAgentDialog> {
         ),
       ],
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 520),
+        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 560),
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -748,12 +863,57 @@ class _ConnectAgentDialogState extends State<_ConnectAgentDialog> {
               ),
               if (isTradingRole) ...[
                 const SizedBox(height: 18),
+                Text('Default portfolio', style: theme.textTheme.small),
+                const SizedBox(height: 6),
+                Text(
+                  'Optional. When set, Confirm and Autopilot use this portfolio. '
+                  'When none, Confirm asks each time.',
+                  style: theme.textTheme.muted,
+                ),
+                const SizedBox(height: 8),
+                if (widget.tradableExchangeIds.isEmpty)
+                  Text(
+                    'Practice should appear here. Try reopening the app.',
+                    style: theme.textTheme.muted,
+                  )
+                else
+                  ShadSelect<String>(
+                    minWidth: double.infinity,
+                    initialValue: _autopilotExchangeId ?? _nonePortfolio,
+                    placeholder: const Text('Choose on Confirm'),
+                    options: [
+                      if (widget.tradableExchangeIds.length > 1)
+                        const ShadOption(
+                          value: _nonePortfolio,
+                          child: Text('None — choose on Confirm'),
+                        ),
+                      for (final e in widget.tradableExchangeIds)
+                        ShadOption(value: e.$1, child: Text(e.$2)),
+                    ],
+                    selectedOptionBuilder: (context, value) {
+                      if (value == _nonePortfolio) {
+                        return const Text('None — choose on Confirm');
+                      }
+                      for (final e in widget.tradableExchangeIds) {
+                        if (e.$1 == value) return Text(e.$2);
+                      }
+                      return Text(value);
+                    },
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _autopilotExchangeId =
+                            value == _nonePortfolio ? null : value;
+                      });
+                    },
+                  ),
+                const SizedBox(height: 18),
                 Text('Autopilot', style: theme.textTheme.small),
                 const SizedBox(height: 6),
                 Text(
                   'Off by default. When on, risk-approved suggestions submit '
-                  'to a connected live exchange without Confirm. '
-                  'Never uses paper practice money.',
+                  'to the default portfolio without Confirm. Requires a '
+                  'default portfolio above.',
                   style: theme.textTheme.muted,
                 ),
                 const SizedBox(height: 8),
@@ -772,35 +932,6 @@ class _ConnectAgentDialogState extends State<_ConnectAgentDialog> {
                   ],
                 ),
                 if (_autopilotEnabled) ...[
-                  const SizedBox(height: 12),
-                  Text('Target exchange', style: theme.textTheme.small),
-                  const SizedBox(height: 6),
-                  if (widget.tradableExchangeIds.isEmpty)
-                    Text(
-                      'No tradable exchange yet. Configure credentials under '
-                      'Settings → Data sources.',
-                      style: theme.textTheme.muted,
-                    )
-                  else
-                    ShadSelect<String>(
-                      minWidth: double.infinity,
-                      initialValue: _autopilotExchangeId,
-                      placeholder: const Text('Select exchange'),
-                      options: [
-                        for (final e in widget.tradableExchangeIds)
-                          ShadOption(value: e.$1, child: Text(e.$2)),
-                      ],
-                      selectedOptionBuilder: (context, value) {
-                        for (final e in widget.tradableExchangeIds) {
-                          if (e.$1 == value) return Text(e.$2);
-                        }
-                        return Text(value);
-                      },
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setState(() => _autopilotExchangeId = value);
-                      },
-                    ),
                   const SizedBox(height: 12),
                   Text(
                     'Max open pending proposals',
@@ -834,6 +965,58 @@ class _ConnectAgentDialogState extends State<_ConnectAgentDialog> {
                     ),
                   ),
                 ],
+              ],
+              const SizedBox(height: 18),
+              Text('Schedule', style: theme.textTheme.small),
+              const SizedBox(height: 6),
+              Text(
+                'Runs while Omniscope is open on this device. '
+                'Pauses in the background.',
+                style: theme.textTheme.muted,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Enable schedule',
+                      style: theme.textTheme.p,
+                    ),
+                  ),
+                  ShadSwitch(
+                    value: _scheduleEnabled,
+                    onChanged: (v) => setState(() => _scheduleEnabled = v),
+                  ),
+                ],
+              ),
+              if (_scheduleEnabled) ...[
+                const SizedBox(height: 12),
+                Text('Interval', style: theme.textTheme.small),
+                const SizedBox(height: 6),
+                ShadSelect<AgentScheduleInterval>(
+                  minWidth: double.infinity,
+                  initialValue: _scheduleInterval,
+                  options: [
+                    for (final interval in AgentScheduleInterval.values)
+                      ShadOption(
+                        value: interval,
+                        child: Text(interval.label),
+                      ),
+                  ],
+                  selectedOptionBuilder: (context, value) =>
+                      Text(value.label),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _scheduleInterval = value);
+                  },
+                ),
+                const SizedBox(height: 12),
+                Text('Symbols', style: theme.textTheme.small),
+                const SizedBox(height: 6),
+                ShadInput(
+                  controller: _scheduleSymbolsController,
+                  placeholder: const Text('AAPL, BTC_USD, …'),
+                ),
               ],
             ],
           ),

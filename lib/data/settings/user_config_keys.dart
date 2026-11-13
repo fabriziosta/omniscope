@@ -9,6 +9,7 @@ abstract final class UserConfigKeys {
   static const agentChats = 'agentChats';
   static const tradeProposals = 'tradeProposals';
   static const agentActivity = 'agentActivity';
+  static const notifications = 'notifications';
   static const paperPortfolio = 'paperPortfolio';
   static const favorites = 'favorites';
 

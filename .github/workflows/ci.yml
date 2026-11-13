@@ -1,0 +1,95 @@
+# PR / main quality gate + Linux compile smoke (no release uploads).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Ensure .env
+        run: cp .env.example .env
+
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Analyze and test
+        run: |
+          chmod +x tool/flutter_checks.sh
+          tool/flutter_checks.sh all
+
+  build-web:
+    name: build-web
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Ensure .env
+        run: cp .env.example .env
+
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Build web
+        run: flutter build web --release
+
+  build-linux:
+    name: build-linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux desktop deps
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Ensure .env
+        run: cp .env.example .env
+
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Build Linux
+        run: flutter build linux --release

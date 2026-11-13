@@ -8,6 +8,7 @@ import '../../data/agents/agent_chat_repository.dart';
 import '../../data/agents/agents_repository.dart';
 import '../../data/agents/trade_proposal_repository.dart';
 import '../../data/crypto/crypto_exchange_registry.dart';
+import '../../data/notifications/app_notification_repository.dart';
 import '../../data/market/exchange_credentials.dart';
 import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/data_source_settings.dart';
@@ -232,20 +233,24 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
       context,
       title: 'Clear trade proposals and activity?',
       description:
-          'Removes saved agent trade proposals and the Activity timeline '
-          'on this device. Chat history is kept. This cannot be undone.',
+          'Removes saved agent trade proposals, the Activity timeline, and '
+          'shell notifications on this device. Chat history is kept. '
+          'This cannot be undone.',
       confirmLabel: 'Clear activity',
     );
     if (!ok || !mounted) return;
     final proposals = context.read<TradeProposalRepository>();
     final activity = context.read<AgentActivityRepository>();
+    final notifications = context.read<AppNotificationRepository>();
     await proposals.clearAll();
     await activity.clearAll();
+    await notifications.clearAll();
     if (!mounted) return;
     showAppToast(
       context,
       title: 'Activity cleared',
-      description: 'Trade proposals and agent activity were removed.',
+      description:
+          'Trade proposals, agent activity, and notifications were removed.',
     );
   }
 

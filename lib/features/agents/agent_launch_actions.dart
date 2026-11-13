@@ -14,11 +14,12 @@ import 'agent_chat_screen.dart';
 class AgentLaunchActions {
   AgentLaunchActions._();
 
-  /// Push chat for [role], optionally auto-running a symbol turn.
+  /// Push chat for [role], optionally auto-running a symbol / venue turn.
   static Future<void> openAgentChat(
     BuildContext context, {
     required AgentRoleDefinition role,
     String? initialSymbol,
+    String? initialExchangeId,
     bool autoRun = false,
     String? side,
     double? quantity,
@@ -28,6 +29,7 @@ class AgentLaunchActions {
       AgentChatScreen(
         role: role,
         initialSymbol: initialSymbol,
+        initialExchangeId: initialExchangeId,
         autoRun: autoRun,
         initialSide: side,
         initialQuantity: quantity,
@@ -37,13 +39,15 @@ class AgentLaunchActions {
 
   /// Resolve applicable roles for [intent] and launch or show a picker.
   ///
-  /// - One connected role → open chat (auto-run when [symbol] is set).
+  /// - One connected role → open chat (auto-run when [symbol] is set, or for
+  ///   portfolio-level intents).
   /// - Several connected → dialog to choose.
   /// - None connected → Agents tab + Connect dialog for the preferred role.
   static Future<void> launch(
     BuildContext context, {
     required AgentLaunchIntent intent,
-    required String symbol,
+    String? symbol,
+    String? exchangeId,
     String? side,
     double? quantity,
   }) async {
@@ -81,12 +85,18 @@ class AgentLaunchActions {
       return;
     }
 
+    final sym = symbol?.trim();
+    final shouldAutoRun = intent.isPortfolioLevel
+        ? true
+        : (sym != null && sym.isNotEmpty);
+
     if (connected.length == 1) {
       await openAgentChat(
         context,
         role: connected.first,
-        initialSymbol: symbol,
-        autoRun: true,
+        initialSymbol: sym,
+        initialExchangeId: exchangeId,
+        autoRun: shouldAutoRun,
         side: side,
         quantity: quantity,
       );
@@ -97,16 +107,20 @@ class AgentLaunchActions {
       context: context,
       builder: (context) => _AgentLaunchPickerDialog(
         title: intent.pickerTitle,
-        symbol: symbol.trim().toUpperCase(),
+        symbol: (sym ?? '').toUpperCase(),
+        exchangeId: exchangeId?.trim(),
         roles: connected,
+        portfolioLevel: intent.isPortfolioLevel,
+        intent: intent,
       ),
     );
     if (chosen == null || !context.mounted) return;
     await openAgentChat(
       context,
       role: chosen,
-      initialSymbol: symbol,
-      autoRun: true,
+      initialSymbol: sym,
+      initialExchangeId: exchangeId,
+      autoRun: shouldAutoRun,
       side: side,
       quantity: quantity,
     );
@@ -118,19 +132,39 @@ class _AgentLaunchPickerDialog extends StatelessWidget {
     required this.title,
     required this.symbol,
     required this.roles,
+    required this.intent,
+    this.exchangeId,
+    this.portfolioLevel = false,
   });
 
   final String title;
   final String symbol;
+  final String? exchangeId;
   final List<AgentRoleDefinition> roles;
+  final bool portfolioLevel;
+  final AgentLaunchIntent intent;
 
   @override
   Widget build(BuildContext context) {
+    final String description;
+    if (portfolioLevel) {
+      final focus = symbol.isNotEmpty ? ' (focus $symbol)' : '';
+      description = switch (intent) {
+        AgentLaunchIntent.explainLive =>
+          'Choose an agent to explain live balances$focus.',
+        AgentLaunchIntent.explainPortfolio =>
+          'Choose an agent to review allocation$focus.',
+        AgentLaunchIntent.paperReview =>
+          'Choose an agent to coach your practice portfolio$focus.',
+        _ => 'Choose an agent$focus.',
+      };
+    } else {
+      description =
+          'Choose an agent for $symbol. Chat opens with a Run for this symbol.';
+    }
     return ShadDialog(
       title: Text(title),
-      description: Text(
-        'Choose an agent for $symbol. Chat opens with a Run for this symbol.',
-      ),
+      description: Text(description),
       actions: [
         ShadButton.outline(
           onPressed: () => Navigator.of(context).pop(),

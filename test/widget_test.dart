@@ -11,6 +11,7 @@ import 'package:omniscope/data/agents/agent_role_catalog.dart';
 import 'package:omniscope/data/agents/agents_repository.dart';
 import 'package:omniscope/data/agents/llm_chat_client.dart';
 import 'package:omniscope/data/agents/trade_proposal_repository.dart';
+import 'package:omniscope/data/notifications/app_notification_repository.dart';
 import 'package:omniscope/data/crypto/crypto_com/crypto_com_exchange_client.dart';
 import 'package:omniscope/data/crypto/crypto_exchange.dart';
 import 'package:omniscope/data/crypto/crypto_exchange_client.dart';
@@ -29,6 +30,7 @@ import 'package:omniscope/data/settings/user_config_store.dart';
 import 'package:omniscope/data/trading/broker_exchange_registry.dart';
 import 'package:omniscope/data/trading/order_models.dart';
 import 'package:omniscope/data/trading/trade_executor.dart';
+import 'package:omniscope/features/agents/agent_schedule_coordinator.dart';
 import 'package:omniscope/widgets/nav_back_button.dart';
 import 'package:provider/provider.dart';
 
@@ -172,6 +174,8 @@ void main() {
     await tradeProposals.load();
     final agentActivity = AgentActivityRepository(store: config);
     await agentActivity.load();
+    final appNotifications = AppNotificationRepository(store: config);
+    await appNotifications.load();
 
     await tester.binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -190,10 +194,26 @@ void main() {
       _FakeCryptoExchangeClient(),
     ]);
     const brokerRegistry = BrokerExchangeRegistry.empty;
+    final llmChat = _testLlmChatClient();
     final tradeExecutor = RoutingTradeExecutor(
       cryptoRegistry: cryptoRegistry,
       brokerRegistry: brokerRegistry,
       dataSources: dataSourceSettings,
+      portfolio: portfolio,
+      marketData: marketClient,
+    );
+    final agentSchedule = AgentScheduleCoordinator(
+      agents: agents,
+      chats: agentChats,
+      marketData: marketClient,
+      llm: llmChat,
+      tradeExecutor: tradeExecutor,
+      proposals: tradeProposals,
+      activity: agentActivity,
+      notifications: appNotifications,
+      cryptoRegistry: cryptoRegistry,
+      dataSources: dataSourceSettings,
+      portfolio: portfolio,
     );
     final navigatorKey = GlobalKey<NavigatorState>();
     final appErrors = AppErrorController(navigatorKey: navigatorKey);
@@ -222,7 +242,10 @@ void main() {
           ChangeNotifierProvider<AgentActivityRepository>.value(
             value: agentActivity,
           ),
-          Provider<LlmChatClient>.value(value: _testLlmChatClient()),
+          ChangeNotifierProvider<AppNotificationRepository>.value(
+            value: appNotifications,
+          ),
+          Provider<LlmChatClient>.value(value: llmChat),
           ChangeNotifierProvider<ThemeSettings>.value(value: themeSettings),
           ChangeNotifierProvider<DisplaySettings>.value(value: displaySettings),
           ChangeNotifierProvider<DataSourceSettings>.value(
@@ -232,12 +255,18 @@ void main() {
           ChangeNotifierProvider<ShellNavigationController>(
             create: (_) => ShellNavigationController(),
           ),
+          ChangeNotifierProvider<AgentScheduleCoordinator>.value(
+            value: agentSchedule,
+          ),
         ],
         child: OmniscopeApp(navigatorKey: navigatorKey),
       ),
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
+    // HomeShell resumes the schedule on first frame; stop it for widget tests.
+    agentSchedule.pause();
+    addTearDown(agentSchedule.dispose);
   }
 
   testWidgets('shell tabs: markets, crypto, agents, settings', (tester) async {
@@ -321,17 +350,16 @@ void main() {
         .toList();
     expect(roleTitles, contains('Intraday Execution & Risk Control'));
     expect(roleTitles, contains('Hedge Fund Desk'));
-    // Lower roles may sit below the phone viewport — scroll Agents list only.
-    final agentsList = find.descendant(
-      of: find.ancestor(
-        of: find.text('Market Research & Analysis'),
-        matching: find.byType(ListView),
-      ),
-      matching: find.byType(Scrollable),
+    // Lower roles may sit below the phone viewport — scroll the Roles list.
+    final rolesScrollable = find.byWidgetPredicate(
+      (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
     );
-    await tester.drag(agentsList, const Offset(0, -800));
+    await tester.scrollUntilVisible(
+      find.text('Hedge Fund Desk'),
+      300,
+      scrollable: rolesScrollable.last,
+    );
     await tester.pump();
-    expect(find.text('Intraday Execution & Risk Control'), findsOneWidget);
     expect(find.text('Hedge Fund Desk'), findsOneWidget);
 
     await tester.tap(find.text('Settings').last);

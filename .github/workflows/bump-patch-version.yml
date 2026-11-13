@@ -51,6 +51,9 @@ jobs:
 
       - name: Bump patch version
         if: steps.detect.outputs.manual != 'true'
+        env:
+          # Stamp the merge/push commit, not the later chore bump commit.
+          OMNISCOPE_VERSION_SHA: ${{ github.sha }}
         run: |
           chmod +x tool/bump_patch_version.sh
           tool/bump_patch_version.sh
@@ -71,7 +74,7 @@ jobs:
           git commit -m "$(cat <<EOF
           chore: bump patch to ${version} [skip version bump]
 
-          Automated patch (+ build) bump after merge to main.
+          Automated patch bump (pubspec +build, AppInfo +short SHA) after merge to main.
           EOF
           )"
           git push origin HEAD:main

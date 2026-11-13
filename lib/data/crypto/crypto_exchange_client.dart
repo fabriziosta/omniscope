@@ -10,7 +10,7 @@ import 'exchange_portfolio.dart';
 ///
 /// Optional private credentials enable [canFetchPortfolio] / [fetchPortfolio]
 /// for live balances on the Portfolio tab, and [canPlaceOrders] / [placeOrder]
-/// for agent-confirmed live trades (never paper).
+/// for agent-confirmed live trades (Practice routes separately via TradeExecutor).
 abstract class CryptoExchangeClient {
   CryptoExchange get exchange;
 

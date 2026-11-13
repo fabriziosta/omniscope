@@ -13,7 +13,7 @@ Targets: **Linux**, **Windows**, **Android**, **Apple** (**iOS** / **macOS**), a
 - **Crypto** — exchange group (Crypto.com subgroup today); each exchange has Favorites + Spot pairs from public APIs
 - **Asset detail** — price, day change, short curated overview (default symbols), 1M / 3M / 1Y history chart, paper buy/sell, plus external research links (provider page, Wikipedia when mapped, Google Finance, TradingView) opened in the system browser
 - **Portfolio** — practice paper trading (default $10,000 starting cash, configurable in Settings, local holdings, P&L, reset) plus **Live** exchange balance subgroups when API credentials are configured (e.g. Crypto.com)
-- **Agents** — connect AI helpers with your own API key and model, then chat on-device (freeform + symbol Run); keys and chat threads stay local. Python CrewAI/LangGraph CLIs remain available under `agents/`
+- **Agents** — connect AI helpers with your own API key and model, then chat on-device (freeform + symbol Run); trading roles can Confirm into Practice or a live exchange (optional Connect default portfolio). Keys and chat threads stay local. Python CrewAI/LangGraph CLIs remain available under `agents/`
 - **Settings** — sidebar section navigator (one pane at a time): appearance, data sources & credentials, practice starting cash, connections (LLM keys + agents/exchanges), data & privacy (path / import / export / clear local data), and About (tagline *My trusted learning and trading buddy* + educational disclaimer)
 - **No accounts** — everything stays on device in one `omniscope.json` config (Web: browser storage + import/export)
 
@@ -48,6 +48,29 @@ sudo dnf install -y clang cmake ninja-build gtk3-devel pkgconf-pkg-config \
 ```
 
 Then `flutter doctor` until the Linux toolchain is green.
+
+### Podman (slim Linux runtime image)
+
+A multi-stage [`Containerfile`](Containerfile) builds the Flutter Linux release bundle in a throwaway stage and ships only **`omniscope:runtime`** (GTK/EGL runtime libs + the bundle). No Flutter SDK in the final image. Linux/x64 GUI only — forward the host display.
+
+```bash
+make container-build     # podman build -t omniscope:runtime
+make container-run       # needs DISPLAY; mounts /tmp/.X11-unix
+```
+
+On each `v*` tag (and via **Actions → Container → Run workflow**), CI builds the same [`Containerfile`](Containerfile) and pushes to GitHub Container Registry:
+
+```bash
+# After a release tag (example)
+podman pull ghcr.io/fabriziosta/omniscope:latest
+# or: podman pull ghcr.io/fabriziosta/omniscope:1.0.1
+podman run --rm -it -e DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix:ro \
+  ghcr.io/fabriziosta/omniscope:latest
+```
+
+Packages start **private** on first publish; set visibility under the repo’s **Packages** settings if you want public pulls. Auth for private images: [GitHub Container registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+
+Do not bake secrets into the image (builder copies `.env.example` for the asset requirement). When Linux packages or Flutter install flags change, update the Containerfile in the same change (see [`AGENTS.md`](AGENTS.md)).
 
 ### Android
 
@@ -100,6 +123,31 @@ make build-web
 Artifacts land under `build/` (e.g. Linux `build/linux/x64/release/bundle/`, APK `build/app/outputs/flutter-apk/app-release.apk`, Web `build/web/`).
 
 Underlying Flutter commands still work: `flutter pub get`, `flutter run -d linux`, `flutter analyze`, `flutter test`.
+
+### CI (GitHub Actions)
+
+Linux runners only (`.github/workflows/`):
+
+| Workflow | When | What |
+|----------|------|------|
+| **CI** ([`ci.yml`](.github/workflows/ci.yml)) | PR + push to `main` | Gitleaks + `tool/flutter_checks.sh all` (analyze + test); `flutter build web` and `flutter build linux` as compile smoke (no artifact upload) |
+| **Release** ([`release.yml`](.github/workflows/release.yml)) | Push tag `v*` only | Build web + Linux + APK and attach them to a GitHub Release |
+| **Container** ([`container.yml`](.github/workflows/container.yml)) | Push tag `v*` + manual | Build [`Containerfile`](Containerfile) and push `ghcr.io/<owner>/omniscope` (`:latest`, semver tags) |
+| **Bump patch** ([`bump-patch-version.yml`](.github/workflows/bump-patch-version.yml)) | Push to `main` | Auto-increments patch in `pubspec.yaml` / AppInfo (does **not** create tags) |
+
+Optional: enable branch protection required checks for CI jobs `check`, `build-web`, and `build-linux`.
+
+**Cutting a release** (after merge + auto patch bump on `main`):
+
+```bash
+# Tag should match pubspec / AppInfo MAJOR.MINOR.PATCH (e.g. 1.0.1 → v1.0.1)
+git checkout main && git pull
+VERSION="$(tool/bump_patch_version.sh --check | cut -d+ -f1)"
+git tag "v${VERSION}"
+git push origin "v${VERSION}"
+```
+
+Or tag explicitly: `git tag v1.0.1 && git push origin v1.0.1`. Release assets: `omniscope-web.zip`, `omniscope-linux.tar.gz`, `omniscope.apk`. The same tag also triggers the Container workflow → `ghcr.io/fabriziosta/omniscope:<version>`.
 
 ### Pre-commit / pre-push hooks
 

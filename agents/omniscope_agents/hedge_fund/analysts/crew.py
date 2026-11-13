@@ -10,6 +10,7 @@ from typing import Any
 
 from crewai import Agent, Crew, Process, Task
 
+from omniscope_agents.hedge_fund.analysts import prompts as P
 from omniscope_agents.hedge_fund.tools.fundamentals import (
     fetch_fundamentals_snapshot,
     format_fundamentals_report,
@@ -23,8 +24,6 @@ from omniscope_agents.hedge_fund.tools.technicals import (
     format_technicals_report,
 )
 from omniscope_agents.llm import Provider, build_crewai_llm
-
-_DISCLAIMER = "Not financial advice — educational paper trading only."
 
 
 def gather_analyst_packets(symbol: str) -> dict[str, str]:
@@ -58,81 +57,43 @@ def build_analyst_crew(
     )
 
     technical = Agent(
-        role="Technical Analyst",
-        goal=(
-            "Interpret live price action and indicators (MACD, RSI, MAs) "
-            "to outline possible entry/exit zones for learners."
-        ),
-        backstory=(
-            "You look only at price and indicators from the provided live packet. "
-            "You never invent RSI/MACD values. You never give personalized advice."
-        ),
+        role=P.TECHNICAL_ROLE,
+        goal=P.TECHNICAL_GOAL,
+        backstory=P.TECHNICAL_BACKSTORY,
         llm=llm,
         verbose=False,
         allow_delegation=False,
     )
     sentiment = Agent(
-        role="Sentiment & News Analyst",
-        goal=(
-            "Gauge market mood from public headlines and flag sudden macro "
-            "or company news that could move the stock."
-        ),
-        backstory=(
-            "You read only the provided public news packet (Yahoo + RSS). "
-            "You do not claim access to X/Twitter, Bloomberg, or Reuters terminals. "
-            "You never invent headlines."
-        ),
+        role=P.SENTIMENT_ROLE,
+        goal=P.SENTIMENT_GOAL,
+        backstory=P.SENTIMENT_BACKSTORY,
         llm=llm,
         verbose=False,
         allow_delegation=False,
     )
     fundamental = Agent(
-        role="Fundamental Analyst",
-        goal=(
-            "Use SEC filings and financial highlights to judge whether the "
-            "company looks relatively rich or cheap — in plain language."
-        ),
-        backstory=(
-            "You rely on the EDGAR packet only. If filings are missing, say so. "
-            "You never invent 10-K facts. Educational tone only."
-        ),
+        role=P.FUNDAMENTAL_ROLE,
+        goal=P.FUNDAMENTAL_GOAL,
+        backstory=P.FUNDAMENTAL_BACKSTORY,
         llm=llm,
         verbose=False,
         allow_delegation=False,
     )
 
     technical_task = Task(
-        description=(
-            "Using ONLY this live technical packet for '{symbol}':\n\n"
-            "{technical_packet}\n\n"
-            "Write a short Technical Analyst note (under 220 words): "
-            "trend, key indicators, possible entry/exit ideas for paper trading. "
-            f"End with: '{_DISCLAIMER}'"
-        ),
-        expected_output="Plain-language technical analysis note.",
+        description=P.TECHNICAL_TASK,
+        expected_output=P.TECHNICAL_EXPECTED,
         agent=technical,
     )
     sentiment_task = Task(
-        description=(
-            "Using ONLY this live news/sentiment packet for '{symbol}':\n\n"
-            "{sentiment_packet}\n\n"
-            "Write a short Sentiment & News note (under 220 words): mood, "
-            "notable headlines, sudden events to watch. "
-            f"End with: '{_DISCLAIMER}'"
-        ),
-        expected_output="Plain-language sentiment and news note.",
+        description=P.SENTIMENT_TASK,
+        expected_output=P.SENTIMENT_EXPECTED,
         agent=sentiment,
     )
     fundamental_task = Task(
-        description=(
-            "Using ONLY this live fundamentals packet for '{symbol}':\n\n"
-            "{fundamental_packet}\n\n"
-            "Write a short Fundamental Analyst note (under 220 words): "
-            "business snapshot, valuation lean (rich/fair/cheap if supported), "
-            "filing risks. "
-            f"End with: '{_DISCLAIMER}'"
-        ),
-        expected_output="Plain-language fundamentals note.",
+        description=P.FUNDAMENTAL_TASK,
+        expected_output=P.FUNDAMENTAL_EXPECTED,
         agent=fundamental,
     )
 
@@ -212,37 +173,30 @@ def run_single_analyst(
     )
 
     if stage == "technical":
-        role = "Technical Analyst"
+        role = P.TECHNICAL_ROLE
         packet = packets["technical"]
-        goal = "Interpret live indicators for entry/exit ideas."
+        goal = P.TECHNICAL_SINGLE_GOAL
     elif stage == "sentiment":
-        role = "Sentiment & News Analyst"
+        role = P.SENTIMENT_ROLE
         packet = packets["sentiment"]
-        goal = "Gauge mood from public headlines."
+        goal = P.SENTIMENT_SINGLE_GOAL
     elif stage == "fundamental":
-        role = "Fundamental Analyst"
+        role = P.FUNDAMENTAL_ROLE
         packet = packets["fundamental"]
-        goal = "Evaluate EDGAR filings for valuation lean."
+        goal = P.FUNDAMENTAL_SINGLE_GOAL
     else:
         raise ValueError(f"Unknown analyst stage: {stage}")
 
     agent = Agent(
         role=role,
         goal=goal,
-        backstory=(
-            "Educational Omniscope analyst. Use only the live packet. "
-            "Never invent data."
-        ),
+        backstory=P.SINGLE_ANALYST_BACKSTORY,
         llm=llm,
         verbose=False,
         allow_delegation=False,
     )
     task = Task(
-        description=(
-            f"Using ONLY this live packet for '{symbol}':\n\n{packet}\n\n"
-            f"Write a short {role} note under 220 words. "
-            f"End with: '{_DISCLAIMER}'"
-        ),
+        description=P.single_analyst_task(role=role, symbol=symbol, packet=packet),
         expected_output=f"Plain-language {role} note.",
         agent=agent,
     )

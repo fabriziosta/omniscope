@@ -7,6 +7,15 @@ enum AgentLaunchIntent {
 
   /// Paper trade size / risk check for a symbol.
   tradeCheck,
+
+  /// Plain-language walkthrough of live exchange balances.
+  explainLive,
+
+  /// Allocation / diversification review (Practice and/or Live).
+  explainPortfolio,
+
+  /// Practice portfolio coaching (cash, size, avg cost).
+  paperReview,
 }
 
 extension AgentLaunchIntentX on AgentLaunchIntent {
@@ -20,18 +29,42 @@ extension AgentLaunchIntentX on AgentLaunchIntent {
             'intradayTrading',
             'hedgeFundDesk',
           ],
+        AgentLaunchIntent.explainLive => const [
+            'liveBalanceExplainer',
+          ],
+        AgentLaunchIntent.explainPortfolio => const [
+            'portfolioGuide',
+          ],
+        AgentLaunchIntent.paperReview => const [
+            'paperPortfolioCoach',
+          ],
+      };
+
+  /// True when this intent can auto-run without a symbol.
+  bool get isPortfolioLevel => switch (this) {
+        AgentLaunchIntent.explainLive ||
+        AgentLaunchIntent.explainPortfolio ||
+        AgentLaunchIntent.paperReview =>
+          true,
+        _ => false,
       };
 
   /// Primary CTA label when a single button is shown.
   String get ctaLabel => switch (this) {
         AgentLaunchIntent.investigate => 'Investigate',
         AgentLaunchIntent.tradeCheck => 'Trade check',
+        AgentLaunchIntent.explainLive => 'Explain balances',
+        AgentLaunchIntent.explainPortfolio => 'Review allocation',
+        AgentLaunchIntent.paperReview => 'Practice coach',
       };
 
   /// Short dialog title when picking among several roles.
   String get pickerTitle => switch (this) {
         AgentLaunchIntent.investigate => 'Investigate with',
         AgentLaunchIntent.tradeCheck => 'Trade check with',
+        AgentLaunchIntent.explainLive => 'Explain balances with',
+        AgentLaunchIntent.explainPortfolio => 'Review allocation with',
+        AgentLaunchIntent.paperReview => 'Practice coach with',
       };
 }
 

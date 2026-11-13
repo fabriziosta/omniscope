@@ -16,7 +16,7 @@ When designing or changing Omniscope UI, **proactively suggest** where an AI age
 
 ## How to wire it
 
-- Use [`AgentLaunchIntent`](lib/data/agents/agent_launch.dart): `investigate` (research/desk) or `tradeCheck` (intraday/desk).
+- Use [`AgentLaunchIntent`](lib/data/agents/agent_launch.dart): `investigate` (research/desk), `tradeCheck` (intraday/desk), `explainLive` (live balances), `explainPortfolio` (allocation guide), or `paperReview` (practice coach).
 - Launch via [`AgentLaunchActions.launch`](lib/features/agents/agent_launch_actions.dart) or [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart) — do not push `AgentChatScreen` with a hard-coded role unless intentional.
 - Pass the **symbol**; set `autoRun` through the shared helper so chat runs the role prompt + market snapshot.
 - Mobile-first: one CTA if a single connected agent applies; picker when several; when none connected, call `ShellNavigationController.goToAgents(connectRoleId: …)` so the user lands on Agents with Connect open.

@@ -1,9 +1,9 @@
 /// App identity for Settings → About.
 ///
-/// Keep [version] in sync with the `X.Y.Z` part of `pubspec.yaml`.
+/// [version] is `MAJOR.MINOR.PATCH+SHORTSHA` (7-char commit). The `X.Y.Z` part
+/// must match `pubspec.yaml`; the `+BUILD` in pubspec stays numeric for stores.
 /// Patch bumps: `make bump-patch` / CI on push to `main`.
-/// Major / minor: edit both files manually.
 abstract final class AppInfo {
   static const name = 'Omniscope';
-  static const version = '1.0.0';
+  static const version = '1.0.0+d611bff';
 }

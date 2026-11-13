@@ -19,6 +19,7 @@ import 'package:omniscope/data/agents/trade_proposal_repository.dart';
 import 'package:omniscope/data/crypto/crypto_exchange_registry.dart';
 import 'package:omniscope/data/market/market_data_client.dart';
 import 'package:omniscope/data/market/models.dart';
+import 'package:omniscope/data/portfolio/portfolio_repository.dart';
 import 'package:omniscope/data/settings/data_source_settings.dart';
 import 'package:omniscope/data/settings/env_secrets_repository.dart';
 import 'package:omniscope/data/trading/broker_exchange_registry.dart';
@@ -159,6 +160,39 @@ void main() {
       );
       expect(
         AgentRolePrompts.runUserPrompt(
+          roleId: 'liveBalanceExplainer',
+          symbol: '',
+        ),
+        allOf(
+          contains('live exchange balances'),
+          contains('Do not emit trade JSON'),
+        ),
+      );
+      expect(
+        AgentRolePrompts.runUserPrompt(
+          roleId: 'liveBalanceExplainer',
+          symbol: 'BTC',
+        ),
+        contains('BTC'),
+      );
+      expect(
+        AgentRolePrompts.runUserPrompt(
+          roleId: 'portfolioGuide',
+          symbol: '',
+        ),
+        contains('allocation'),
+      );
+      expect(
+        AgentRolePrompts.runUserPrompt(
+          roleId: 'paperPortfolioCoach',
+          symbol: 'AAPL',
+          side: 'buy',
+          quantity: 2,
+        ),
+        allOf(contains('AAPL'), contains('buy'), contains('2')),
+      );
+      expect(
+        AgentRolePrompts.runUserPrompt(
           roleId: 'intradayTrading',
           symbol: 'MSFT',
           side: 'buy',
@@ -167,6 +201,29 @@ void main() {
         allOf(contains('MSFT'), contains('buy'), contains('5')),
       );
       expect(AgentRolePrompts.runChipLabel('hedgeFundDesk'), 'Run desk');
+      expect(
+        AgentRolePrompts.runChipLabel('liveBalanceExplainer'),
+        'Explain balances',
+      );
+      expect(
+        AgentRolePrompts.runChipLabel('portfolioGuide'),
+        'Review allocation',
+      );
+      expect(
+        AgentRolePrompts.runChipLabel('paperPortfolioCoach'),
+        'Coach practice',
+      );
+      expect(AgentRolePrompts.supportsTradeProposals('liveBalanceExplainer'), isFalse);
+      expect(AgentRolePrompts.usesLiveBalanceContext('liveBalanceExplainer'), isTrue);
+      expect(AgentRolePrompts.usesLiveBalanceContext('portfolioGuide'), isTrue);
+      expect(AgentRolePrompts.usesPracticePortfolioContext('portfolioGuide'), isTrue);
+      expect(
+        AgentRolePrompts.usesPracticePortfolioContext('paperPortfolioCoach'),
+        isTrue,
+      );
+      expect(AgentRolePrompts.allowsRunWithoutSymbol('liveBalanceExplainer'), isTrue);
+      expect(AgentRolePrompts.allowsRunWithoutSymbol('portfolioGuide'), isTrue);
+      expect(AgentRolePrompts.allowsRunWithoutSymbol('paperPortfolioCoach'), isTrue);
     });
   });
 
@@ -369,12 +426,17 @@ void main() {
     await activity.load();
     final dataSources = DataSourceSettings(store: store);
     await dataSources.load();
+    final portfolio = PortfolioRepository(store: store);
+    await portfolio.load();
     const cryptoRegistry = CryptoExchangeRegistry([]);
     const brokerRegistry = BrokerExchangeRegistry.empty;
+    final marketData = _agentMarketData();
     final tradeExecutor = RoutingTradeExecutor(
       cryptoRegistry: cryptoRegistry,
       brokerRegistry: brokerRegistry,
       dataSources: dataSources,
+      portfolio: portfolio,
+      marketData: marketData,
     );
 
     await tester.binding.setSurfaceSize(const Size(390, 844));
@@ -383,11 +445,12 @@ void main() {
     await tester.pumpWidget(
       MultiProvider(
         providers: [
-          Provider<MarketDataClient>.value(value: _agentMarketData()),
+          Provider<MarketDataClient>.value(value: marketData),
           Provider<CryptoExchangeRegistry>.value(value: cryptoRegistry),
           Provider<BrokerExchangeRegistry>.value(value: brokerRegistry),
           Provider<TradeExecutor>.value(value: tradeExecutor),
           ChangeNotifierProvider<DataSourceSettings>.value(value: dataSources),
+          ChangeNotifierProvider<PortfolioRepository>.value(value: portfolio),
           ChangeNotifierProvider<AgentsRepository>.value(value: agents),
           ChangeNotifierProvider<AgentChatRepository>.value(value: agentChats),
           ChangeNotifierProvider<TradeProposalRepository>.value(

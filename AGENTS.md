@@ -142,13 +142,16 @@ lib/data/crypto/
 
 Optional local LLM connections for roles listed in the agents package manifest. Educational context — users Confirm live suggestions; Autopilot is opt-in per agent.
 
-**Paper practice is never used for AI orders.** Suggestions and Confirm / Autopilot target a **connected live exchange** only (credentials under Settings → Data sources). Configure an exchange before trading agents will Run a trade check.
+**Practice (paper) and live exchanges are both valid agent trade targets.** Connect can set an optional **default portfolio**; Confirm uses that default when set, otherwise asks the user to pick (Practice + live venues). Autopilot requires a default (or a single available target). With no live credentials, Practice alone unlocks trading Runs and is the default target. Live venues still need credentials under Settings → Data sources.
 
 ### Role → framework (fixed — do not swap)
 
 | Role | Framework | Workload | Model preset |
 |------|-----------|----------|--------------|
 | **Market Research & Analysis** | **Always CrewAI** | Investigation | Prefer **lighter** models |
+| **Live Balance Explainer** | **Always CrewAI** | Investigation | Prefer **lighter** models |
+| **Portfolio & Allocation Guide** | **Always CrewAI** | Investigation | Prefer **lighter** models |
+| **Practice Portfolio Coach** | **Always CrewAI** | Investigation | Prefer **lighter** models |
 | **Intraday Execution & Risk Control** | **Always LangGraph** | Trading | Prefer **heavier** models |
 | **Hedge Fund Desk** | **LangGraph** orchestration (CrewAI for analyst + bull/bear stages) | Trading | Prefer **heavier** models |
 
@@ -164,23 +167,40 @@ DeepSeek and Grok use OpenAI-compatible APIs (`https://api.deepseek.com`, `https
 agents/                         # Python package (CLI runners)
   omniscope_agents/
     manifest.json               # available roles + model presets (Flutter asset)
+    disclaimer.py               # shared CLI educational disclaimer string
+    trade_schema.py             # shared trade JSON field contract (CLI + docs)
     llm.py                      # provider + model + api_key → LLM
-    market_research/            # CrewAI
-    trading/                    # LangGraph
+    market_research/            # CrewAI (+ prompts.py)
+    live_balance/               # CrewAI (CLI snapshot explainer; in-app is primary)
+    portfolio_guide/            # CrewAI (CLI allocation note; in-app is primary)
+    paper_portfolio/            # CrewAI (CLI practice coach; in-app is primary)
+    trading/                    # LangGraph (+ prompts.py)
     hedge_fund/                 # LangGraph desk + CrewAI analysts/debate + live tools
+                                # (+ prompts.py; analysts/research have prompts.py)
 
 assets/agents/llm_models.json   # selectable models per provider (data-driven)
 .env.example / .env             # optional local secrets: LLM + exchange/market (gitignored)
 
 lib/data/agents/                # Flutter models + AgentsRepository + catalog loaders
+                                # agent_role_prompts.dart = in-app chat prompt SoT
 lib/data/trading/               # TradeExecutor, order models, BrokerExchangeRegistry
 lib/features/agents/            # Agents tab UI (Roles + Activity)
 ```
 
+### Prompt source of truth (do not mega-JSON)
+
+Keep **three layers** — do **not** put Flutter + CLI harness prompts in one `prompts.json`:
+
+1. **Role catalog** — [`manifest.json`](agents/omniscope_agents/manifest.json): ids, titles, framework, model presets. No prompt bodies.
+2. **In-app chat prompts (Flutter only)** — [`agent_role_prompts.dart`](lib/data/agents/agent_role_prompts.dart): system + Run user templates for HTTPS chat. Practice or live portfolio wording; user picks target on Confirm. Do not feed Python from this file.
+3. **CLI prompts (package-local)** — `prompts.py` next to each role package (`market_research/`, `trading/`, `hedge_fund/` and its analyst/research crews). Paper / educational multi-agent. Do not merge with Flutter prose.
+
+**Shared across surfaces (schema only, not prompt prose):** trade proposal fields `{ticker, action, quantity, rationale, risk_approved}` — see [`trade_schema.py`](agents/omniscope_agents/trade_schema.py) and [`TradeProposalLlmSchema.canonicalLlmKeys`](lib/data/agents/trade_proposal.dart). In-app = live Confirm; CLI Head Trader = paper proposal.
+
 ### Live trade suggestions (in-app)
 
 - Trading roles (`intradayTrading`, `hedgeFundDesk`) emit a fenced JSON block `{ticker, action, quantity, rationale, risk_approved}` parsed into [`TradeProposal`](lib/data/agents/trade_proposal.dart).
-- [`TradeExecutor`](lib/data/trading/trade_executor.dart) routes Confirm / Autopilot to venues with `canPlaceOrders` (Crypto.com first; brokers via [`BrokerExchangeRegistry`](lib/data/trading/broker_exchange_registry.dart)).
+- [`TradeExecutor`](lib/data/trading/trade_executor.dart) routes Confirm / Autopilot to Practice (paper buy/sell) or live venues with `canPlaceOrders` (Crypto.com first; brokers via [`BrokerExchangeRegistry`](lib/data/trading/broker_exchange_registry.dart)).
 - Chat shows Confirm / Dismiss; Autopilot is configured on Connect/Edit (default **off**).
 - Agents → **Activity** pane lists proposals and events (`tradeProposals` / `agentActivity` config slices).
 
@@ -212,26 +232,49 @@ CLI: `python -m omniscope_agents.hedge_fund.run --symbol AAPL ...` (see [`agents
 
 - Connected role → **Open chat** → [`AgentChatScreen`](lib/features/agents/agent_chat_screen.dart).
 - Flutter calls provider HTTPS directly via [`LlmChatClient`](lib/data/agents/llm_chat_client.dart) (OpenAI-compatible, Anthropic, Gemini) using the stored connection — **does not** spawn Python CrewAI/LangGraph.
-- Freeform messages plus a role-aware **Run** shortcut (symbol → structured turn). Before the LLM call, a compact quote/history snapshot may be injected from [`MarketDataClient`](lib/data/market/market_data_client.dart); trading roles also get live exchange balances when available.
-- Trading Runs require a tradable exchange; otherwise the UI gates with a CTA to Settings → Data sources.
-- Proposal cards under assistant bubbles: Confirm → [`TradeExecutor.submit`](lib/data/trading/trade_executor.dart) (live only); Dismiss updates status. Never calls [`PortfolioRepository`](lib/data/portfolio/portfolio_repository.dart).
+- Freeform messages plus a role-aware **Run** shortcut (symbol → structured turn; Live Balance Explainer, Portfolio Guide, and Practice Coach can Run without a symbol). Before the LLM call, a compact quote/history snapshot may be injected from [`MarketDataClient`](lib/data/market/market_data_client.dart); trading / live-balance / portfolio roles also get Practice and/or live exchange context when available.
+- Trading Runs require a tradable exchange; otherwise the UI gates with a CTA to Settings → Data sources. Live Balance Explainer needs a venue that can fetch balances.
+- Proposal cards under assistant bubbles: Confirm → [`TradeExecutor.submit`](lib/data/trading/trade_executor.dart) (Practice via paper buy/sell, or live `create-order`); portfolio picker when no Connect default. Dismiss updates status.
 - One persisted thread per role; reload on reopen. Clear chat is optional and local-only.
 - Full multi-agent Python pipelines remain CLI-only under `agents/` (see [`agents/README.md`](agents/README.md)).
 
+### Robustness score (1–100)
+
+Each Roles list card shows a **Robustness N** badge ([`AgentRobustness`](lib/data/agents/agent_robustness.dart)). The score is **computed** (not stored in `manifest.json`):
+
+\[
+score = \mathrm{clamp}(W + F + D + G + T,\ 1,\ 100)
+\]
+
+| Factor | Max | Points |
+|--------|-----|--------|
+| Workload \(W\) | 20 | investigation 8 / trading 20 |
+| Framework \(F\) | 20 | CrewAI 8 / LangGraph 16 / hybrid (LangGraph + CrewAI) 20 |
+| Pipeline depth \(D\) | 25 | 1 stage 6 / 2–3 14 / 4–6 20 / 7+ 25 |
+| Risk gates \(G\) | 20 | none 0 / soft 10 / hard veto + trade JSON 20 |
+| Context & tools \(T\) | 15 | quotes-only 5 / portfolio snapshot 10 / multi-source 15 |
+
+**Meaning:** higher = more complex pipeline and stronger controls — **not** “better advice” or live reliability. Depth / gates / tools / hybrid come from a per-role architecture profile keyed by id; unknown ids default to depth 1, no gates, quotes-only, and framework points from the manifest enum only.
+
+Locked examples: Market Research **27**, Live Balance / Portfolio Guide / Practice Coach **32**, Intraday **80**, Hedge Fund Desk **100**.
+
 ### UI
 
-- Shell tab **Agents** → master–detail **Roles** / **Activity**; connect/edit/disconnect with suggested model presets + Autopilot for trading roles; **Open chat** when connected.
-- **In-app launches** — other screens deep-link into chat via [`AgentLaunchActions`](lib/features/agents/agent_launch_actions.dart) + [`AgentLaunchIntent`](lib/data/agents/agent_launch.dart) (`investigate` → Market Research + Hedge Fund Desk; `tradeCheck` → Intraday + Desk). Shared CTA: [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart).
-  - Asset detail app bar **Investigate**; Practice trade card **Trade check**; successful paper trade offers a Trade check dialog.
+- Shell tab **Agents** → master–detail **Roles** / **Activity**; connect/edit/disconnect with suggested model presets + Autopilot for trading roles + optional **Schedule** (interval presets + symbols) for every role; **Open chat** when connected. Each role card shows a **Robustness N** badge (see above).
+- **Schedule** (foreground only) — configured on Connect/Edit; [`AgentScheduleCoordinator`](lib/features/agents/agent_schedule_coordinator.dart) polls while the app is open and resumed (Linux / Windows / Android / iOS / macOS / Web). Pauses on background / hidden tab; does **not** run with the app closed. Each due tick Runs symbols via the same chat `sendRun` path (research or trade check + Autopilot if enabled). Activity logs `scheduledRun` events. Every scheduled outcome also enqueues a stacked shell notification ([`AppNotificationRepository`](lib/data/notifications/app_notification_repository.dart) / bell in [`HomeShell`](lib/features/shell/home_shell.dart)) so the user can **Open** chat to Confirm a pending proposal or review an Autopilot result (Dismiss clears the inbox item).
+- **In-app launches** — other screens deep-link into chat via [`AgentLaunchActions`](lib/features/agents/agent_launch_actions.dart) + [`AgentLaunchIntent`](lib/data/agents/agent_launch.dart) (`investigate` → Market Research + Hedge Fund Desk; `tradeCheck` → Intraday + Desk; `explainLive` → Live Balance Explainer; `explainPortfolio` → Portfolio Guide; `paperReview` → Practice Coach). Shared CTA: [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart).
+  - Asset detail app bar **Investigate**; Practice trade card **Practice coach** + **Trade check**; successful paper trade offers a Trade check dialog.
   - Quote rows (Markets / Crypto) sparkles icon → Investigate.
   - Portfolio practice holdings sparkles → Trade check.
+  - Portfolio **Practice** summary **Allocation** / **Coach**; Portfolio **Live** **Balances** / **Allocation** + per-asset sparkles → Live Balance Explainer.
+  - Settings → Portfolios Practice **Allocation** / **Coach**; live cards **Balances** / **Allocation** when credentials are ready.
   - Settings → Connections **Try Investigate** when a research-capable agent is connected (sample symbol from the default watchlist).
-  - One connected applicable agent → open chat and auto-**Run** the symbol; several → picker dialog; none → switch to Agents tab and open **Connect** for the preferred role ([`ShellNavigationController.goToAgents`](lib/core/shell_navigation.dart)).
-  - [`AgentChatScreen`](lib/features/agents/agent_chat_screen.dart) accepts `initialSymbol` / `autoRun` (and optional side/qty) for these launches.
+  - One connected applicable agent → open chat and auto-**Run** the symbol (or portfolio-level Run); several → picker dialog; none → switch to Agents tab and open **Connect** for the preferred role ([`ShellNavigationController.goToAgents`](lib/core/shell_navigation.dart)).
+  - [`AgentChatScreen`](lib/features/agents/agent_chat_screen.dart) accepts `initialSymbol` / `initialExchangeId` / `autoRun` (and optional side/qty) for these launches.
 
 ### Roadmap (more agent surfaces)
 
-When adding UI that involves a symbol, P&L decision, or “what does this mean?”, prefer wiring an `AgentLaunchIntent` CTA rather than a dead-end copy-only tip. Shipped: Settings → Connections **Try Investigate**, Asset detail chart period explainers, post-trade → Trade check dialog. Candidates still open: live balance explainers.
+When adding UI that involves a symbol, P&L decision, or “what does this mean?”, prefer wiring an `AgentLaunchIntent` CTA rather than a dead-end copy-only tip. Shipped: Settings → Connections **Try Investigate**, Asset detail chart period explainers, post-trade → Trade check dialog, Portfolio Live / Settings Portfolios balance explainers, Practice **Allocation** / **Coach**. Candidates still open: crypto spot primer, markets literacy tutor.
 
 ## User config file
 
@@ -240,7 +283,7 @@ Single JSON document for secrets, favorites, and all customizations ([`UserConfi
 - **Default path (native):** `{getApplicationSupportDirectory()}/omniscope.json` via `path_provider`.
 - **Custom path:** desktop only (Linux / Windows / macOS) — Settings → Data & privacy; override stored in prefs key `omniscope.config_path.v1`.
 - **Web:** no filesystem path — full document in prefs blob `omniscope.config.v1`; Import / Export in Settings → Data & privacy.
-- **Slices:** `theme`, `display`, `dataSources`, `secrets`, `agents`, `agentChats`, `tradeProposals`, `agentActivity`, `paperPortfolio`, `favorites`.
+- **Slices:** `theme`, `display`, `dataSources`, `secrets`, `agents`, `agentChats`, `tradeProposals`, `agentActivity`, `notifications`, `paperPortfolio`, `favorites`.
 - **Legacy migration:** first load absorbs old per-feature prefs keys then removes them.
 - **`.env` dual-write:** secrets still upsert into the project `.env` when writable (Python CLI). On startup, non-empty `.env` / asset keys that are missing or empty in the config are **promoted** into `omniscope.json` so checkout edits persist for Flutter.
 - Treat the file as secrets — it may contain API keys.
@@ -261,7 +304,7 @@ Shell tab **Settings** (and Markets / Crypto) use [`MasterDetailShell`](lib/widg
 ## Portfolio
 
 - **Unified list** — [`PortfolioCatalog`](lib/data/portfolio/portfolio_catalog.dart) lists Practice plus each live exchange portfolio for Settings and the Portfolio tab.
-- **Practice (paper)** — `paperPortfolio` slice in the unified config file. **Manual only** — agents never submit here.
+- **Practice (paper)** — `paperPortfolio` slice in the unified config file. Manual trades on asset detail; agents may also Confirm / Autopilot into Practice when selected as the target portfolio.
   - Default starting cash: **$10,000** (`PortfolioState.defaultStartingCash`); configurable via Settings → Portfolios / `PortfolioRepository.startingCash` (stored in the same JSON blob).
   - Holdings: `{ symbol, shares, avgCost }`; buy averages cost; sell removes the row at zero shares.
   - Mark-to-market using `MarketDataClient.getQuotes` — never hard-code prices in the repository.
@@ -331,17 +374,40 @@ make build-linux        # or: build-windows / build-macos / build-ios / build-ap
 make icons
 make agents-setup       # agents/ venv + pip install -e .
 make bump-patch         # local patch bump (pubspec + AppInfo); CI also runs this on main
+make container-build    # podman: slim Linux runtime image (omniscope:runtime)
+make container-run      # podman run (needs host DISPLAY)
 # equivalents: flutter pub get | flutter analyze | flutter test
 #              tool/flutter_checks.sh all | tool/regen_icons.sh
 ```
 
 Release builds need the matching host toolchain (Linux/Windows/macOS desktop and iOS are not cross-compiled). See README **Release builds**.
 
+### Podman (Linux runtime image)
+
+[`Containerfile`](Containerfile) is a multi-stage build: Flutter + Linux **build** deps live only in a throwaway builder; the published tag is **`omniscope:runtime`** (GTK/EGL runtime libs + `build/linux/x64/release/bundle/`). Secrets are not baked in (builder uses `.env.example`).
+
+```bash
+make container-build    # podman build -t omniscope:runtime
+make container-run      # needs DISPLAY + /tmp/.X11-unix
+# CI also pushes ghcr.io/<owner>/omniscope on v* tags (see container.yml)
+```
+
+**Keep the Containerfile in sync:** whenever Linux OS packages (builder or runtime), Flutter install channel/flags used in the Containerfile, or the Linux bundle packaging path change, update [`Containerfile`](Containerfile) in the **same** change. Keep the README Fedora build list and CI `apt-get` Linux deps consistent with the builder stage. Do not leave the image definition stale.
+
+### CI (GitHub Actions)
+
+- **PR / `main`:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — gitleaks + `tool/flutter_checks.sh all` (same gate as pre-push / `make check`), plus web and Linux desktop compile smoke on `ubuntu-latest`.
+- **Tags `v*` only:** [`.github/workflows/release.yml`](.github/workflows/release.yml) — build web / Linux / APK and publish a GitHub Release (not on every main merge).
+- **Container (GHCR):** [`.github/workflows/container.yml`](.github/workflows/container.yml) — on `v*` tags (and `workflow_dispatch`), build [`Containerfile`](Containerfile) and push `ghcr.io/<owner>/<repo>` with `GITHUB_TOKEN` (`packages: write`). OCI `org.opencontainers.image.source` links the package to the repo.
+- **Patch bump on `main`:** [`.github/workflows/bump-patch-version.yml`](.github/workflows/bump-patch-version.yml) — does not create tags. See README **CI** for the tag-and-release steps.
+
 ### Versioning
 
-- Flutter version lives in [`pubspec.yaml`](pubspec.yaml) as `MAJOR.MINOR.PATCH+BUILD` and Settings → About reads [`AppInfo.version`](lib/core/app_info.dart) (`MAJOR.MINOR.PATCH` only).
-- **Patch (+ build)** auto-bumps on every push to `main` via [`.github/workflows/bump-patch-version.yml`](.github/workflows/bump-patch-version.yml) (`tool/bump_patch_version.sh`). Skipped when that push already edited the `version:` line (manual major/minor).
-- **Major / minor**: edit `pubspec.yaml` and `AppInfo.version` yourself in a normal PR.
+- [`pubspec.yaml`](pubspec.yaml): `MAJOR.MINOR.PATCH+BUILD` — **BUILD is always numeric** (Android `versionCode` / iOS build).
+- [`AppInfo.version`](lib/core/app_info.dart) (Settings → About): `MAJOR.MINOR.PATCH+SHORTSHA` — same `X.Y.Z`, plus a 7-char commit suffix from `git rev-parse` (or `OMNISCOPE_VERSION_SHA` in CI).
+- **Patch**: `make bump-patch` / [`tool/bump_patch_version.sh`](tool/bump_patch_version.sh) increments patch (+ numeric build) and rewrites AppInfo with the short SHA. CI runs this on every push to `main` ([`.github/workflows/bump-patch-version.yml`](.github/workflows/bump-patch-version.yml)), skipped when that push already edited the pubspec `version:` line.
+- **Verify alignment**: `tool/bump_patch_version.sh --verify` (compares `X.Y.Z` only).
+- **Major / minor**: edit `pubspec.yaml`, then run the bump script (or let CI bump) so AppInfo stays aligned — do not hand-edit AppInfo alone.
 
 ### Git hooks (pre-commit)
 
@@ -352,7 +418,7 @@ Install once: `make hooks` (or `pre-commit install --hook-type pre-commit --hook
 
 Do not commit `.env`, API keys, or credential JSON. Config: [`.pre-commit-config.yaml`](.pre-commit-config.yaml), [`.gitleaks.toml`](.gitleaks.toml).
 
-Linux deps (Fedora): `clang`, `cmake`, `ninja-build`, `gtk3-devel`, `pkgconf-pkg-config`, etc. See README.
+Linux deps (Fedora): `clang`, `cmake`, `ninja-build`, `gtk3-devel`, `pkgconf-pkg-config`, etc. See README. The same build packages (and runtime GTK/EGL packages) must stay mirrored in [`Containerfile`](Containerfile) — see **Podman** above.
 
 ## When changing behavior
 
@@ -362,3 +428,4 @@ Linux deps (Fedora): `clang`, `cmake`, `ninja-build`, `gtk3-devel`, `pkgconf-pkg
 - Keep **all** targets working: Linux, Windows, Android, iOS, macOS, Web (see `.cursor/rules/cross-platform.mdc`).
 - Adhere to **Brand colors** (and `.cursor/rules/brand-colors.mdc`) for every visual token.
 - Update README + this file when architecture or dependency rules change.
+- If Linux build/runtime packages, Flutter channel/flags in the image, or the Linux bundle path change, update [`Containerfile`](Containerfile) in the same change (and keep README / CI package lists aligned).

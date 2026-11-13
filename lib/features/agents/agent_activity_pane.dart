@@ -55,7 +55,7 @@ class _AgentActivityPaneState extends State<AgentActivityPane> {
     return MasterDetailContentPane(
       title: 'Activity',
       subtitle:
-          'Live suggestions and orders from connected agents (not paper).',
+          'Suggestions and orders from connected agents (Practice or live).',
       showBack: widget.showBack,
       onBack: widget.onBack,
       backLabel: 'Agents',

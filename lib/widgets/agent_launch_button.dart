@@ -5,12 +5,13 @@ import '../data/agents/agent_launch.dart';
 import '../features/agents/agent_launch_actions.dart';
 import 'app_tooltip.dart';
 
-/// Compact CTA that launches an in-app agent run for [symbol].
+/// Compact CTA that launches an in-app agent run for [symbol] / [exchangeId].
 class AgentLaunchButton extends StatelessWidget {
   const AgentLaunchButton({
     super.key,
-    required this.symbol,
+    this.symbol,
     required this.intent,
+    this.exchangeId,
     this.size = ShadButtonSize.sm,
     this.outline = false,
     this.iconOnly = false,
@@ -19,8 +20,12 @@ class AgentLaunchButton extends StatelessWidget {
     this.label,
   });
 
-  final String symbol;
+  /// Symbol or asset hint (optional for [AgentLaunchIntent.explainLive]).
+  final String? symbol;
   final AgentLaunchIntent intent;
+
+  /// Live exchange id for [AgentLaunchIntent.explainLive].
+  final String? exchangeId;
   final ShadButtonSize size;
   final bool outline;
   final bool iconOnly;
@@ -33,6 +38,7 @@ class AgentLaunchButton extends StatelessWidget {
       context,
       intent: intent,
       symbol: symbol,
+      exchangeId: exchangeId,
       side: side,
       quantity: quantity,
     );

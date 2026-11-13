@@ -1,0 +1,167 @@
+# Ship GitHub Release assets only when a new v* tag is pushed.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-web:
+    name: build-web
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Ensure .env
+        run: cp .env.example .env
+
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Build web
+        run: flutter build web --release
+
+      - name: Package web
+        run: |
+          cd build
+          zip -r ../omniscope-web.zip web
+          cd ..
+
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: omniscope-web
+          path: omniscope-web.zip
+          if-no-files-found: error
+
+  build-linux:
+    name: build-linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux desktop deps
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Ensure .env
+        run: cp .env.example .env
+
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Build Linux
+        run: flutter build linux --release
+
+      - name: Package Linux bundle
+        run: |
+          tar -czf omniscope-linux.tar.gz -C build/linux/x64/release bundle
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: omniscope-linux
+          path: omniscope-linux.tar.gz
+          if-no-files-found: error
+
+  build-apk:
+    name: build-apk
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Ensure .env
+        run: cp .env.example .env
+
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Rename APK
+        run: |
+          cp build/app/outputs/flutter-apk/app-release.apk omniscope.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: omniscope-android
+          path: omniscope.apk
+          if-no-files-found: error
+
+  publish:
+    name: publish
+    needs: [build-web, build-linux, build-apk]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download web
+        uses: actions/download-artifact@v4
+        with:
+          name: omniscope-web
+          path: dist
+
+      - name: Download Linux
+        uses: actions/download-artifact@v4
+        with:
+          name: omniscope-linux
+          path: dist
+
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: omniscope-android
+          path: dist
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          draft: false
+          files: |
+            dist/omniscope-web.zip
+            dist/omniscope-linux.tar.gz
+            dist/omniscope.apk
