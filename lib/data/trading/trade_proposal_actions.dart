@@ -11,14 +11,11 @@ import 'trade_executor.dart';
 /// Confirm / Dismiss / portfolio resolution shared by chat and Activity.
 class TradeProposalActions {
   TradeProposalActions({
-    required AgentsRepository agents,
-    required TradeProposalRepository proposals,
-    required AgentActivityRepository activity,
-    required TradeExecutor tradeExecutor,
-  })  : _agents = agents,
-        _proposals = proposals,
-        _activity = activity,
-        _tradeExecutor = tradeExecutor;
+    required this._agents,
+    required this._proposals,
+    required this._activity,
+    required this._tradeExecutor,
+  });
 
   final AgentsRepository _agents;
   final TradeProposalRepository _proposals;

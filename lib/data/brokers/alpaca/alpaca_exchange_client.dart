@@ -25,9 +25,8 @@ import 'alpaca_dto.dart';
 class AlpacaExchangeClient extends BrokerExchangeClient {
   AlpacaExchangeClient({
     http.Client? httpClient,
-    ExchangeCredentials credentials = ExchangeCredentials.empty,
-  })  : _credentials = credentials,
-        _http = httpClient ?? http.Client();
+    this._credentials = ExchangeCredentials.empty,
+  }) : _http = httpClient ?? http.Client();
   static BrokerExchange get meta => AlpacaBroker.meta;
 
   static VenueCredentialSchema get credentialSchema =>

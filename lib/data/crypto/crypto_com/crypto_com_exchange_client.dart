@@ -29,9 +29,8 @@ import '../exchange_portfolio.dart';
 class CryptoComExchangeClient implements CryptoExchangeClient {
   CryptoComExchangeClient({
     http.Client? httpClient,
-    ExchangeCredentials credentials = ExchangeCredentials.empty,
-  })  : _http = httpClient ?? http.Client(),
-        _credentials = credentials;
+    this._credentials = ExchangeCredentials.empty,
+  }) : _http = httpClient ?? http.Client();
 
   static const _base = 'https://api.crypto.com/exchange/v1';
 
