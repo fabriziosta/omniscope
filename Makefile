@@ -13,7 +13,7 @@ ifeq ($(shell command -v flutter 2>/dev/null),)
 endif
 
 .PHONY: help ensure-env get analyze test check run doctor icons \
-	hooks hooks-run agents-setup bump-patch clean \
+	hooks hooks-run agents-setup agent-skills bump-patch clean \
 	build build-linux build-windows build-macos build-ios \
 	build-apk build-appbundle build-web \
 	container-build container-run
@@ -39,6 +39,7 @@ help:
 	@echo "  make hooks            install pre-commit + pre-push hooks"
 	@echo "  make hooks-run        pre-commit run --all-files"
 	@echo "  make agents-setup     agents/ venv + pip install -e ."
+	@echo "  make agent-skills     refresh Flutter/Dart skills into .agents/skills/"
 	@echo "  make bump-patch       bump patch; AppInfo gets +short SHA (CI on main)"
 	@echo "  make clean            flutter clean"
 	@echo "  make container-build  podman build slim Linux runtime image (omniscope:runtime)"
@@ -129,6 +130,11 @@ hooks-run:
 
 agents-setup:
 	cd agents && python3 -m venv .venv && .venv/bin/pip install -e .
+
+# Refresh official Flutter + Dart Agent Skills into .agents/skills/ (coding assistants).
+agent-skills:
+	npx skills add flutter/agent-plugins --skill '*' --agent universal --yes
+	npx skills add dart-lang/skills --skill '*' --agent universal --yes
 
 bump-patch:
 	tool/bump_patch_version.sh

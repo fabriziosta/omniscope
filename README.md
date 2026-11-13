@@ -208,6 +208,10 @@ Selectable LLM models live in [`assets/agents/llm_models.json`](assets/agents/ll
 
 See [`AGENTS.md`](AGENTS.md) for conventions when extending Omniscope (UI rules, provider swaps, portfolio contract, AI agent roles).
 
+### AI coding assistants
+
+The repo vendors official Flutter + Dart [Agent Skills](https://docs.flutter.dev/ai/tools) under [`.agents/skills/`](.agents/skills/) (separate from the in-app Agents tab and the Python [`agents/`](agents/) CLIs). Project Cursor rules live in [`.cursor/rules/`](.cursor/rules/); Dart MCP is configured in [`.cursor/mcp.json`](.cursor/mcp.json). Refresh skills with `make agent-skills`. Details: [`AGENTS.md`](AGENTS.md) **Coding-assistant tooling**.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Please follow the [Code of Conduct](CODE_OF_CONDUCT.md).

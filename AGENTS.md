@@ -17,6 +17,29 @@ v0 is a Flutter POC with **no user accounts**. Supported targets: **Linux**, **W
 - Auth / multi-user accounts
 - News, fundamentals, alerts, ticker search UI
 
+## Coding-assistant tooling
+
+Editor AI helpers (Cursor and similar) — **not** the in-app Agents tab or the Python CLIs under [`agents/`](agents/).
+
+| Path | Role |
+|------|------|
+| [`.agents/skills/`](.agents/skills/) | Official Flutter + Dart [Agent Skills](https://docs.flutter.dev/ai/tools) (on-demand recipes: layouts, tests, analysis, etc.) |
+| [`.cursor/rules/`](.cursor/rules/) | Persistent Omniscope product rules plus official [`flutter-hot-reload.mdc`](.cursor/rules/flutter-hot-reload.mdc) |
+| [`.cursor/mcp.json`](.cursor/mcp.json) | Dart / Flutter MCP server (`dart mcp-server`) for analyzer, tests, and runtime hot reload |
+
+Refresh vendored skills from upstream:
+
+```bash
+make agent-skills
+# or:
+# npx skills add flutter/agent-plugins --skill '*' --agent universal --yes
+# npx skills add dart-lang/skills --skill '*' --agent universal --yes
+```
+
+Optional: install the [Dart and Flutter Cursor marketplace plugin](https://docs.flutter.dev/ai/get-started) (`/add-plugin dart-flutter` or Customize → Dart and Flutter) for a machine-local bundle of skills + MCP; the committed `.agents/skills/` and `.cursor/mcp.json` already cover the project for anyone who clones the repo.
+
+Do not confuse this with **Agents** in the app (LLM chat / Confirm trades) or [`agents/`](agents/) (CrewAI / LangGraph CLI packages).
+
 ## Stack
 
 | Layer | Choice |
@@ -373,6 +396,7 @@ make build              # host-capable release builds (skips other OS targets)
 make build-linux        # or: build-windows / build-macos / build-ios / build-apk / build-appbundle / build-web
 make icons
 make agents-setup       # agents/ venv + pip install -e .
+make agent-skills       # refresh Flutter/Dart skills into .agents/skills/
 make bump-patch         # local patch bump (pubspec + AppInfo); CI also runs this on main
 make container-build    # podman: slim Linux runtime image (omniscope:runtime)
 make container-run      # podman run (needs host DISPLAY)
