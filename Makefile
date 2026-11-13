@@ -16,7 +16,7 @@ endif
 	hooks hooks-run agents-setup agent-skills bump-patch clean \
 	build build-linux build-windows build-macos build-ios \
 	build-apk build-appbundle build-web \
-	container-build container-run
+	container-build container-run venue-canary
 
 help:
 	@echo "Omniscope developer targets:"
@@ -24,6 +24,7 @@ help:
 	@echo "  make analyze          tool/flutter_checks.sh analyze"
 	@echo "  make test             tool/flutter_checks.sh test"
 	@echo "  make check            analyze + test (same as pre-push)"
+	@echo "  make venue-canary     live venue API probes (not part of check)"
 	@echo "  make run              flutter run -d \$$(DEVICE)  (default: linux)"
 	@echo "  make run DEVICE=chrome"
 	@echo "  make build            release builds this host can produce"
@@ -66,6 +67,12 @@ test:
 
 check:
 	tool/flutter_checks.sh all
+
+# Live network probes through Dart adapters (Yahoo / Crypto.com / Alpaca).
+# Not part of make check / pre-push — public always; portfolio when .env has keys.
+# Uses flutter test (package needs dart:ui); do not add to flutter_checks.sh.
+venue-canary: ensure-env
+	flutter test test/venue_canary_test.dart --tags live_canary --reporter expanded
 
 run: ensure-env
 	flutter run -d $(DEVICE)

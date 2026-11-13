@@ -11,14 +11,15 @@ import '../../data/agents/market_context_builder.dart';
 import '../../data/agents/models.dart';
 import '../../data/agents/trade_proposal.dart';
 import '../../data/agents/trade_proposal_repository.dart';
-import '../../data/crypto/crypto_exchange_client.dart';
 import '../../data/crypto/crypto_exchange_registry.dart';
 import '../../data/market/market_data_client.dart';
 import '../../data/portfolio/portfolio_catalog.dart';
 import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/data_source_settings.dart';
-import '../../data/trading/order_models.dart';
+import '../../data/trading/broker_exchange_registry.dart';
 import '../../data/trading/trade_executor.dart';
+import '../../data/trading/trade_proposal_actions.dart';
+import '../../data/venues/live_venue_capabilities.dart';
 
 /// UI feedback from a chat send attempt.
 sealed class AgentChatSendResult {
@@ -55,6 +56,7 @@ class AgentChatController extends ChangeNotifier {
     required this._cryptoRegistry,
     required this._dataSources,
     required this._portfolio,
+    this._brokerRegistry = BrokerExchangeRegistry.empty,
   });
 
   final AgentRoleDefinition role;
@@ -66,8 +68,16 @@ class AgentChatController extends ChangeNotifier {
   final TradeProposalRepository _proposals;
   final AgentActivityRepository _activity;
   final CryptoExchangeRegistry _cryptoRegistry;
+  final BrokerExchangeRegistry _brokerRegistry;
   final DataSourceSettings _dataSources;
   final PortfolioRepository _portfolio;
+
+  late final TradeProposalActions _proposalActions = TradeProposalActions(
+    agents: _agents,
+    proposals: _proposals,
+    activity: _activity,
+    tradeExecutor: _tradeExecutor,
+  );
 
   var _sending = false;
   var _actingOnProposal = false;
@@ -77,26 +87,16 @@ class AgentChatController extends ChangeNotifier {
 
   bool get hasTradableExchange => _tradeExecutor.canTrade;
 
-  List<TradableVenue> get tradableVenues => _tradeExecutor.tradableVenues;
+  List<TradableVenue> get tradableVenues => _proposalActions.tradableVenues;
 
   /// Connect default when set and still valid; otherwise null if the user
   /// must pick on Confirm (multiple targets, no default).
-  String? preferredPortfolioId([AgentConnection? connection]) {
-    final conn = connection ?? _agents.forRoleId(role.id);
-    final preferred = conn.autopilotExchangeId?.trim();
-    if (preferred != null && preferred.isNotEmpty) {
-      if (_tradeExecutor.venueForId(preferred) != null) return preferred;
-    }
-    final venues = _tradeExecutor.tradableVenues;
-    if (venues.length == 1) return venues.first.id;
-    if (_tradeExecutor.liveVenues.isEmpty) {
-      return PortfolioDescriptor.practiceId;
-    }
-    return null;
-  }
+  String? preferredPortfolioId([AgentConnection? connection]) =>
+      _proposalActions.preferredPortfolioId(connection, role.id);
 
   /// True when Confirm needs a portfolio picker (no default + multiple targets).
-  bool get needsPortfolioPicker => preferredPortfolioId() == null;
+  bool get needsPortfolioPicker =>
+      _proposalActions.needsPortfolioPicker(role.id);
 
   /// Resolve a concrete portfolio id for Confirm / Autopilot.
   ///
@@ -105,26 +105,30 @@ class AgentChatController extends ChangeNotifier {
   String? resolveConfirmPortfolioId({
     String? targetPortfolioId,
     AgentConnection? connection,
-  }) {
-    final explicit = targetPortfolioId?.trim();
-    if (explicit != null && explicit.isNotEmpty) {
-      if (_tradeExecutor.venueForId(explicit) != null) return explicit;
-      return null;
-    }
-    return preferredPortfolioId(connection);
-  }
+  }) =>
+      _proposalActions.resolveConfirmPortfolioId(
+        roleId: role.id,
+        targetPortfolioId: targetPortfolioId,
+        connection: connection,
+      );
 
   /// Stamp id for a new proposal: preferred when known, else Practice hint.
-  String resolveTargetExchangeId(AgentConnection connection) {
-    return preferredPortfolioId(connection) ?? PortfolioDescriptor.practiceId;
-  }
+  String resolveTargetExchangeId(AgentConnection connection) =>
+      _proposalActions.resolveTargetExchangeId(role.id, connection);
 
-  CryptoExchangeClient? _clientForExchange(String exchangeId) {
+  LiveVenueCapabilities? _clientForExchange(String exchangeId) {
     if (exchangeId == PortfolioDescriptor.practiceId) return null;
-    final client = _cryptoRegistry.clientForId(exchangeId);
-    if (client == null) return null;
-    if (!_dataSources.isCryptoEnabled(exchangeId)) return null;
-    return client;
+    final crypto = _cryptoRegistry.clientForId(exchangeId);
+    if (crypto != null) {
+      if (!_dataSources.isCryptoEnabled(exchangeId)) return null;
+      return crypto;
+    }
+    final broker = _brokerRegistry.clientForId(exchangeId);
+    if (broker != null) {
+      if (!_dataSources.isBrokerEnabled(exchangeId)) return null;
+      return broker;
+    }
+    return null;
   }
 
   /// Prefer [preferredId], else first enabled venue that can fetch balances.
@@ -134,11 +138,15 @@ class AgentChatController extends ChangeNotifier {
       final client = _clientForExchange(preferred);
       if (client != null && client.canFetchPortfolio) return preferred;
     }
-    final ready = _cryptoRegistry.portfolioClientsWhere(
+    final cryptoReady = _cryptoRegistry.portfolioClientsWhere(
       _dataSources.isCryptoEnabled,
     );
-    if (ready.isEmpty) return null;
-    return ready.first.exchange.id;
+    if (cryptoReady.isNotEmpty) return cryptoReady.first.exchange.id;
+    final brokerReady = _brokerRegistry.portfolioClientsWhere(
+      _dataSources.isBrokerEnabled,
+    );
+    if (brokerReady.isEmpty) return null;
+    return brokerReady.first.broker.id;
   }
 
   Future<AgentChatSendResult> sendFreeform(
@@ -455,112 +463,14 @@ class AgentChatController extends ChangeNotifier {
     bool autopilot = false,
     String? targetPortfolioId,
   }) async {
-    final proposal = _proposals.byId(proposalId);
-    if (proposal == null) return 'Proposal not found.';
-    if (proposal.status != TradeProposalStatus.pending) {
-      return 'This proposal is no longer pending.';
-    }
-    final orderSide = proposal.side.orderSide;
-    if (orderSide == null) {
-      return 'Hold proposals cannot be submitted.';
-    }
-    if (autopilot && !proposal.riskApproved) {
-      return 'Autopilot skipped: not risk-approved.';
-    }
-    if (proposal.quantity <= 0) {
-      return 'Quantity must be greater than zero.';
-    }
-
-    final connection = _agents.forRoleId(role.id);
-    final portfolioId = resolveConfirmPortfolioId(
-      targetPortfolioId: targetPortfolioId,
-      connection: connection,
-    );
-    if (portfolioId == null) {
-      return 'Choose a portfolio before confirming.';
-    }
-
     _actingOnProposal = true;
     notifyListeners();
     try {
-      final confirmed = proposal.copyWith(
-        exchangeId: portfolioId,
-        status: TradeProposalStatus.confirmed,
+      return await _proposalActions.confirm(
+        proposalId,
         autopilot: autopilot,
+        targetPortfolioId: targetPortfolioId,
       );
-      await _proposals.upsert(confirmed);
-      if (!autopilot) {
-        await _activity.add(
-          AgentActivityEvent(
-            id: AgentActivityEvent.newId(),
-            kind: AgentActivityKind.proposalConfirmed,
-            roleId: role.id,
-            createdAt: DateTime.now().toUtc(),
-            exchangeId: portfolioId,
-            proposalId: proposal.id,
-            symbol: proposal.symbol,
-            summary:
-                'Confirmed ${proposal.side.label} ${proposal.quantity} ${proposal.symbol}',
-          ),
-        );
-      }
-
-      final result = await _tradeExecutor.submit(
-        OrderRequest(
-          exchangeId: portfolioId,
-          symbol: proposal.symbol,
-          side: orderSide,
-          quantity: proposal.quantity,
-          clientOrderId: proposal.id,
-        ),
-      );
-
-      if (result.success) {
-        await _proposals.upsert(
-          confirmed.copyWith(
-            status: TradeProposalStatus.executed,
-            orderId: result.orderId,
-            autopilot: autopilot,
-            clearExecutionError: true,
-          ),
-        );
-        await _activity.add(
-          AgentActivityEvent(
-            id: AgentActivityEvent.newId(),
-            kind: AgentActivityKind.orderAck,
-            roleId: role.id,
-            createdAt: DateTime.now().toUtc(),
-            exchangeId: portfolioId,
-            proposalId: proposal.id,
-            symbol: proposal.symbol,
-            summary: 'Order ${result.orderId}'
-                '${result.rawStatus != null ? ' (${result.rawStatus})' : ''}',
-          ),
-        );
-        return null;
-      }
-
-      final err = result.error ?? 'Order failed.';
-      await _proposals.upsert(
-        confirmed.copyWith(
-          status: TradeProposalStatus.failed,
-          executionError: err,
-          autopilot: autopilot,
-        ),
-      );
-      await _activity.add(
-        AgentActivityEvent(
-          id: AgentActivityEvent.newId(),
-          kind: AgentActivityKind.orderFailed,
-          roleId: role.id,
-          createdAt: DateTime.now().toUtc(),
-          exchangeId: portfolioId,
-          proposalId: proposal.id,
-          symbol: proposal.symbol,
-          summary: err,
-        ),
-      );
-      return err;
     } finally {
       _actingOnProposal = false;
       notifyListeners();
@@ -568,27 +478,14 @@ class AgentChatController extends ChangeNotifier {
   }
 
   Future<String?> dismissProposal(String proposalId) async {
-    final proposal = _proposals.byId(proposalId);
-    if (proposal == null) return 'Proposal not found.';
-    if (proposal.status != TradeProposalStatus.pending) {
-      return 'This proposal is no longer pending.';
+    _actingOnProposal = true;
+    notifyListeners();
+    try {
+      return await _proposalActions.dismiss(proposalId);
+    } finally {
+      _actingOnProposal = false;
+      notifyListeners();
     }
-    await _proposals.upsert(
-      proposal.copyWith(status: TradeProposalStatus.dismissed),
-    );
-    await _activity.add(
-      AgentActivityEvent(
-        id: AgentActivityEvent.newId(),
-        kind: AgentActivityKind.proposalDismissed,
-        roleId: role.id,
-        createdAt: DateTime.now().toUtc(),
-        exchangeId: proposal.exchangeId,
-        proposalId: proposal.id,
-        symbol: proposal.symbol,
-        summary: 'Dismissed ${proposal.symbol}',
-      ),
-    );
-    return null;
   }
 
   Future<void> clearThread() => _chats.clearThread(role.id);

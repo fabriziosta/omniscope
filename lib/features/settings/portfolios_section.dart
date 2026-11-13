@@ -9,6 +9,7 @@ import '../../data/portfolio/portfolio_catalog.dart';
 import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/env_secrets_repository.dart';
+import '../../data/trading/broker_exchange_registry.dart';
 import '../../widgets/agent_launch_button.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/app_tooltip.dart';
@@ -92,10 +93,12 @@ class _PortfoliosSectionBodyState extends State<PortfoliosSectionBody> {
     final portfolio = context.watch<PortfolioRepository>();
     final dataSources = context.watch<DataSourceSettings>();
     final registry = context.watch<CryptoExchangeRegistry>();
+    final brokerRegistry = context.watch<BrokerExchangeRegistry>();
     final secrets = context.watch<EnvSecretsRepository>();
 
     final descriptors = PortfolioCatalog.list(
       registry: registry,
+      brokerRegistry: brokerRegistry,
       dataSources: dataSources,
       includePendingLive: true,
     );
@@ -182,9 +185,9 @@ class _PortfoliosSectionBodyState extends State<PortfoliosSectionBody> {
         const SizedBox(height: 12),
         if (liveDescriptors.isEmpty)
           Text(
-            'No live portfolios yet. Enable a crypto exchange and add its '
-            'API key and secret in Data sources to see real holdings here '
-            'and on the Portfolio tab.',
+            'No live portfolios yet. Enable a crypto exchange or broker and '
+            'add its API key and secret in Data sources to see real holdings '
+            'here and on the Portfolio tab.',
             style: theme.textTheme.muted,
           )
         else
@@ -193,8 +196,12 @@ class _PortfoliosSectionBodyState extends State<PortfoliosSectionBody> {
             Builder(
               builder: (context) {
                 final desc = liveDescriptors[i];
-                final client = registry.clientForId(desc.id);
-                final ready = client?.canFetchPortfolio ?? false;
+                final ready = registry.clientForId(desc.id)?.canFetchPortfolio ==
+                        true ||
+                    brokerRegistry
+                            .clientForId(desc.id)
+                            ?.canFetchPortfolio ==
+                        true;
                 final creds = secrets.exchangeCredentialsFor(desc.id);
                 final partial = !ready &&
                     (creds.hasApiKey ||

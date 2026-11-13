@@ -12,14 +12,14 @@ import 'data/agents/agent_role_catalog.dart';
 import 'data/agents/agents_repository.dart';
 import 'data/agents/llm_chat_client.dart';
 import 'data/agents/trade_proposal_repository.dart';
-import 'data/notifications/app_notification_repository.dart';
-import 'data/crypto/crypto_com/crypto_com_exchange_client.dart';
 import 'data/crypto/crypto_exchange_registry.dart';
 import 'data/market/caching_market_data_client.dart';
 import 'data/market/equity_data_source.dart';
+import 'data/market/exchange_credentials.dart';
 import 'data/market/market_data_client.dart';
 import 'data/market/routing_market_data_client.dart';
 import 'data/market/yahoo_market_data_client.dart';
+import 'data/notifications/app_notification_repository.dart';
 import 'data/portfolio/portfolio_repository.dart';
 import 'data/settings/data_source_settings.dart';
 import 'data/settings/display_settings.dart';
@@ -29,6 +29,7 @@ import 'data/settings/theme_settings.dart';
 import 'data/settings/user_config_store.dart';
 import 'data/trading/broker_exchange_registry.dart';
 import 'data/trading/trade_executor.dart';
+import 'data/venues/venue_catalog.dart';
 import 'features/agents/agent_schedule_coordinator.dart';
 
 Future<void> main() async {
@@ -75,13 +76,14 @@ Future<void> main() async {
 
   final llmChat = LlmChatClient();
 
-  late final CryptoComExchangeClient cryptoCom;
+  ExchangeCredentialsConfig.defaultExchangeIds =
+      VenueCatalog.knownCredentialVenueIds;
+
+  late final VenueCatalog venues;
   final envSecrets = EnvSecretsRepository(
     store: config,
     onExchangeCredentialsChanged: (exchangeId, credentials) {
-      if (exchangeId == CryptoComExchangeClient.meta.id) {
-        cryptoCom.setCredentials(credentials);
-      }
+      venues.applyCredentials(exchangeId, credentials);
     },
   );
   await envSecrets.load();
@@ -93,14 +95,11 @@ Future<void> main() async {
     ),
   ]);
 
-  cryptoCom = CryptoComExchangeClient(
-    credentials: envSecrets.exchangeCredentialsFor(
-      CryptoComExchangeClient.meta.id,
-    ),
+  venues = VenueCatalog.build(
+    credentialsFor: envSecrets.exchangeCredentialsFor,
   );
-
-  final cryptoRegistry = CryptoExchangeRegistry([cryptoCom]);
-  const brokerRegistry = BrokerExchangeRegistry.empty;
+  final cryptoRegistry = venues.cryptoRegistry;
+  final brokerRegistry = venues.brokerRegistry;
 
   final MarketDataClient marketData = CachingMarketDataClient(
     RoutingMarketDataClient(
@@ -139,6 +138,7 @@ Future<void> main() async {
         ChangeNotifierProvider<UserConfigStore>.value(value: config),
         Provider<MarketDataClient>.value(value: marketData),
         Provider<EquityDataSourceRegistry>.value(value: equitiesRegistry),
+        Provider<VenueCatalog>.value(value: venues),
         Provider<CryptoExchangeRegistry>.value(value: cryptoRegistry),
         Provider<BrokerExchangeRegistry>.value(value: brokerRegistry),
         Provider<TradeExecutor>.value(value: tradeExecutor),

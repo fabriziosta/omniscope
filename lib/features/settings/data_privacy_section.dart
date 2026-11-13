@@ -7,7 +7,6 @@ import '../../data/agents/agent_activity_repository.dart';
 import '../../data/agents/agent_chat_repository.dart';
 import '../../data/agents/agents_repository.dart';
 import '../../data/agents/trade_proposal_repository.dart';
-import '../../data/crypto/crypto_exchange_registry.dart';
 import '../../data/notifications/app_notification_repository.dart';
 import '../../data/market/exchange_credentials.dart';
 import '../../data/portfolio/portfolio_repository.dart';
@@ -18,6 +17,7 @@ import '../../data/settings/favorites_repository.dart';
 import '../../data/settings/theme_settings.dart';
 import '../../data/settings/user_config_reload.dart';
 import '../../data/settings/user_config_store.dart';
+import '../../data/venues/venue_catalog.dart';
 import '../../widgets/app_confirm_dialog.dart';
 import '../../widgets/app_toast.dart';
 import 'portfolio_actions.dart';
@@ -61,7 +61,7 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
       portfolio: context.read<PortfolioRepository>(),
       agents: context.read<AgentsRepository>(),
       chats: context.read<AgentChatRepository>(),
-      cryptoRegistry: context.read<CryptoExchangeRegistry>(),
+      venues: context.read<VenueCatalog>(),
     );
   }
 
@@ -233,7 +233,7 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
       context,
       title: 'Clear trade proposals and activity?',
       description:
-          'Removes saved agent trade proposals, the Activity timeline, and '
+          'Removes saved agent trade proposals, the Activity tab timeline, and '
           'shell notifications on this device. Chat history is kept. '
           'This cannot be undone.',
       confirmLabel: 'Clear activity',
@@ -280,22 +280,17 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
 
   Future<void> _clearExchangeCredentials() async {
     final secrets = context.read<EnvSecretsRepository>();
-    final registry = context.read<CryptoExchangeRegistry>();
+    final venues = context.read<VenueCatalog>();
     final configuredIds = <String>[
-      for (final client in registry.exchanges)
-        if (secrets.exchangeCredentialsFor(client.exchange.id).isConfigured ||
-            secrets.exchangeCredentialsFor(client.exchange.id).hasApiSecret)
-          client.exchange.id,
+      for (final id in {
+        ...venues.credentialVenueIds,
+        ...ExchangeCredentialsConfig.defaultExchangeIds,
+      })
+        if (secrets.exchangeCredentialsFor(id).isConfigured ||
+            secrets.exchangeCredentialsFor(id).hasApiSecret ||
+            secrets.exchangeCredentialsFor(id).tradingMode != null)
+          id,
     ];
-    // Also clear any known default exchange ids that may have prefs-only keys.
-    for (final id in ExchangeCredentialsConfig.defaultExchangeIds) {
-      if (!configuredIds.contains(id)) {
-        final creds = secrets.exchangeCredentialsFor(id);
-        if (creds.isConfigured || creds.hasApiSecret) {
-          configuredIds.add(id);
-        }
-      }
-    }
 
     if (configuredIds.isEmpty) {
       showAppToast(

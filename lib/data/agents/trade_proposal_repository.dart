@@ -22,6 +22,17 @@ class TradeProposalRepository extends ChangeNotifier {
           if (p.roleId == roleId && p.status == TradeProposalStatus.pending) p,
       ];
 
+  /// Pending buy/sell proposals that still need Confirm (excludes holds).
+  List<TradeProposal> get pendingActionable => [
+        for (final p in _proposals)
+          if (p.status == TradeProposalStatus.pending &&
+              p.side != TradeProposalSide.hold &&
+              p.quantity > 0)
+            p,
+      ];
+
+  int get pendingActionableCount => pendingActionable.length;
+
   TradeProposal? byId(String id) {
     for (final p in _proposals) {
       if (p.id == id) return p;

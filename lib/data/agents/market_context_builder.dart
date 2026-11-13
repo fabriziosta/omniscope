@@ -1,10 +1,10 @@
 import '../../core/formatting.dart';
-import '../crypto/crypto_exchange_client.dart';
-import '../crypto/exchange_portfolio.dart';
 import '../market/market_data_client.dart';
 import '../market/models.dart';
 import '../portfolio/models.dart';
 import '../portfolio/portfolio_catalog.dart';
+import '../venues/exchange_portfolio.dart';
+import '../venues/live_venue_capabilities.dart';
 
 /// Builds a compact market snapshot string for LLM context.
 class MarketContextBuilder {
@@ -197,7 +197,7 @@ class MarketContextBuilder {
   /// When [listAllBalances] is true (Live Balance Explainer), list more assets
   /// and only prefer [symbolHint] without dropping the rest of the book.
   Future<String?> buildLiveExchangeContext({
-    required CryptoExchangeClient client,
+    required LiveVenueCapabilities client,
     String? symbolHint,
     bool listAllBalances = false,
   }) async {
@@ -281,7 +281,7 @@ class MarketContextBuilder {
   /// Combine market snapshot + Practice and/or live venue balances.
   Future<String?> buildForTradingSymbol({
     required String symbol,
-    CryptoExchangeClient? exchangeClient,
+    LiveVenueCapabilities? exchangeClient,
     PortfolioState? practiceState,
   }) async {
     final market = await buildForSymbol(symbol);

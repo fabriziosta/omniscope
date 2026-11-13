@@ -1,4 +1,5 @@
 import '../market/exchange_credentials.dart';
+import '../venues/venue_trading_mode.dart';
 import 'data_source_settings.dart';
 import 'env_secrets_repository.dart';
 
@@ -9,7 +10,10 @@ String exchangeCredsFingerprint(EnvSecretsRepository secrets) {
   final parts = <String>[];
   for (final id in ExchangeCredentialsConfig.defaultExchangeIds) {
     final c = secrets.exchangeCredentialsFor(id);
-    parts.add('$id:${c.hasApiKey}:${c.hasApiSecret}:${c.hasApiToken}');
+    parts.add(
+      '$id:${c.hasApiKey}:${c.hasApiSecret}:${c.hasApiToken}:'
+      '${c.tradingMode?.apiValue ?? ''}',
+    );
   }
   return parts.join('|');
 }

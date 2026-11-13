@@ -6,6 +6,7 @@ import '../../core/dotenv_file.dart';
 import '../agents/llm_api_key_config.dart';
 import '../agents/models.dart';
 import '../market/exchange_credentials.dart';
+import '../venues/venue_trading_mode.dart';
 import 'user_config_keys.dart';
 import 'user_config_store.dart';
 
@@ -46,12 +47,15 @@ class EnvSecretsRepository extends ChangeNotifier {
   LlmApiKeyConfig get llmKeys => LlmApiKeyConfig.fromValues(_values);
 
   ExchangeCredentialsConfig get exchangeCredentials =>
-      ExchangeCredentialsConfig.fromValues(_values);
+      ExchangeCredentialsConfig.fromValues(
+        _values,
+        exchangeIds: ExchangeCredentialsConfig.defaultExchangeIds,
+      );
 
   String? llmKeyFor(LlmProvider provider) => llmKeys.keyFor(provider);
 
   ExchangeCredentials exchangeCredentialsFor(String exchangeId) =>
-      exchangeCredentials.forId(exchangeId);
+      ExchangeCredentialsConfig.read(exchangeId, _values);
 
   /// Bootstrap from asset / filesystem / config secrets slice.
   ///
@@ -133,6 +137,8 @@ class EnvSecretsRepository extends ChangeNotifier {
           credentials.apiSecret?.trim() ?? '',
       ExchangeCredentialsConfig.apiTokenEnvName(exchangeId):
           credentials.apiToken?.trim() ?? '',
+      ExchangeCredentialsConfig.tradingModeEnvName(exchangeId):
+          credentials.tradingMode?.apiValue ?? '',
     });
     onExchangeCredentialsChanged?.call(
       exchangeId,
@@ -185,6 +191,7 @@ class EnvSecretsRepository extends ChangeNotifier {
         ExchangeCredentialsConfig.apiKeyEnvName(id),
         ExchangeCredentialsConfig.apiSecretEnvName(id),
         ExchangeCredentialsConfig.apiTokenEnvName(id),
+        ExchangeCredentialsConfig.tradingModeEnvName(id),
       ]) {
         payload[name] = _values[name] ?? '';
       }

@@ -1,15 +1,16 @@
 import 'package:flutter/foundation.dart';
 
 import '../../core/app_copy.dart';
-import '../../data/crypto/crypto_exchange_client.dart';
 import '../../data/crypto/crypto_exchange_registry.dart';
-import '../../data/crypto/exchange_portfolio.dart';
 import '../../data/market/market_data_client.dart';
 import '../../data/market/models.dart';
 import '../../data/portfolio/models.dart';
 import '../../data/portfolio/portfolio_catalog.dart';
 import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/data_source_settings.dart';
+import '../../data/trading/broker_exchange_registry.dart';
+import '../../data/venues/exchange_portfolio.dart';
+import '../../data/venues/live_venue_capabilities.dart';
 
 /// Screen-scoped portfolio quotes + live balances with race-safe loads.
 class PortfolioScreenController extends ChangeNotifier {
@@ -18,11 +19,13 @@ class PortfolioScreenController extends ChangeNotifier {
     required this._portfolio,
     required this._cryptoRegistry,
     required this._dataSources,
+    this._brokerRegistry = BrokerExchangeRegistry.empty,
   });
 
   final MarketDataClient _marketData;
   final PortfolioRepository _portfolio;
   final CryptoExchangeRegistry _cryptoRegistry;
+  final BrokerExchangeRegistry _brokerRegistry;
   final DataSourceSettings _dataSources;
 
   List<String> _syncedLiveIds = const [];
@@ -48,23 +51,43 @@ class PortfolioScreenController extends ChangeNotifier {
   bool get loadingLive => _loadingLive;
   bool get isRefreshing => _loadingQuotes || _loadingLive;
 
-  List<CryptoExchangeClient> get liveClients =>
-      _cryptoRegistry.portfolioClientsWhere(_dataSources.isCryptoEnabled);
+  List<LiveVenueCapabilities> get liveClients => [
+        for (final c in _cryptoRegistry.portfolioClientsWhere(
+          _dataSources.isCryptoEnabled,
+        ))
+          c,
+        for (final c in _brokerRegistry.portfolioClientsWhere(
+          _dataSources.isBrokerEnabled,
+        ))
+          c,
+      ];
+
+  List<LiveVenueCapabilities> get pendingLiveClients => [
+        for (final c in _cryptoRegistry.enabledWhere(
+          _dataSources.isCryptoEnabled,
+        ))
+          if (c.supportsLivePortfolio && !c.canFetchPortfolio) c,
+        for (final c in _brokerRegistry.enabledWhere(
+          _dataSources.isBrokerEnabled,
+        ))
+          if (c.supportsLivePortfolio && !c.canFetchPortfolio) c,
+      ];
 
   List<PortfolioDescriptor> get portfolios => PortfolioCatalog.list(
         registry: _cryptoRegistry,
+        brokerRegistry: _brokerRegistry,
         dataSources: _dataSources,
       );
 
   bool get hasLive => liveClients.isNotEmpty;
 
   /// Re-fetch live balances when the set of ready venues changes (e.g. after
-  /// saving Crypto.com credentials without leaving the Portfolio tab).
+  /// saving credentials without leaving the Portfolio tab).
   ///
   /// Safe to call from [build]; the fetch is scheduled off the build phase.
   void syncLiveClientsIfNeeded() {
     final ids = [
-      for (final c in liveClients) c.exchange.id,
+      for (final c in liveClients) c.venueId,
     ];
     if (_listEquals(ids, _syncedLiveIds)) return;
     _syncedLiveIds = List<String>.unmodifiable(ids);
@@ -158,7 +181,7 @@ class PortfolioScreenController extends ChangeNotifier {
     final gen = ++_liveGen;
     final clients = liveClients;
     _syncedLiveIds = [
-      for (final c in clients) c.exchange.id,
+      for (final c in clients) c.venueId,
     ];
     if (clients.isEmpty) {
       if (gen != _liveGen) return;
@@ -191,16 +214,16 @@ class PortfolioScreenController extends ChangeNotifier {
   }
 
   Future<void> _loadOneLive(
-    CryptoExchangeClient client,
+    LiveVenueCapabilities client,
     Map<String, ExchangePortfolioSnapshot> next,
     Map<String, String> errors,
   ) async {
     try {
-      next[client.exchange.id] = await client.fetchPortfolio();
+      next[client.venueId] = await client.fetchPortfolio();
     } catch (e, st) {
-      debugPrint('Live portfolio ${client.exchange.id} failed: $e\n$st');
-      errors[client.exchange.id] =
-          'Could not load ${client.exchange.displayName} balances.';
+      debugPrint('Live portfolio ${client.venueId} failed: $e\n$st');
+      errors[client.venueId] =
+          'Could not load ${client.displayName} balances.';
     }
   }
 }

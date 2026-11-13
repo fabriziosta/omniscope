@@ -2,12 +2,15 @@ import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import '../../data/crypto/crypto_com/crypto_com_exchange_client.dart';
 import '../../data/crypto/crypto_exchange_registry.dart';
 import '../../data/market/equity_data_source.dart';
 import '../../data/market/exchange_credentials.dart';
 import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/env_secrets_repository.dart';
+import '../../data/trading/broker_exchange_registry.dart';
+import '../../data/venues/venue_catalog.dart';
+import '../../data/venues/venue_credential_schema.dart';
+import '../../data/venues/venue_trading_mode.dart';
 import '../../widgets/app_toast.dart';
 import 'settings_option_tiles.dart';
 
@@ -20,6 +23,8 @@ class DataSourcesSectionBody extends StatelessWidget {
     final settings = context.watch<DataSourceSettings>();
     final equityRegistry = context.watch<EquityDataSourceRegistry>();
     final cryptoRegistry = context.watch<CryptoExchangeRegistry>();
+    final brokerRegistry = context.watch<BrokerExchangeRegistry>();
+    final venueCatalog = context.watch<VenueCatalog>();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -54,9 +59,8 @@ class DataSourcesSectionBody extends StatelessWidget {
         const SettingsSubsectionLabel(
           'Crypto venues',
           description:
-              'Choose which exchanges appear under Markets and supply live quotes. '
-              'Crypto.com can use API credentials from .env or from this screen '
-              '(saved both ways when possible).',
+              'Choose which exchanges appear under Markets and supply live '
+              'quotes. Credentials below unlock Live balances and trading.',
         ),
         const SizedBox(height: 12),
         if (cryptoRegistry.exchanges.isEmpty)
@@ -83,6 +87,36 @@ class DataSourcesSectionBody extends StatelessWidget {
           ],
         const SizedBox(height: 20),
         const SettingsSubsectionLabel(
+          'Brokers',
+          description:
+              'Equity brokers for Live portfolio balances and agent Confirm / '
+              'Autopilot. Quotes still come from market providers above.',
+        ),
+        const SizedBox(height: 12),
+        if (brokerRegistry.brokers.isEmpty)
+          Text(
+            'No brokers registered.',
+            style: theme.textTheme.muted,
+          )
+        else
+          for (var i = 0; i < brokerRegistry.brokers.length; i++) ...[
+            if (i > 0) const SizedBox(height: 8),
+            SettingsDataSourceToggleTile(
+              title: brokerRegistry.brokers[i].broker.displayName,
+              subtitle: brokerRegistry.brokers[i].broker.description.isEmpty
+                  ? 'Stocks and ETFs'
+                  : brokerRegistry.brokers[i].broker.description,
+              enabled: settings.isBrokerEnabled(
+                brokerRegistry.brokers[i].broker.id,
+              ),
+              onChanged: (value) => settings.setBrokerEnabled(
+                brokerRegistry.brokers[i].broker.id,
+                value,
+              ),
+            ),
+          ],
+        const SizedBox(height: 20),
+        const SettingsSubsectionLabel(
           'Credentials',
           description:
               'Optional. Key + secret unlock Live balances on Portfolio and '
@@ -90,23 +124,27 @@ class DataSourcesSectionBody extends StatelessWidget {
               'Suggested from .env when present; saving writes back when possible.',
         ),
         const SizedBox(height: 12),
-        const _CryptoComCredentialsCard(),
+        for (var i = 0; i < venueCatalog.credentialSchemas.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          _VenueCredentialsCard(schema: venueCatalog.credentialSchemas[i]),
+        ],
       ],
     );
   }
 }
 
-class _CryptoComCredentialsCard extends StatelessWidget {
-  const _CryptoComCredentialsCard();
+class _VenueCredentialsCard extends StatelessWidget {
+  const _VenueCredentialsCard({required this.schema});
 
-  static const _exchangeId = 'crypto_com';
+  final VenueCredentialSchema schema;
 
   Future<void> _openEditor(BuildContext context) async {
     final secrets = context.read<EnvSecretsRepository>();
-    final initial = secrets.exchangeCredentialsFor(_exchangeId);
-    final result = await showShadDialog<_CryptoComCredsResult>(
+    final initial = secrets.exchangeCredentialsFor(schema.venueId);
+    final result = await showShadDialog<_VenueCredsResult>(
       context: context,
-      builder: (context) => _CryptoComCredentialsDialog(
+      builder: (context) => _VenueCredentialsDialog(
+        schema: schema,
         initial: initial,
         canWriteEnvFile: secrets.canWriteEnvFile,
       ),
@@ -114,110 +152,118 @@ class _CryptoComCredentialsCard extends StatelessWidget {
     if (result == null || !context.mounted) return;
 
     if (result.clear) {
-      await secrets.clearExchangeCredentials(_exchangeId);
+      await secrets.clearExchangeCredentials(schema.venueId);
       if (!context.mounted) return;
       showAppToast(
         context,
-        description: 'Crypto.com credentials cleared',
+        description: '${schema.displayName} credentials cleared',
       );
       return;
     }
 
     await secrets.setExchangeCredentials(
-      _exchangeId,
+      schema.venueId,
       ExchangeCredentials(
         apiKey: result.apiKey,
         apiSecret: result.apiSecret,
         apiToken: result.apiToken,
+        tradingMode: result.tradingMode,
       ),
     );
     if (!context.mounted) return;
     showAppToast(
       context,
-      description: 'Crypto.com credentials saved',
+      description: '${schema.displayName} credentials saved',
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final secrets = context.watch<EnvSecretsRepository>();
-    final creds = secrets.exchangeCredentialsFor(_exchangeId);
-    final liveReady = creds.hasApiKey && creds.hasApiSecret;
-    final subtitle = !creds.isConfigured && !creds.hasApiSecret
-        ? 'Not configured — public market data still works'
-        : liveReady
-            ? 'Configured — Live portfolio + trading ready'
-            : 'Partial — Live portfolio / trading need key and secret';
+    final creds = secrets.exchangeCredentialsFor(schema.venueId);
 
     return SettingsConnectionCard(
-      title: CryptoComExchangeClient.meta.displayName,
-      subtitle: subtitle,
+      title: schema.displayName,
+      subtitle: schema.subtitleFor(creds),
       icon: LucideIcons.keyRound,
       trailing: ShadButton.outline(
         size: ShadButtonSize.sm,
         onPressed: () => _openEditor(context),
         child: Text(
-          creds.isConfigured || creds.hasApiSecret ? 'Edit' : 'Configure',
+          creds.isConfigured ||
+                  creds.hasApiSecret ||
+                  creds.tradingMode != null
+              ? 'Edit'
+              : 'Configure',
         ),
       ),
     );
   }
 }
 
-class _CryptoComCredsResult {
-  const _CryptoComCredsResult({
+class _VenueCredsResult {
+  const _VenueCredsResult({
     required this.apiKey,
     required this.apiSecret,
     required this.apiToken,
+    required this.tradingMode,
     required this.clear,
   });
 
-  const _CryptoComCredsResult.save({
+  const _VenueCredsResult.save({
     required this.apiKey,
     required this.apiSecret,
     required this.apiToken,
+    this.tradingMode,
   }) : clear = false;
 
-  const _CryptoComCredsResult.clear()
+  const _VenueCredsResult.clear()
       : apiKey = '',
         apiSecret = '',
         apiToken = '',
+        tradingMode = null,
         clear = true;
 
   final String apiKey;
   final String apiSecret;
   final String apiToken;
+  final VenueTradingMode? tradingMode;
   final bool clear;
 }
 
-class _CryptoComCredentialsDialog extends StatefulWidget {
-  const _CryptoComCredentialsDialog({
+class _VenueCredentialsDialog extends StatefulWidget {
+  const _VenueCredentialsDialog({
+    required this.schema,
     required this.initial,
     required this.canWriteEnvFile,
   });
 
+  final VenueCredentialSchema schema;
   final ExchangeCredentials initial;
   final bool canWriteEnvFile;
 
   @override
-  State<_CryptoComCredentialsDialog> createState() =>
-      _CryptoComCredentialsDialogState();
+  State<_VenueCredentialsDialog> createState() =>
+      _VenueCredentialsDialogState();
 }
 
-class _CryptoComCredentialsDialogState
-    extends State<_CryptoComCredentialsDialog> {
+class _VenueCredentialsDialogState extends State<_VenueCredentialsDialog> {
   late final TextEditingController _apiKeyController;
   late final TextEditingController _apiSecretController;
   late final TextEditingController _apiTokenController;
+  late VenueTradingMode _tradingMode;
 
   @override
   void initState() {
     super.initState();
-    _apiKeyController = TextEditingController(text: widget.initial.apiKey ?? '');
+    _apiKeyController =
+        TextEditingController(text: widget.initial.apiKey ?? '');
     _apiSecretController =
         TextEditingController(text: widget.initial.apiSecret ?? '');
     _apiTokenController =
         TextEditingController(text: widget.initial.apiToken ?? '');
+    _tradingMode = widget.initial.tradingMode ??
+        widget.schema.defaultTradingMode;
   }
 
   @override
@@ -230,10 +276,12 @@ class _CryptoComCredentialsDialogState
 
   void _save() {
     Navigator.of(context).pop(
-      _CryptoComCredsResult.save(
+      _VenueCredsResult.save(
         apiKey: _apiKeyController.text.trim(),
         apiSecret: _apiSecretController.text.trim(),
         apiToken: _apiTokenController.text.trim(),
+        tradingMode:
+            widget.schema.supportsTradingMode ? _tradingMode : null,
       ),
     );
   }
@@ -241,10 +289,13 @@ class _CryptoComCredentialsDialogState
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final suggested = widget.initial.isConfigured || widget.initial.hasApiSecret;
+    final schema = widget.schema;
+    final suggested = widget.initial.isConfigured ||
+        widget.initial.hasApiSecret ||
+        widget.initial.tradingMode != null;
 
     return ShadDialog(
-      title: const Text('Crypto.com credentials'),
+      title: Text('${schema.displayName} credentials'),
       description: Text(
         'Suggested from .env when present. '
         'Key and secret unlock Live balances and agent trade suggestions. '
@@ -254,7 +305,7 @@ class _CryptoComCredentialsDialogState
         if (suggested)
           ShadButton.outline(
             onPressed: () =>
-                Navigator.of(context).pop(const _CryptoComCredsResult.clear()),
+                Navigator.of(context).pop(const _VenueCredsResult.clear()),
             child: const Text('Clear'),
           ),
         ShadButton.outline(
@@ -272,29 +323,82 @@ class _CryptoComCredentialsDialogState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('API key', style: theme.textTheme.small),
-              const SizedBox(height: 6),
-              ShadInput(
-                controller: _apiKeyController,
-                obscureText: true,
-                placeholder: const Text('OMNISCOPE_CRYPTO_COM_API_KEY'),
-              ),
-              const SizedBox(height: 14),
-              Text('API secret', style: theme.textTheme.small),
-              const SizedBox(height: 6),
-              ShadInput(
-                controller: _apiSecretController,
-                obscureText: true,
-                placeholder: const Text('OMNISCOPE_CRYPTO_COM_API_SECRET'),
-              ),
-              const SizedBox(height: 14),
-              Text('API token (optional)', style: theme.textTheme.small),
-              const SizedBox(height: 6),
-              ShadInput(
-                controller: _apiTokenController,
-                obscureText: true,
-                placeholder: const Text('OMNISCOPE_CRYPTO_COM_API_TOKEN'),
-              ),
+              if (schema.supportsTradingMode) ...[
+                Text('Trading mode', style: theme.textTheme.small),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _tradingMode == VenueTradingMode.paper
+                          ? ShadButton(
+                              onPressed: () {},
+                              child: const Text('Paper'),
+                            )
+                          : ShadButton.outline(
+                              onPressed: () => setState(
+                                () => _tradingMode = VenueTradingMode.paper,
+                              ),
+                              child: const Text('Paper'),
+                            ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _tradingMode == VenueTradingMode.live
+                          ? ShadButton(
+                              onPressed: () {},
+                              child: const Text('Live'),
+                            )
+                          : ShadButton.outline(
+                              onPressed: () => setState(
+                                () => _tradingMode = VenueTradingMode.live,
+                              ),
+                              child: const Text('Live'),
+                            ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Paper and live use different API keys from the broker. '
+                  'Mode only selects the API host.',
+                  style: theme.textTheme.muted,
+                ),
+                const SizedBox(height: 14),
+              ],
+              if (schema.requiresApiKey) ...[
+                Text('API key', style: theme.textTheme.small),
+                const SizedBox(height: 6),
+                ShadInput(
+                  controller: _apiKeyController,
+                  obscureText: true,
+                  placeholder: Text(schema.apiKeyEnvName),
+                ),
+                const SizedBox(height: 14),
+              ],
+              if (schema.requiresApiSecret) ...[
+                Text('API secret', style: theme.textTheme.small),
+                const SizedBox(height: 6),
+                ShadInput(
+                  controller: _apiSecretController,
+                  obscureText: true,
+                  placeholder: Text(schema.apiSecretEnvName),
+                ),
+                const SizedBox(height: 14),
+              ],
+              if (schema.requiresApiToken) ...[
+                Text(
+                  schema.apiTokenOptional
+                      ? 'API token (optional)'
+                      : 'API token',
+                  style: theme.textTheme.small,
+                ),
+                const SizedBox(height: 6),
+                ShadInput(
+                  controller: _apiTokenController,
+                  obscureText: true,
+                  placeholder: Text(schema.apiTokenEnvName),
+                ),
+              ],
             ],
           ),
         ),

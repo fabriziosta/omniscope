@@ -1,9 +1,7 @@
-import 'dart:convert';
-
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 import 'package:omniscope/data/market/yahoo_market_data_client.dart';
+
+import 'support/venue_http_fixtures.dart';
 
 void main() {
   test('chartRequestUri is direct on native and proxied on web', () {
@@ -29,41 +27,10 @@ void main() {
   });
 
   test('getQuotes maps chart meta into Quote', () async {
-    final mock = MockClient((request) async {
-      expect(request.url.path, contains('AAPL'));
-      return http.Response(
-        jsonEncode({
-          'chart': {
-            'result': [
-              {
-                'meta': {
-                  'symbol': 'AAPL',
-                  'regularMarketPrice': 190.5,
-                  'previousClose': 188.0,
-                  'currency': 'USD',
-                  'shortName': 'Apple',
-                  'fullExchangeName': 'NasdaqGS',
-                },
-                'timestamp': [1, 2],
-                'indicators': {
-                  'quote': [
-                    {
-                      'close': [188.0, 190.5],
-                      'open': [187.0, 189.0],
-                      'high': [189.0, 191.0],
-                      'low': [186.0, 188.0],
-                      'volume': [100, 200],
-                    },
-                  ],
-                },
-              },
-            ],
-            'error': null,
-          },
-        }),
-        200,
-        headers: {'content-type': 'application/json'},
-      );
+    final mock = VenueHttpFixtures.mockClient({
+      (r) => VenueHttpFixtures.pathContains(r, 'AAPL'): (_) {
+        return VenueHttpFixtures.jsonResponse('yahoo/chart-aapl.json');
+      },
     });
 
     final client = YahooMarketDataClient(httpClient: mock);
@@ -73,6 +40,28 @@ void main() {
     expect(quotes.single.price, 190.5);
     expect(quotes.single.dataSourceId, YahooMarketDataClient.meta.id);
     expect(quotes.single.change, closeTo(2.5, 1e-9));
+  });
+
+  test('getHistory maps chart indicators into Candles', () async {
+    final mock = VenueHttpFixtures.mockClient({
+      (r) {
+        expect(r.url.queryParameters['range'], '1mo');
+        expect(r.url.queryParameters['interval'], '1d');
+        return VenueHttpFixtures.pathContains(r, 'AAPL');
+      }: (_) => VenueHttpFixtures.jsonResponse('yahoo/chart-aapl.json'),
+    });
+
+    final client = YahooMarketDataClient(httpClient: mock);
+    final candles = await client.getHistory(
+      'AAPL',
+      range: '1mo',
+      interval: '1d',
+    );
+    expect(candles, hasLength(2));
+    expect(candles.first.close, 188.0);
+    expect(candles.last.close, 190.5);
+    expect(candles.first.open, 187.0);
+    expect(candles.last.volume, 200);
   });
 
   test('encodes special symbols in the request path', () {

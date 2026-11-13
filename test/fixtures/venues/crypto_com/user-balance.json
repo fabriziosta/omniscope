@@ -1,0 +1,35 @@
+{
+  "id": 1,
+  "method": "private/user-balance",
+  "code": 0,
+  "result": {
+    "data": [
+      {
+        "total_available_balance": "4721.05",
+        "total_cash_balance": "7890.00",
+        "instrument_name": "USD",
+        "position_balances": [
+          {
+            "instrument_name": "CRO",
+            "quantity": "24422.72",
+            "market_value": "4776.10",
+            "max_withdrawal_balance": "24422.72",
+            "reserved_qty": "0"
+          },
+          {
+            "instrument_name": "USD",
+            "quantity": "3113.50",
+            "market_value": "3113.50",
+            "max_withdrawal_balance": "3113.50",
+            "reserved_qty": "0"
+          },
+          {
+            "instrument_name": "DUST",
+            "quantity": "0",
+            "market_value": "0"
+          }
+        ]
+      }
+    ]
+  }
+}

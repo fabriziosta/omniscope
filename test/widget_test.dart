@@ -30,10 +30,12 @@ import 'package:omniscope/data/settings/user_config_store.dart';
 import 'package:omniscope/data/trading/broker_exchange_registry.dart';
 import 'package:omniscope/data/trading/order_models.dart';
 import 'package:omniscope/data/trading/trade_executor.dart';
+import 'package:omniscope/data/venues/venue_catalog.dart';
 import 'package:omniscope/features/agents/agent_schedule_coordinator.dart';
 import 'package:omniscope/widgets/nav_back_button.dart';
 import 'package:provider/provider.dart';
 
+import 'support/fake_live_venue.dart';
 import 'support/fake_market_data_client.dart';
 import 'support/memory_config.dart';
 
@@ -78,7 +80,9 @@ FakeMarketDataClient _testMarketData() {
   );
 }
 
-class _FakeCryptoExchangeClient implements CryptoExchangeClient {
+class _FakeCryptoExchangeClient
+    with FakeCryptoLiveVenue
+    implements CryptoExchangeClient {
   @override
   final CryptoExchange exchange = const CryptoExchange(
     id: 'crypto_com',
@@ -228,6 +232,12 @@ void main() {
           ChangeNotifierProvider<UserConfigStore>.value(value: config),
           Provider<MarketDataClient>.value(value: marketClient),
           Provider<EquityDataSourceRegistry>.value(value: equitiesRegistry),
+          Provider<VenueCatalog>.value(
+            value: VenueCatalog.empty(
+              cryptoRegistry: cryptoRegistry,
+              brokerRegistry: brokerRegistry,
+            ),
+          ),
           Provider<CryptoExchangeRegistry>.value(value: cryptoRegistry),
           Provider<BrokerExchangeRegistry>.value(value: brokerRegistry),
           Provider<TradeExecutor>.value(value: tradeExecutor),
@@ -269,11 +279,13 @@ void main() {
     addTearDown(agentSchedule.dispose);
   }
 
-  testWidgets('shell tabs: markets, portfolio, agents, settings', (tester) async {
+  testWidgets('shell tabs: markets, portfolio, activity, agents, settings',
+      (tester) async {
     await pumpApp(tester);
 
     expect(find.text('Markets'), findsWidgets);
     expect(find.text('Portfolio'), findsWidgets);
+    expect(find.text('Activity'), findsWidgets);
     expect(find.text('Agents'), findsWidgets);
     expect(find.text('Settings'), findsWidgets);
     expect(find.text('Favorites'), findsOneWidget);
@@ -324,16 +336,17 @@ void main() {
     expect(find.text('BTC_USD'), findsOneWidget);
     expect(find.text('Spot pairs'), findsWidgets);
     expect(find.text('Markets'), findsWidgets);
+    expect(find.text('Activity'), findsWidgets);
     expect(find.text('Agents'), findsWidgets);
+
+    await tester.tap(find.text('Activity').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.textContaining('Confirm pending'), findsOneWidget);
 
     await tester.tap(find.text('Agents').last);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    // Narrow master–detail: open Roles before agent cards mount.
-    expect(find.text('Roles'), findsWidgets);
-    await tester.tap(find.text('Roles').first);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
     expect(find.text('Market Research & Analysis'), findsOneWidget);
     expect(find.textContaining('CrewAI'), findsNothing);
     expect(find.textContaining('LangGraph'), findsNothing);

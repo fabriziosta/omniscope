@@ -19,13 +19,24 @@ v0 is a Flutter POC with **no user accounts**. Supported targets: **Linux**, **W
 
 ## Coding-assistant tooling
 
-Editor AI helpers (Cursor and similar) — **not** the in-app Agents tab or the Python CLIs under [`agents/`](agents/).
+Editor AI helpers (Cursor, Codex, Claude Code, and similar) — **not** the in-app Agents tab or the Python CLIs under [`agents/`](agents/).
+
+**Single source of truth:** root [`AGENTS.md`](AGENTS.md) (this file) plus [`.agents/skills/`](.agents/skills/). Do **not** add parallel `.claude/` or `.codex/` instruction trees that restate product rules (brand, UX, cross-platform, in-app agents). Those rules stay in [`.cursor/rules/`](.cursor/rules/) for Cursor and in this handbook for every agent.
 
 | Path | Role |
 |------|------|
+| [`AGENTS.md`](AGENTS.md) | Shared project guidance for Codex, Claude Code, Cursor, and humans |
 | [`.agents/skills/`](.agents/skills/) | Official Flutter + Dart [Agent Skills](https://docs.flutter.dev/ai/tools) (on-demand recipes: layouts, tests, analysis, etc.) |
-| [`.cursor/rules/`](.cursor/rules/) | Persistent Omniscope product rules plus official [`flutter-hot-reload.mdc`](.cursor/rules/flutter-hot-reload.mdc) |
-| [`.cursor/mcp.json`](.cursor/mcp.json) | Dart / Flutter MCP server (`dart mcp-server`) for analyzer, tests, and runtime hot reload |
+| [`.cursor/rules/`](.cursor/rules/) | Cursor-only persistent Omniscope product rules plus official [`flutter-hot-reload.mdc`](.cursor/rules/flutter-hot-reload.mdc) |
+| [`.cursor/mcp.json`](.cursor/mcp.json) | Cursor Dart / Flutter MCP server (`dart mcp-server`) for analyzer, tests, and runtime hot reload |
+
+### How each tool discovers guidance
+
+| Tool | Instructions | Skills | Notes |
+|------|--------------|--------|-------|
+| **Codex** | Root `AGENTS.md` | [`.agents/skills/`](.agents/skills/) | No committed `.codex/` required. Add `.codex/config.toml` later only for shared project MCP/hooks when the project is trusted; otherwise keep Codex config in `~/.codex/`. |
+| **Claude Code** | Same `AGENTS.md` (Claude can load it in place of `CLAUDE.md`) | Keep skills under `.agents/skills/` (`make agent-skills`); do not re-home them under `.claude/skills/` | No committed `.claude/` instruction mirror. Add a thin root `CLAUDE.md` (pointer + `make check` / `make run` only) or `.claude/` settings/MCP only if a real Claude Code gap appears. |
+| **Cursor** | This file + [`.cursor/rules/`](.cursor/rules/) | [`.agents/skills/`](.agents/skills/) | Dart MCP via [`.cursor/mcp.json`](.cursor/mcp.json). |
 
 Refresh vendored skills from upstream:
 
@@ -40,7 +51,7 @@ Optional: install the [Dart and Flutter Cursor marketplace plugin](https://docs.
 
 **Hot reload vs restart:** Enable the Dart MCP server in Cursor (Tools / MCP) so [`flutter-hot-reload.mdc`](.cursor/rules/flutter-hot-reload.mdc) can call `hot_reload` / `hot_restart` against a running app. UI edits under `lib/` → hot reload. Changes to [`lib/main.dart`](lib/main.dart), the provider graph, or `initState` wiring → hot restart.
 
-Do not confuse this with **Agents** in the app (LLM chat / Confirm trades) or [`agents/`](agents/) (CrewAI / LangGraph CLI packages).
+Do not confuse this with **Agents** in the app (LLM chat / Confirm trades) or [`agents/`](agents/) (CrewAI / LangGraph CLI packages). [`.agents/`](.agents/) is editor skills only.
 
 ## Stack
 
@@ -74,7 +85,7 @@ lib/
 - Map provider-specific JSON **inside** the Yahoo / crypto exchange client, not in widgets.
 - Feature folders own their screens; shared chart stays under `widgets/`.
 - **Screen-scoped `ChangeNotifier`s** (provided at the route/screen with `ChangeNotifierProvider`, not in `main.dart`) own feature async: [`QuotesListController`](lib/features/quotes/quotes_list_controller.dart), [`PortfolioScreenController`](lib/features/portfolio/portfolio_screen_controller.dart), [`AssetDetailController`](lib/features/asset_detail/asset_detail_controller.dart), [`AgentChatController`](lib/features/agents/agent_chat_controller.dart). Use load-generation tokens so stale responses are ignored.
-- Shared chrome: `TabPageHeader`, `SubscreenAppBar`, `AppEmptyView`, `QuotesAsyncBody`, `MetricStat`, `SummaryWell`, `ThemedAccordionItem`, [`MasterDetailShell`](lib/widgets/master_detail_shell.dart) / `MasterDetailNavList` / `MasterDetailNavTile` / `MasterDetailContentPane` (Markets, Portfolio, Agents, Settings — wide sidebar + content at ≥720; narrow list → detail with Back), `pushFadePage` / `FadePageRoute`, [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart) (in-context Investigate / Trade check). Prefer [`showAppToast`](lib/widgets/app_toast.dart) over raw `ShadToaster`.
+- Shared chrome: `TabPageHeader`, `SubscreenAppBar`, `AppEmptyView`, `QuotesAsyncBody`, `MetricStat`, `SummaryWell`, `ThemedAccordionItem`, [`MasterDetailShell`](lib/widgets/master_detail_shell.dart) / `MasterDetailNavList` / `MasterDetailNavTile` / `MasterDetailContentPane` (Markets, Portfolio, Settings — wide sidebar + content at ≥720; narrow list → detail with Back), `pushFadePage` / `FadePageRoute`, [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart) (in-context Investigate / Trade check). Prefer [`showAppToast`](lib/widgets/app_toast.dart) over raw `ShadToaster`.
 - Quote lists (Markets equity kinds + crypto exchange spot) always go through [`MarketDataClient`](lib/data/market/market_data_client.dart) — never call `CryptoExchangeClient.getQuotes` from UI.
 
 ## Market data — always use `MarketDataClient`
@@ -131,33 +142,68 @@ Default Markets watchlist: [`lib/data/market/models.dart`](lib/data/market/model
 Reusable public-market abstraction for crypto venues (spot quotes + history). UI uses the registry / router — never venue URLs.
 
 ```text
+lib/data/venues/                    # shared LiveVenueCapabilities, credential schemas, VenueCatalog
 lib/data/crypto/
   crypto_exchange.dart              # id, displayName, defaultSymbols
   crypto_exchange_client.dart       # abstract public API (+ optional live portfolio)
   crypto_exchange_registry.dart     # Crypto group subgroups + symbol routing
-  exchange_portfolio.dart           # live balance snapshot models
+  exchange_portfolio.dart           # re-exports venues/exchange_portfolio.dart
   crypto_com/crypto_com_exchange_client.dart
+lib/data/brokers/
+  alpaca/                           # Alpaca paper/live portfolio + orders
 ```
+
+Venues register in **one place**: [`VenueCatalog.build`](lib/data/venues/venue_catalog.dart) (wired from [`lib/main.dart`](lib/main.dart)). Settings → Credentials cards and `.env` dual-sync ids are **derived from the catalog** — do not hard-code per-venue Settings widgets.
 
 ### Adding a crypto exchange
 
-1. Create `lib/data/crypto/<venue>/<venue>_exchange_client.dart` implementing `CryptoExchangeClient`.
+1. Create `lib/data/crypto/<venue>/` with a `CryptoExchangeClient` (+ DTO mapping file).
 2. Map that venue’s DTOs → `Quote` / `Candle`; implement `handlesSymbol`.
-3. Optionally override `canFetchPortfolio` / `fetchPortfolio` for live Portfolio subgroups.
-4. Register in `CryptoExchangeRegistry([...])` in [`lib/main.dart`](lib/main.dart); inject credentials from [`EnvSecretsRepository`](lib/data/settings/env_secrets_repository.dart) / [`ExchangeCredentialsConfig.forId`](lib/data/market/exchange_credentials.dart) when the venue needs a key.
-5. Add `OMNISCOPE_<EXCHANGE_ID>_API_{KEY|SECRET|TOKEN}` placeholders to [`.env.example`](.env.example) and append the id to [`ExchangeCredentialsConfig.defaultExchangeIds`](lib/data/market/exchange_credentials.dart).
-6. It appears in Settings → Crypto exchanges automatically (enabled by default via [`DataSourceSettings`](lib/data/settings/data_source_settings.dart)). Add a credentials editor when the venue needs keys (Crypto.com is the template).
+3. Optionally override `canFetchPortfolio` / `fetchPortfolio` / orders; declare a static `VenueCredentialSchema`.
+4. Append one `VenueRegistration.crypto(...)` line in [`VenueCatalog.build`](lib/data/venues/venue_catalog.dart) and add the id to `VenueCatalog.knownCredentialVenueIds`.
+5. Add `OMNISCOPE_<EXCHANGE_ID>_API_{KEY|SECRET|TOKEN}` placeholders to [`.env.example`](.env.example).
+6. It appears under Settings → Crypto venues + generic Credentials automatically (enabled by default via [`DataSourceSettings`](lib/data/settings/data_source_settings.dart)).
 7. Document public endpoints / terms in the README.
+8. Add recorded response fixtures under `test/fixtures/venues/<id>/` and MockClient contract tests (see **Venue API health** below); extend [`tool/venue_canary.dart`](tool/venue_canary.dart) probes for the new venue.
+
+### Adding a broker venue (stocks / ETFs)
+
+1. Create `lib/data/brokers/<venue>/` implementing [`BrokerExchangeClient`](lib/data/trading/broker_exchange_client.dart) (+ DTO / auth helpers). Keep equities **quotes on Yahoo** / `MarketDataClient` — brokers are private portfolio + orders.
+2. Override live portfolio + order methods; declare `VenueCredentialSchema` (use `supportsTradingMode` when paper/live hosts differ).
+3. Append one `VenueRegistration.broker(...)` in [`VenueCatalog.build`](lib/data/venues/venue_catalog.dart) and update `knownCredentialVenueIds`.
+4. Add env placeholders to [`.env.example`](.env.example).
+5. Settings → Brokers toggle + Credentials card appear automatically; Live portfolio / Confirm stay gated until key+secret unlock `canFetchPortfolio` / `canPlaceOrders`.
+6. Add fixtures + canary portfolio probe (same **Venue API health** rules as crypto).
+
+### Venue API health
+
+Do **not** add curl suites or live network calls to `make check` / pre-push. Track APIs with two layers:
+
+| Layer | When | Role |
+|-------|------|------|
+| **Fixture contract tests** | Every PR (`make check`) | Checked-in JSON under [`test/fixtures/venues/`](test/fixtures/venues/) + [`VenueHttpFixtures`](test/support/venue_http_fixtures.dart) / `MockClient` — proves adapters still parse known shapes |
+| **Live canary** | `make venue-canary` or scheduled [`.github/workflows/venue-canary.yml`](.github/workflows/venue-canary.yml) | Hits real endpoints through Dart clients ([`tool/venue_canary.dart`](tool/venue_canary.dart)); writes `build/venue-canary.json` + markdown matrix. Tag `live_canary` is excluded from [`tool/flutter_checks.sh`](tool/flutter_checks.sh) |
+
+**Refresh ritual** when a canary fails on parse: capture a fresh public response into `test/fixtures/venues/<id>/`, fix the adapter, keep the updated fixture as the regression. Prefer fixtures over inline JSON so schema drift is visible in git diffs. Public probes always run; portfolio probes need credentials in `.env` (or optional GitHub Actions secrets). Canary **never** places live orders.
 
 ### Crypto.com notes
 
 - Base: `https://api.crypto.com/exchange/v1/`
 - Public (no key): `get-tickers`, `get-candlestick`
-- Optional private credentials (dual sync): `OMNISCOPE_CRYPTO_COM_API_KEY`, `_API_SECRET`, `_API_TOKEN` via `.env` **or** Settings → Crypto → Configure (persisted in `omniscope.json` + best-effort `.env` write on desktop)
+- Optional private credentials (dual sync): `OMNISCOPE_CRYPTO_COM_API_KEY`, `_API_SECRET`, `_API_TOKEN` via `.env` **or** Settings → Data sources → Configure (persisted in `omniscope.json` + best-effort `.env` write on desktop)
 - Live portfolio (key **and** secret): `POST /private/user-balance` (HMAC-SHA256) → Portfolio tab **Live** subgroup
 - Live orders (same credentials): `POST /private/create-order` (+ cancel / get-order-detail) via [`canPlaceOrders`](lib/data/crypto/crypto_exchange_client.dart) → agent Confirm / Autopilot through [`TradeExecutor`](lib/data/trading/trade_executor.dart)
 - Spot symbols: `BTC_USD`, `ETH_USD`, … Curated `defaultSymbols` plus live catalog from `public/get-instruments` (`browseSymbols`); exchange screen paginates quote fetches.
 - Educational use; do not scrape aggressively.
+
+### Alpaca notes
+
+- Paper: `https://paper-api.alpaca.markets` · Live: `https://api.alpaca.markets`
+- Credentials: `OMNISCOPE_ALPACA_API_KEY` / `_API_SECRET` + optional `OMNISCOPE_ALPACA_TRADING_MODE=paper|live` (Settings Paper/Live control; paper and live use **different** Alpaca key pairs)
+- Live portfolio: `GET /v2/account` + `GET /v2/positions` → Portfolio **Live**
+- Orders: `POST /v2/orders` (+ cancel / get) when credentials are set → agent Confirm / Autopilot
+- Not a Markets quote source — equities charts stay on Yahoo
+- Educational use; review Alpaca terms before redistribution
 
 ### Crypto UI
 
@@ -209,7 +255,8 @@ assets/agents/llm_models.json   # selectable models per provider (data-driven)
 lib/data/agents/                # Flutter models + AgentsRepository + catalog loaders
                                 # agent_role_prompts.dart = in-app chat prompt SoT
 lib/data/trading/               # TradeExecutor, order models, BrokerExchangeRegistry
-lib/features/agents/            # Agents tab UI (Roles + Activity)
+lib/features/agents/            # Agents tab UI (Roles / connect / chat)
+lib/features/activity/          # Activity shell tab (proposals + confirm)
 ```
 
 ### Prompt source of truth (do not mega-JSON)
@@ -225,9 +272,9 @@ Keep **three layers** — do **not** put Flutter + CLI harness prompts in one `p
 ### Live trade suggestions (in-app)
 
 - Trading roles (`intradayTrading`, `hedgeFundDesk`) emit a fenced JSON block `{ticker, action, quantity, rationale, risk_approved}` parsed into [`TradeProposal`](lib/data/agents/trade_proposal.dart).
-- [`TradeExecutor`](lib/data/trading/trade_executor.dart) routes Confirm / Autopilot to Practice (paper buy/sell) or live venues with `canPlaceOrders` (Crypto.com first; brokers via [`BrokerExchangeRegistry`](lib/data/trading/broker_exchange_registry.dart)).
+- [`TradeExecutor`](lib/data/trading/trade_executor.dart) routes Confirm / Autopilot to Practice (paper buy/sell) or live venues with `canPlaceOrders` (Crypto.com + Alpaca via [`VenueCatalog`](lib/data/venues/venue_catalog.dart) / [`BrokerExchangeRegistry`](lib/data/trading/broker_exchange_registry.dart)).
 - Chat shows Confirm / Dismiss; Autopilot is configured on Connect/Edit (default **off**).
-- Agents → **Activity** pane lists proposals and events (`tradeProposals` / `agentActivity` config slices).
+- Shell tab **Activity** lists proposals and events (`tradeProposals` / `agentActivity` config slices) with portfolio labels; pending rows support Confirm / Dismiss.
 
 ### Hedge Fund Desk (Python CLI)
 
@@ -285,8 +332,9 @@ Locked examples: Market Research **27**, Live Balance / Portfolio Guide / Practi
 
 ### UI
 
-- Shell tab **Agents** → master–detail **Roles** / **Activity**; connect/edit/disconnect with suggested model presets + Autopilot for trading roles + optional **Schedule** (interval presets + symbols) for every role; **Open chat** when connected. Each role card shows a **Robustness N** badge (see above).
-- **Schedule** (foreground only) — configured on Connect/Edit; [`AgentScheduleCoordinator`](lib/features/agents/agent_schedule_coordinator.dart) polls while the app is open and resumed (Linux / Windows / Android / iOS / macOS / Web). Pauses on background / hidden tab; does **not** run with the app closed. Each due tick Runs symbols via the same chat `sendRun` path (research or trade check + Autopilot if enabled). Activity logs `scheduledRun` events. Every scheduled outcome also enqueues a stacked shell notification ([`AppNotificationRepository`](lib/data/notifications/app_notification_repository.dart) / bell in [`HomeShell`](lib/features/shell/home_shell.dart)) so the user can **Open** chat to Confirm a pending proposal or review an Autopilot result (Dismiss clears the inbox item).
+- Shell tab **Activity** → pending confirmations + accepted/refused history with portfolio; Confirm / Dismiss without opening chat ([`ActivityScreen`](lib/features/activity/activity_screen.dart)). Shared confirm path: [`TradeProposalActions`](lib/data/trading/trade_proposal_actions.dart).
+- Shell tab **Agents** → role cards; connect/edit/disconnect with suggested model presets + Autopilot for trading roles + optional **Schedule** (interval presets + symbols) for every role; **Open chat** when connected. Each role card shows a **Robustness N** badge (see above).
+- **Schedule** (foreground only) — configured on Connect/Edit; [`AgentScheduleCoordinator`](lib/features/agents/agent_schedule_coordinator.dart) polls while the app is open and resumed (Linux / Windows / Android / iOS / macOS / Web). Pauses on background / hidden tab; does **not** run with the app closed. Each due tick Runs symbols via the same chat `sendRun` path (research or trade check + Autopilot if enabled). Activity logs `scheduledRun` events. Every scheduled outcome also enqueues a stacked shell notification ([`AppNotificationRepository`](lib/data/notifications/app_notification_repository.dart) / bell in [`HomeShell`](lib/features/shell/home_shell.dart)) so the user can **Open** Activity (when a `proposalId` is present) or chat to Confirm / review (Dismiss clears the inbox item).
 - **In-app launches** — other screens deep-link into chat via [`AgentLaunchActions`](lib/features/agents/agent_launch_actions.dart) + [`AgentLaunchIntent`](lib/data/agents/agent_launch.dart) (`investigate` → Market Research + Hedge Fund Desk; `tradeCheck` → Intraday + Desk; `explainLive` → Live Balance Explainer; `explainPortfolio` → Portfolio Guide; `paperReview` → Practice Coach). Shared CTA: [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart).
   - Asset detail app bar **Investigate**; Practice trade card **Practice coach** + **Trade check**; successful paper trade offers a Trade check dialog.
   - Quote rows (Markets) sparkles icon → Investigate.
@@ -387,7 +435,8 @@ Root [`Makefile`](Makefile) is the developer catalog (`make help`). On Windows h
 ```bash
 export PATH="$HOME/flutter/bin:$PATH"
 make get
-make check              # analyze + test (same as pre-push)
+make check              # analyze + test (same as pre-push; excludes live_canary)
+make venue-canary       # live Yahoo / Crypto.com / Alpaca probes (optional)
 make run                # DEVICE=linux by default
 make run DEVICE=windows # needs Windows desktop toolchain
 make run DEVICE=android # needs Android SDK / device
@@ -422,7 +471,8 @@ make container-run      # needs DISPLAY + /tmp/.X11-unix
 
 ### CI (GitHub Actions)
 
-- **PR / `main`:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — gitleaks + `tool/flutter_checks.sh all` (same gate as pre-push / `make check`), plus web and Linux desktop compile smoke on `ubuntu-latest`.
+- **PR / `main`:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — gitleaks + `tool/flutter_checks.sh all` (same gate as pre-push / `make check`), plus web and Linux desktop compile smoke on `ubuntu-latest`. Offline only — excludes `live_canary`.
+- **Venue canary (scheduled):** [`.github/workflows/venue-canary.yml`](.github/workflows/venue-canary.yml) — daily + `workflow_dispatch`; live probes via Dart adapters; job may go red on outages without blocking merges. Optional repo secrets unlock portfolio probes.
 - **Tags `v*` only:** [`.github/workflows/release.yml`](.github/workflows/release.yml) — build web / Linux / APK and publish a GitHub Release (not on every main merge).
 - **Container (GHCR):** [`.github/workflows/container.yml`](.github/workflows/container.yml) — on `v*` tags (and `workflow_dispatch`), build [`Containerfile`](Containerfile) and push `ghcr.io/<owner>/<repo>` with `GITHUB_TOKEN` (`packages: write`). OCI `org.opencontainers.image.source` links the package to the repo.
 - **Patch bump on `main`:** [`.github/workflows/bump-patch-version.yml`](.github/workflows/bump-patch-version.yml) — does not create tags. See README **CI** for the tag-and-release steps.
@@ -440,7 +490,7 @@ make container-run      # needs DISPLAY + /tmp/.X11-unix
 Install once: `make hooks` (or `pre-commit install --hook-type pre-commit --hook-type pre-push`)
 
 - **pre-commit**: secret scan (gitleaks + private-key detect), merge-conflict / large-file checks
-- **pre-push**: gitleaks + `flutter analyze` + `flutter test`
+- **pre-push**: gitleaks + `flutter analyze` + `flutter test --exclude-tags live_canary` (via `tool/flutter_checks.sh`)
 
 Do not commit `.env`, API keys, or credential JSON. Config: [`.pre-commit-config.yaml`](.pre-commit-config.yaml), [`.gitleaks.toml`](.gitleaks.toml).
 

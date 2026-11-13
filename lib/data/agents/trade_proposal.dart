@@ -22,6 +22,16 @@ extension TradeProposalStatusX on TradeProposalStatus {
         TradeProposalStatus.skipped => 'Skipped',
       };
 
+  /// Plain-language status for the Activity dashboard.
+  String get dashboardLabel => switch (this) {
+        TradeProposalStatus.pending => 'Needs confirmation',
+        TradeProposalStatus.executed => 'Accepted',
+        TradeProposalStatus.dismissed => 'Refused',
+        TradeProposalStatus.confirmed => 'Confirmed',
+        TradeProposalStatus.failed => 'Failed',
+        TradeProposalStatus.skipped => 'Skipped',
+      };
+
   static TradeProposalStatus parse(String? raw) {
     return TradeProposalStatus.values.firstWhere(
       (s) => s.name == raw,

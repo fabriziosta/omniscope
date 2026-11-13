@@ -41,12 +41,13 @@ case "$1" in
     flutter analyze
     ;;
   test)
-    flutter test
+    # Exclude live venue canary (needs network; run via `make venue-canary`).
+    flutter test --exclude-tags live_canary
     ;;
   all)
     "$ROOT/tool/bump_patch_version.sh" --verify
     flutter analyze
-    flutter test
+    flutter test --exclude-tags live_canary
     ;;
   *)
     usage

@@ -9,6 +9,7 @@ import '../../market/exchange_credentials.dart';
 import '../../market/market_data_client.dart';
 import '../../market/models.dart';
 import '../../trading/order_models.dart';
+import '../../venues/venue_credential_schema.dart';
 import '../crypto_exchange.dart';
 import '../crypto_exchange_client.dart';
 import '../exchange_portfolio.dart';
@@ -28,8 +29,9 @@ import '../exchange_portfolio.dart';
 class CryptoComExchangeClient implements CryptoExchangeClient {
   CryptoComExchangeClient({
     http.Client? httpClient,
-    this._credentials = ExchangeCredentials.empty,
-  }) : _http = httpClient ?? http.Client();
+    ExchangeCredentials credentials = ExchangeCredentials.empty,
+  })  : _http = httpClient ?? http.Client(),
+        _credentials = credentials;
 
   static const _base = 'https://api.crypto.com/exchange/v1';
 
@@ -48,7 +50,7 @@ class CryptoComExchangeClient implements CryptoExchangeClient {
       'AVAX_USD',
       'DOT_USD',
       'LINK_USD',
-      'MATIC_USD',
+      'POL_USD', // Polygon (formerly MATIC)
       'LTC_USD',
       'BCH_USD',
       'ATOM_USD',
@@ -60,16 +62,30 @@ class CryptoComExchangeClient implements CryptoExchangeClient {
       'SUI_USD',
       'SHIB_USD',
       'PEPE_USD',
-      'TRX_USD',
+      'HBAR_USD',
       'XLM_USD',
       'ALGO_USD',
       'FIL_USD',
       'ICP_USD',
       'AAVE_USD',
-      'MKR_USD',
+      'SKY_USD', // Sky (formerly MKR)
       'CRV_USD',
       'SAND_USD',
     ],
+  );
+
+  static const VenueCredentialSchema credentialSchema = VenueCredentialSchema(
+    venueId: 'crypto_com',
+    displayName: 'Crypto.com',
+    requiresApiKey: true,
+    requiresApiSecret: true,
+    requiresApiToken: true,
+    apiTokenOptional: true,
+    docsUrl: 'https://exchange-docs.crypto.com/',
+    subtitleWhenPublic: 'Not configured — public market data still works',
+    subtitleWhenReady: 'Configured — Live portfolio + trading ready',
+    subtitleWhenPartial:
+        'Partial — Live portfolio / trading need key and secret',
   );
 
   /// Spot instrument names like `BTC_USD` / `ETH_USDT`.
@@ -88,10 +104,18 @@ class CryptoComExchangeClient implements CryptoExchangeClient {
   List<String>? _cachedSpotUsdSymbols;
   DateTime? _cachedSpotUsdSymbolsAt;
 
+  @override
+  String get venueId => exchange.id;
+
+  @override
+  String get displayName => exchange.displayName;
+
   /// Local credentials (`.env` / Settings UI; may be empty for public endpoints).
+  @override
   ExchangeCredentials get credentials => _credentials;
 
   /// Refresh credentials without recreating the client (Settings dual-sync).
+  @override
   void setCredentials(ExchangeCredentials value) {
     _credentials = value;
   }
@@ -127,10 +151,16 @@ class CryptoComExchangeClient implements CryptoExchangeClient {
     try {
       final discovered = await listSpotUsdSymbols();
       if (discovered.isEmpty) return meta.defaultSymbols;
-      // Featured defaults first, then the rest of the public USD spot catalog.
+      // Featured defaults first (only when still listed), then the rest of the
+      // public USD spot catalog. Delisted curated names (e.g. old MATIC_USD)
+      // must not stay pinned — get-tickers returns HTTP 400 for them.
+      final live = discovered.toSet();
       final seen = <String>{};
       final ordered = <String>[];
-      for (final s in [...meta.defaultSymbols, ...discovered]) {
+      for (final s in meta.defaultSymbols) {
+        if (live.contains(s) && seen.add(s)) ordered.add(s);
+      }
+      for (final s in discovered) {
         if (seen.add(s)) ordered.add(s);
       }
       return ordered;
@@ -206,6 +236,8 @@ class CryptoComExchangeClient implements CryptoExchangeClient {
       );
     }
 
+    // Delisted / unknown instruments return HTTP 400 — skip them rather than
+    // failing the whole page when any curated or favorited name is stale.
     return mapPool<String, Quote>(
       items: symbols,
       concurrency: quoteFetchConcurrency,
@@ -450,7 +482,11 @@ class CryptoComExchangeClient implements CryptoExchangeClient {
     String path,
     Map<String, String> query,
   ) async {
-    final uri = Uri.parse('$_base$path').replace(queryParameters: query);
+    // Avoid `path?` from replace(queryParameters: {}) — some edges 400 it.
+    final parsed = Uri.parse('$_base$path');
+    final uri = query.isEmpty
+        ? parsed
+        : parsed.replace(queryParameters: query);
     late final http.Response response;
     try {
       response = await _http.get(
@@ -511,8 +547,12 @@ class CryptoComExchangeClient implements CryptoExchangeClient {
 
   Map<String, dynamic> _decodeEnvelope(http.Response response) {
     if (response.statusCode != 200) {
+      final body = response.body.trim();
+      final detail = body.isEmpty
+          ? ''
+          : ': ${body.length <= 160 ? body : '${body.substring(0, 160)}…'}';
       throw MarketDataException(
-        'Crypto.com returned ${response.statusCode}',
+        'Crypto.com returned ${response.statusCode}$detail',
         statusCode: response.statusCode,
       );
     }

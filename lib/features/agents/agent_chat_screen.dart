@@ -18,11 +18,13 @@ import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/env_secrets_repository.dart';
 import '../../data/settings/settings_listen_keys.dart';
+import '../../data/trading/broker_exchange_registry.dart';
 import '../../data/trading/trade_executor.dart';
 import '../../widgets/app_confirm_dialog.dart';
 import '../../widgets/app_empty_view.dart';
 import '../../widgets/app_progress.dart';
 import '../../widgets/app_toast.dart';
+import '../../widgets/portfolio_picker_dialog.dart';
 import '../../widgets/subscreen_app_bar.dart';
 import 'agent_chat_controller.dart';
 
@@ -65,6 +67,7 @@ class AgentChatScreen extends StatelessWidget {
         proposals: context.read<TradeProposalRepository>(),
         activity: context.read<AgentActivityRepository>(),
         cryptoRegistry: context.read<CryptoExchangeRegistry>(),
+        brokerRegistry: context.read<BrokerExchangeRegistry>(),
         dataSources: context.read<DataSourceSettings>(),
         portfolio: context.read<PortfolioRepository>(),
       ),
@@ -236,10 +239,9 @@ class _AgentChatViewState extends State<_AgentChatView> {
     final controller = context.read<AgentChatController>();
     String? targetId = controller.resolveConfirmPortfolioId();
     if (targetId == null) {
-      final venues = controller.tradableVenues;
-      targetId = await showShadDialog<String>(
-        context: context,
-        builder: (context) => _PortfolioPickerDialog(venues: venues),
+      targetId = await showPortfolioPickerDialog(
+        context,
+        venues: controller.tradableVenues,
       );
       if (targetId == null || !mounted) return;
     }
@@ -509,74 +511,6 @@ String _portfolioLabel(BuildContext context, String portfolioId) {
   }
   if (portfolioId == 'practice') return 'Practice';
   return portfolioId;
-}
-
-class _PortfolioPickerDialog extends StatefulWidget {
-  const _PortfolioPickerDialog({required this.venues});
-
-  final List<TradableVenue> venues;
-
-  @override
-  State<_PortfolioPickerDialog> createState() => _PortfolioPickerDialogState();
-}
-
-class _PortfolioPickerDialogState extends State<_PortfolioPickerDialog> {
-  late String? _selected;
-
-  @override
-  void initState() {
-    super.initState();
-    _selected = widget.venues.isEmpty ? null : widget.venues.first.id;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    return ShadDialog(
-      title: const Text('Choose portfolio'),
-      description: const Text(
-        'Where should this buy or sell apply?',
-      ),
-      actions: [
-        ShadButton.outline(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        ShadButton(
-          enabled: _selected != null,
-          onPressed: () => Navigator.of(context).pop(_selected),
-          child: const Text('Confirm'),
-        ),
-      ],
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('Portfolio', style: theme.textTheme.small),
-          const SizedBox(height: 6),
-          ShadSelect<String>(
-            minWidth: double.infinity,
-            initialValue: _selected,
-            placeholder: const Text('Select portfolio'),
-            options: [
-              for (final v in widget.venues)
-                ShadOption(value: v.id, child: Text(v.displayName)),
-            ],
-            selectedOptionBuilder: (context, value) {
-              for (final v in widget.venues) {
-                if (v.id == value) return Text(v.displayName);
-              }
-              return Text(value);
-            },
-            onChanged: (value) {
-              if (value == null) return;
-              setState(() => _selected = value);
-            },
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _TradeProposalCard extends StatelessWidget {

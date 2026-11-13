@@ -11,8 +11,10 @@ abstract final class AppCopy {
       'Browse favorites, equities, and spot crypto by exchange';
   static const tabTooltipPortfolio =
       'Practice paper trading and live exchange balances';
+  static const tabTooltipActivity =
+      'Confirm pending agent suggestions and review past operations';
   static const tabTooltipAgents =
-      'Connect AI helpers, confirm suggestions, and track activity';
+      'Connect AI helpers and open chat';
   static const tabTooltipSettings =
       'Appearance, data sources, and on-device preferences';
 

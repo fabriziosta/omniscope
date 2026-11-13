@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:omniscope/data/brokers/alpaca/alpaca_exchange_client.dart';
 import 'package:omniscope/data/crypto/crypto_com/crypto_com_exchange_client.dart';
 import 'package:omniscope/data/crypto/crypto_exchange.dart';
 import 'package:omniscope/data/crypto/crypto_exchange_client.dart';
@@ -8,11 +9,15 @@ import 'package:omniscope/data/market/exchange_credentials.dart';
 import 'package:omniscope/data/market/models.dart';
 import 'package:omniscope/data/portfolio/portfolio_catalog.dart';
 import 'package:omniscope/data/settings/data_source_settings.dart';
+import 'package:omniscope/data/trading/broker_exchange_registry.dart';
 import 'package:omniscope/data/trading/order_models.dart';
 
+import 'support/fake_live_venue.dart';
 import 'support/memory_config.dart';
 
-class _NoLiveClient implements CryptoExchangeClient {
+class _NoLiveClient
+    with FakeCryptoLiveVenue
+    implements CryptoExchangeClient {
   @override
   final CryptoExchange exchange = const CryptoExchange(
     id: 'no_live',
@@ -67,7 +72,9 @@ class _NoLiveClient implements CryptoExchangeClient {
       const OrderResult.fail('not supported');
 }
 
-class _PendingLiveClient implements CryptoExchangeClient {
+class _PendingLiveClient
+    with FakeCryptoLiveVenue
+    implements CryptoExchangeClient {
   @override
   final CryptoExchange exchange = CryptoComExchangeClient.meta;
 
@@ -118,7 +125,9 @@ class _PendingLiveClient implements CryptoExchangeClient {
       const OrderResult.fail('not supported');
 }
 
-class _ReadyLiveClient implements CryptoExchangeClient {
+class _ReadyLiveClient
+    with FakeCryptoLiveVenue
+    implements CryptoExchangeClient {
   @override
   final CryptoExchange exchange = CryptoComExchangeClient.meta;
 
@@ -239,6 +248,45 @@ void main() {
 
     expect(listed, hasLength(1));
     expect(listed.single.isPractice, isTrue);
+  });
+
+  test('list includes pending Alpaca broker when includePendingLive', () async {
+    final store = await memoryConfig();
+    final dataSources = DataSourceSettings(store: store);
+    await dataSources.load();
+
+    final listed = PortfolioCatalog.list(
+      registry: const CryptoExchangeRegistry([]),
+      brokerRegistry: BrokerExchangeRegistry([AlpacaExchangeClient()]),
+      dataSources: dataSources,
+      includePendingLive: true,
+    );
+
+    expect(listed, hasLength(2));
+    expect(listed[1].id, 'alpaca');
+    expect(listed[1].isLive, isTrue);
+  });
+
+  test('list includes ready Alpaca after credentials', () async {
+    final store = await memoryConfig();
+    final dataSources = DataSourceSettings(store: store);
+    await dataSources.load();
+
+    final listed = PortfolioCatalog.list(
+      registry: const CryptoExchangeRegistry([]),
+      brokerRegistry: BrokerExchangeRegistry([
+        AlpacaExchangeClient(
+          credentials: const ExchangeCredentials(
+            apiKey: 'k',
+            apiSecret: 's',
+          ),
+        ),
+      ]),
+      dataSources: dataSources,
+    );
+
+    expect(listed, hasLength(2));
+    expect(listed[1].id, 'alpaca');
   });
 
   test('Crypto.com client unlocks live when key and secret are set', () {

@@ -1,6 +1,6 @@
 # Install once:  pre-commit install --hook-type pre-commit --hook-type pre-push
 # Run manually:  pre-commit run --all-files
-# Push gates:    flutter analyze + flutter test (pre-push)
+# Push gates:    flutter analyze + flutter test --exclude-tags live_canary (pre-push)
 
 default_install_hook_types: [pre-commit, pre-push]
 default_stages: [pre-commit]

@@ -17,12 +17,13 @@ class PendingAgentChatOpen {
 class ShellNavigationController extends ChangeNotifier {
   static const marketsTabIndex = 0;
   static const portfolioTabIndex = 1;
-  static const agentsTabIndex = 2;
-  static const settingsTabIndex = 3;
+  static const activityTabIndex = 2;
+  static const agentsTabIndex = 3;
+  static const settingsTabIndex = 4;
 
   var _tabIndex = marketsTabIndex;
   String? _pendingAgentConnectRoleId;
-  var _pendingOpenAgentActivity = false;
+  String? _pendingActivityProposalId;
   String? _pendingSettingsSectionId;
   PendingAgentChatOpen? _pendingAgentChatOpen;
 
@@ -32,8 +33,9 @@ class ShellNavigationController extends ChangeNotifier {
   /// [takePendingAgentConnectRoleId].
   String? get pendingAgentConnectRoleId => _pendingAgentConnectRoleId;
 
-  /// When true, Agents tab should highlight the Activity pane.
-  bool get pendingOpenAgentActivity => _pendingOpenAgentActivity;
+  /// Proposal id to focus on the Activity tab; cleared by
+  /// [takePendingActivityProposalId].
+  String? get pendingActivityProposalId => _pendingActivityProposalId;
 
   String? get pendingSettingsSectionId => _pendingSettingsSectionId;
 
@@ -46,10 +48,16 @@ class ShellNavigationController extends ChangeNotifier {
   }
 
   /// Switch to Agents and optionally queue a Connect dialog for [connectRoleId].
-  void goToAgents({String? connectRoleId, bool openActivity = false}) {
+  void goToAgents({String? connectRoleId}) {
     _pendingAgentConnectRoleId = connectRoleId;
-    _pendingOpenAgentActivity = openActivity;
     _tabIndex = agentsTabIndex;
+    notifyListeners();
+  }
+
+  /// Switch to Activity and optionally focus a proposal.
+  void goToActivity({String? proposalId}) {
+    _pendingActivityProposalId = proposalId;
+    _tabIndex = activityTabIndex;
     notifyListeners();
   }
 
@@ -81,10 +89,11 @@ class ShellNavigationController extends ChangeNotifier {
     return id;
   }
 
-  bool takePendingOpenAgentActivity() {
-    final v = _pendingOpenAgentActivity;
-    _pendingOpenAgentActivity = false;
-    return v;
+  /// Returns and clears any pending Activity proposal focus id.
+  String? takePendingActivityProposalId() {
+    final id = _pendingActivityProposalId;
+    _pendingActivityProposalId = null;
+    return id;
   }
 
   String? takePendingSettingsSectionId() {

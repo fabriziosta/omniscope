@@ -1,4 +1,4 @@
-/// Real in-app events for the Agents Activity window (no simulated swarm).
+/// Real in-app events for the Activity tab timeline (no simulated swarm).
 enum AgentActivityKind {
   messageSent,
   proposalParsed,

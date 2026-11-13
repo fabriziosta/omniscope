@@ -1,0 +1,39 @@
+{
+  "id": -1,
+  "method": "public/get-instruments",
+  "code": 0,
+  "result": {
+    "data": [
+      {
+        "symbol": "BTC_USD",
+        "inst_type": "CCY_PAIR",
+        "quote_ccy": "USD",
+        "tradable": true
+      },
+      {
+        "symbol": "ETH_USD",
+        "inst_type": "SPOT",
+        "quote_ccy": "USD",
+        "tradable": true
+      },
+      {
+        "symbol": "ETH_USDT",
+        "inst_type": "CCY_PAIR",
+        "quote_ccy": "USDT",
+        "tradable": true
+      },
+      {
+        "symbol": "SOL_USD",
+        "inst_type": "CCY_PAIR",
+        "quote_ccy": "USD",
+        "tradable": false
+      },
+      {
+        "symbol": "BTCUSD-PERP",
+        "inst_type": "PERPETUAL_SWAP",
+        "quote_ccy": "USD",
+        "tradable": true
+      }
+    ]
+  }
+}

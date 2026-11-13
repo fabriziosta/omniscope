@@ -1,14 +1,13 @@
-import '../agents/agent_chat_repository.dart';
-import '../agents/agents_repository.dart';
-import '../crypto/crypto_com/crypto_com_exchange_client.dart';
-import '../crypto/crypto_exchange_registry.dart';
-import '../portfolio/portfolio_repository.dart';
+import '../venues/venue_catalog.dart';
 import 'data_source_settings.dart';
 import 'display_settings.dart';
 import 'env_secrets_repository.dart';
 import 'favorites_repository.dart';
 import 'theme_settings.dart';
 import 'user_config_store.dart';
+import '../agents/agent_chat_repository.dart';
+import '../agents/agents_repository.dart';
+import '../portfolio/portfolio_repository.dart';
 
 /// Re-read every config-backed repository after Import / path change.
 Future<void> reloadUserConfigConsumers({
@@ -21,7 +20,7 @@ Future<void> reloadUserConfigConsumers({
   required PortfolioRepository portfolio,
   required AgentsRepository agents,
   required AgentChatRepository chats,
-  CryptoExchangeRegistry? cryptoRegistry,
+  VenueCatalog? venues,
 }) async {
   await theme.load(store: config);
   await display.load(store: config);
@@ -32,14 +31,10 @@ Future<void> reloadUserConfigConsumers({
   await chats.load(store: config);
   await secrets.load(store: config);
 
-  // Refresh live exchange clients that hold credentials in memory.
-  if (cryptoRegistry != null) {
-    for (final client in cryptoRegistry.exchanges) {
-      if (client is CryptoComExchangeClient) {
-        client.setCredentials(
-          secrets.exchangeCredentialsFor(CryptoComExchangeClient.meta.id),
-        );
-      }
+  // Refresh live venue clients that hold credentials in memory.
+  if (venues != null) {
+    for (final id in venues.credentialVenueIds) {
+      venues.applyCredentials(id, secrets.exchangeCredentialsFor(id));
     }
   }
 }

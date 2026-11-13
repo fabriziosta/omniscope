@@ -11,20 +11,20 @@ Targets: **Linux**, **Windows**, **Android**, **Apple** (**iOS** / **macOS**), a
 
 - **Markets** — Favorites (one shared list), Indices, ETFs, Stocks, and enabled crypto exchanges (Spot pairs); star any symbol to save favorites
 - **Asset detail** — price, day change, short curated overview (default symbols), 1M / 3M / 1Y history chart, paper buy/sell, plus external research links (provider page, Wikipedia when mapped, Google Finance, TradingView) opened in the system browser
-- **Portfolio** — practice paper trading (default $10,000 starting cash, configurable in Settings, local holdings, P&L, reset) plus **Live** exchange balance subgroups when API credentials are configured (e.g. Crypto.com)
+- **Portfolio** — practice paper trading (default $10,000 starting cash, configurable in Settings, local holdings, P&L, reset) plus **Live** balance subgroups when API credentials are configured (Crypto.com, Alpaca, …)
 - **Agents** — connect AI helpers with your own API key and model, then chat on-device (freeform + symbol Run); trading roles can Confirm into Practice or a live exchange (optional Connect default portfolio). Keys and chat threads stay local. Python CrewAI/LangGraph CLIs remain available under `agents/`
 - **Settings** — sidebar section navigator (one pane at a time): appearance, data sources & credentials, practice starting cash, connections (LLM keys + agents/exchanges), data & privacy (path / import / export / clear local data), and About (tagline *My trusted learning and trading buddy* + educational disclaimer)
 - **No accounts** — everything stays on device in one `omniscope.json` config (Web: browser storage + import/export)
 
 ## Market data
 
-Equities / indices use **Yahoo Finance** chart endpoints (keyless, unofficial). Crypto uses a swappable [`CryptoExchangeClient`](lib/data/crypto/crypto_exchange_client.dart) registry; **Crypto.com Exchange** public REST is registered first (`get-tickers` / `get-candlestick` at `https://api.crypto.com/exchange/v1/`). Optional Crypto.com API key/secret/token can be set in [`.env`](.env.example) or under **Settings → Crypto exchanges** (dual sync: UI suggests `.env` values and writes the unified config + `.env` when possible); key+secret also enable live balances on the Portfolio tab via `private/user-balance`. Both are reached through [`RoutingMarketDataClient`](lib/data/market/routing_market_data_client.dart) implementing [`MarketDataClient`](lib/data/market/market_data_client.dart). **Settings → Data sources** lets you enable or disable each equities provider and crypto venue (persisted in the config file; new sources default to on). Appearance prefs (theme, list density, compact prices, default Asset detail chart range) live under **Settings → Appearance**. Secrets, favorites, portfolio, agents, and chats share one **`omniscope.json`** (default: app support directory via `path_provider`; desktop can set a custom path under **Settings → Data & privacy**; Web uses browser storage with Import/Export).
+Equities / indices use **Yahoo Finance** chart endpoints (keyless, unofficial). Crypto uses a swappable [`CryptoExchangeClient`](lib/data/crypto/crypto_exchange_client.dart) registry; **Crypto.com Exchange** public REST is registered first (`get-tickers` / `get-candlestick` at `https://api.crypto.com/exchange/v1/`). Equity brokers (e.g. **Alpaca** paper/live) register via [`VenueCatalog`](lib/data/venues/venue_catalog.dart) for Live portfolio + agent orders — not as Markets quote sources. Optional venue API credentials can be set in [`.env`](.env.example) or under **Settings → Data sources → Credentials** (generic cards driven by the catalog; dual sync to config + `.env` when possible). Key+secret unlock Live balances and Confirm/Autopilot for that venue only. Market data is reached through [`RoutingMarketDataClient`](lib/data/market/routing_market_data_client.dart). **Settings → Data sources** enables/disables equities providers, crypto venues, and brokers (new sources default to on). Appearance prefs live under **Settings → Appearance**. Secrets and other customizations share one **`omniscope.json`**.
 
 - Data may be delayed; endpoints can change or rate-limit without notice.
-- **Web:** Yahoo’s chart host does not send CORS headers, so Chrome blocks direct `query1.finance.yahoo.com` calls. Equities requests on Web go through a public GET proxy (`https://proxy.cors.dev/…`) inside [`YahooMarketDataClient`](lib/data/market/yahoo_market_data_client.dart); native targets call Yahoo directly. Crypto.com public REST already allows browser origins.
-- For **educational / personal** use in this POC only. Check Yahoo’s and Crypto.com’s terms before redistribution or commercial use.
-- To add another equities provider: implement `MarketDataClient` and pass it as `equities:` to the router in [`lib/main.dart`](lib/main.dart).
-- To add another crypto exchange: implement `CryptoExchangeClient`, then append it to `CryptoExchangeRegistry` in `main.dart` (new Markets sidebar venue appears automatically).
+- **Web:** Yahoo’s chart host does not send CORS headers, so Chrome blocks direct `query1.finance.yahoo.com` calls. Equities requests on Web go through a public GET proxy (`https://proxy.cors.dev/…`) inside [`YahooMarketDataClient`](lib/data/market/yahoo_market_data_client.dart); native targets call Yahoo directly. Crypto.com public REST already allows browser origins. Private broker APIs may be blocked by CORS on Web — prefer native desktop/mobile for live orders.
+- For **educational / personal** use in this POC only. Check Yahoo’s, Crypto.com’s, and Alpaca’s terms before redistribution or commercial use.
+- To add another equities provider: implement `MarketDataClient` and register it in the equities registry in [`lib/main.dart`](lib/main.dart).
+- To add another crypto exchange or broker: implement the client under `lib/data/crypto/<id>/` or `lib/data/brokers/<id>/`, then append one line in [`VenueCatalog.build`](lib/data/venues/venue_catalog.dart) (see [`AGENTS.md`](AGENTS.md)).
 
 ## Prerequisites
 
@@ -177,6 +177,8 @@ lib/
   core/                     # formatting + brand colors
   data/market/              # MarketDataClient, Yahoo, routing
   data/crypto/              # CryptoExchangeClient + Crypto.com adapter
+  data/brokers/             # Alpaca (+ future equity brokers)
+  data/venues/              # VenueCatalog, shared live portfolio models
   data/portfolio/           # local paper portfolio (shared_preferences)
   data/agents/              # connections, chat threads, LlmChatClient, catalog
   features/markets|crypto|asset_detail|portfolio|agents|shell/
@@ -215,7 +217,7 @@ See [`AGENTS.md`](AGENTS.md) for conventions when extending Omniscope (UI rules,
 
 ### AI coding assistants
 
-The repo vendors official Flutter + Dart [Agent Skills](https://docs.flutter.dev/ai/tools) under [`.agents/skills/`](.agents/skills/) (separate from the in-app Agents tab and the Python [`agents/`](agents/) CLIs). Project Cursor rules live in [`.cursor/rules/`](.cursor/rules/); Dart MCP is configured in [`.cursor/mcp.json`](.cursor/mcp.json). Refresh skills with `make agent-skills`. Details: [`AGENTS.md`](AGENTS.md) **Coding-assistant tooling**.
+Shared guidance for Cursor, Codex, and Claude Code lives in [`AGENTS.md`](AGENTS.md) plus vendored Flutter + Dart [Agent Skills](https://docs.flutter.dev/ai/tools) under [`.agents/skills/`](.agents/skills/) (separate from the in-app Agents tab and the Python [`agents/`](agents/) CLIs). Do not add parallel `.claude/` / `.codex/` instruction mirrors. Cursor-only product rules live in [`.cursor/rules/`](.cursor/rules/); Dart MCP is in [`.cursor/mcp.json`](.cursor/mcp.json). Refresh skills with `make agent-skills`. Details: [`AGENTS.md`](AGENTS.md) **Coding-assistant tooling**.
 
 ## Contributing
 

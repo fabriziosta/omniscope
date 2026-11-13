@@ -488,12 +488,6 @@ void main() {
     );
     await tester.pump();
 
-    // Narrow: open Roles pane, then Open chat.
-    expect(find.text('Roles'), findsWidgets);
-    await tester.tap(find.text('Roles').first);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
-
     expect(find.text('Open chat'), findsOneWidget);
     await tester.tap(find.text('Open chat'));
     await tester.pump();

@@ -1,6 +1,6 @@
-import '../crypto/crypto_exchange.dart';
 import '../crypto/crypto_exchange_registry.dart';
 import '../settings/data_source_settings.dart';
+import '../trading/broker_exchange_registry.dart';
 
 /// Origin of a portfolio shown in Settings and on the Portfolio tab.
 enum PortfolioKind { practice, live }
@@ -19,10 +19,13 @@ class PortfolioDescriptor {
         kind: PortfolioKind.practice,
       );
 
-  factory PortfolioDescriptor.live(CryptoExchange exchange) =>
+  factory PortfolioDescriptor.live({
+    required String id,
+    required String displayName,
+  }) =>
       PortfolioDescriptor(
-        id: exchange.id,
-        displayName: exchange.displayName,
+        id: id,
+        displayName: displayName,
         kind: PortfolioKind.live,
       );
 
@@ -48,6 +51,7 @@ class PortfolioCatalog {
   static List<PortfolioDescriptor> list({
     required CryptoExchangeRegistry registry,
     required DataSourceSettings dataSources,
+    BrokerExchangeRegistry brokerRegistry = BrokerExchangeRegistry.empty,
     bool includePendingLive = false,
   }) {
     final out = <PortfolioDescriptor>[PortfolioDescriptor.practice()];
@@ -58,7 +62,26 @@ class PortfolioCatalog {
     )) {
       final id = client.exchange.id;
       if (seen.add(id)) {
-        out.add(PortfolioDescriptor.live(client.exchange));
+        out.add(
+          PortfolioDescriptor.live(
+            id: id,
+            displayName: client.exchange.displayName,
+          ),
+        );
+      }
+    }
+
+    for (final client in brokerRegistry.portfolioClientsWhere(
+      dataSources.isBrokerEnabled,
+    )) {
+      final id = client.broker.id;
+      if (seen.add(id)) {
+        out.add(
+          PortfolioDescriptor.live(
+            id: id,
+            displayName: client.broker.displayName,
+          ),
+        );
       }
     }
 
@@ -67,7 +90,25 @@ class PortfolioCatalog {
         if (!client.supportsLivePortfolio) continue;
         final id = client.exchange.id;
         if (seen.add(id)) {
-          out.add(PortfolioDescriptor.live(client.exchange));
+          out.add(
+            PortfolioDescriptor.live(
+              id: id,
+              displayName: client.exchange.displayName,
+            ),
+          );
+        }
+      }
+      for (final client
+          in brokerRegistry.enabledWhere(dataSources.isBrokerEnabled)) {
+        if (!client.supportsLivePortfolio) continue;
+        final id = client.broker.id;
+        if (seen.add(id)) {
+          out.add(
+            PortfolioDescriptor.live(
+              id: id,
+              displayName: client.broker.displayName,
+            ),
+          );
         }
       }
     }

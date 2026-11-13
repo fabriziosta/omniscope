@@ -45,16 +45,17 @@ class CryptoExchangePairsPane extends StatelessWidget {
           errorTitle: 'Could not load crypto',
         );
         () async {
-          final first = controller.refresh();
-          final discovered = await client.browseSymbols();
-          final same = discovered.length == controller.symbols.length &&
-              discovered.every(controller.symbols.contains);
-          if (!same) {
-            controller.updateSymbols(discovered);
-            await controller.refresh();
-          } else {
-            await first;
+          // Discover the live catalog first so delisted curated symbols never
+          // hit get-tickers (HTTP 400) on the opening page.
+          try {
+            final discovered = await client.browseSymbols();
+            if (discovered.isNotEmpty) {
+              controller.updateSymbols(discovered);
+            }
+          } catch (_) {
+            // Keep curated defaults; refresh still runs below.
           }
+          await controller.refresh();
         }();
         return controller;
       },

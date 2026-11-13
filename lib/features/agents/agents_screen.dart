@@ -17,34 +17,9 @@ import '../../data/trading/trade_executor.dart';
 import '../../widgets/app_empty_view.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/app_tooltip.dart';
-import '../../widgets/in_tab_back.dart';
-import '../../widgets/master_detail_shell.dart';
 import '../../widgets/tab_page_header.dart';
-import 'agent_activity_pane.dart';
 import 'agent_chat_screen.dart';
 import 'agent_launch_actions.dart';
-
-enum AgentsNavSection {
-  roles,
-  activity,
-}
-
-extension AgentsNavSectionX on AgentsNavSection {
-  String get title => switch (this) {
-        AgentsNavSection.roles => 'Roles',
-        AgentsNavSection.activity => 'Activity',
-      };
-
-  String get subtitle => switch (this) {
-        AgentsNavSection.roles => 'Connect helpers and open chat',
-        AgentsNavSection.activity => 'Proposals and live order events',
-      };
-
-  IconData get icon => switch (this) {
-        AgentsNavSection.roles => LucideIcons.bot,
-        AgentsNavSection.activity => LucideIcons.activity,
-      };
-}
 
 class AgentsScreen extends StatefulWidget {
   const AgentsScreen({super.key});
@@ -59,9 +34,6 @@ class _AgentsScreenState extends State<AgentsScreen> {
   var _openingPendingConnect = false;
   var _openingPendingChat = false;
 
-  AgentsNavSection _selected = AgentsNavSection.roles;
-  AgentsNavSection? _narrowSelected;
-
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -73,7 +45,6 @@ class _AgentsScreenState extends State<AgentsScreen> {
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _maybeOpenPendingConnect();
-      _maybeOpenPendingActivity();
       _maybeOpenPendingChat();
     });
   }
@@ -86,22 +57,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
 
   void _onShellNavChanged() {
     _maybeOpenPendingConnect();
-    _maybeOpenPendingActivity();
     _maybeOpenPendingChat();
-  }
-
-  void _maybeOpenPendingActivity() {
-    if (!mounted) return;
-    final shellNav = _shellNav;
-    if (shellNav == null) return;
-    if (shellNav.tabIndex != ShellNavigationController.agentsTabIndex) return;
-    if (!shellNav.takePendingOpenAgentActivity()) return;
-    final wide = MediaQuery.sizeOf(context).width >=
-        MasterDetailShell.wideBreakpointDefault;
-    setState(() {
-      _selected = AgentsNavSection.activity;
-      if (!wide) _narrowSelected = AgentsNavSection.activity;
-    });
   }
 
   Future<void> _maybeOpenPendingConnect() async {
@@ -120,13 +76,6 @@ class _AgentsScreenState extends State<AgentsScreen> {
       }
     }
     if (role == null) return;
-
-    final wide = MediaQuery.sizeOf(context).width >=
-        MasterDetailShell.wideBreakpointDefault;
-    setState(() {
-      _selected = AgentsNavSection.roles;
-      if (!wide) _narrowSelected = AgentsNavSection.roles;
-    });
 
     _openingPendingConnect = true;
     try {
@@ -160,13 +109,6 @@ class _AgentsScreenState extends State<AgentsScreen> {
       return;
     }
 
-    final wide = MediaQuery.sizeOf(context).width >=
-        MasterDetailShell.wideBreakpointDefault;
-    setState(() {
-      _selected = AgentsNavSection.roles;
-      if (!wide) _narrowSelected = AgentsNavSection.roles;
-    });
-
     _openingPendingChat = true;
     try {
       await AgentLaunchActions.openAgentChat(
@@ -178,17 +120,6 @@ class _AgentsScreenState extends State<AgentsScreen> {
     } finally {
       _openingPendingChat = false;
     }
-  }
-
-  void _select(AgentsNavSection section, {required bool wide}) {
-    setState(() {
-      _selected = section;
-      if (!wide) _narrowSelected = section;
-    });
-  }
-
-  void _backToNavList() {
-    setState(() => _narrowSelected = null);
   }
 
   Future<LlmModelCatalog?> _ensureModels() async {
@@ -269,172 +200,87 @@ class _AgentsScreenState extends State<AgentsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return InTabBackEffect(
-      onBack: _narrowSelected != null ? _backToNavList : null,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_narrowSelected == null)
-            const TabPageHeader(
-              title: 'Agents',
-              subtitle:
-                  'Connect helpers, confirm suggestions into Practice or live '
-                  'portfolios, and track activity.',
-              subtitleSpacing: 6,
-            ),
-          Expanded(
-            child: MasterDetailShell<AgentsNavSection>(
-              selected: _selected,
-              narrowSelected: _narrowSelected,
-              onNarrowBack: _backToNavList,
-              sidebarBuilder: (context, highlighted, {required wide}) {
-                return MasterDetailNavList(
-                  tiles: [
-                    for (final section in AgentsNavSection.values)
-                      MasterDetailNavTile(
-                        title: section.title,
-                        icon: section.icon,
-                        meta: section.subtitle,
-                        selected: highlighted == section,
-                        onTap: () => _select(section, wide: wide),
-                      ),
-                  ],
-                );
-              },
-              contentBuilder: (context, section, {required showBack, onBack}) {
-                return switch (section) {
-                  AgentsNavSection.roles => _AgentsRolesBody(
-                      key: const ValueKey('agents-roles'),
-                      showBack: showBack,
-                      models: _models,
-                      onBack: _backToNavList,
-                      onConnect: _openConnect,
-                      onDisconnect: _disconnect,
-                      onOpenChat: _openChat,
-                    ),
-                  AgentsNavSection.activity => AgentActivityPane(
-                      key: const ValueKey('agents-activity'),
-                      showBack: showBack,
-                      onBack: onBack,
-                    ),
-                };
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Own [build] so `context.select` is valid under [MasterDetailShell]'s
-/// [LayoutBuilder] (State.context.select from a layout callback is not).
-class _AgentsRolesBody extends StatelessWidget {
-  const _AgentsRolesBody({
-    super.key,
-    required this.showBack,
-    required this.models,
-    required this.onBack,
-    required this.onConnect,
-    required this.onDisconnect,
-    required this.onOpenChat,
-  });
-
-  final bool showBack;
-  final LlmModelCatalog? models;
-  final VoidCallback onBack;
-  final ValueChanged<AgentRoleDefinition> onConnect;
-  final ValueChanged<AgentRoleDefinition> onDisconnect;
-  final ValueChanged<AgentRoleDefinition> onOpenChat;
-
-  @override
-  Widget build(BuildContext context) {
     final agents = context.watch<AgentsRepository>();
     final roles = agents.availableRoles;
     context.select<EnvSecretsRepository, String>(exchangeCredsFingerprint);
     context.select<DataSourceSettings, String>(dataSourceFingerprint);
     final canTrade = context.read<TradeExecutor>().canTrade;
+    final theme = ShadTheme.of(context);
 
-    return MasterDetailContentPane(
-      title: 'Roles',
-      subtitle:
-          'Connect an AI helper, then open chat. Keys and chats stay on this '
-          'device. Trading agents can target Practice or a live portfolio.',
-      showBack: showBack,
-      onBack: onBack,
-      backLabel: 'Agents',
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (canTrade &&
-              context.read<TradeExecutor>().liveVenues.isEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: ShadTheme.of(context).colorScheme.secondary,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: ShadTheme.of(context).colorScheme.border,
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        'No live exchange connected yet — trading agents '
-                        'default to Practice (paper). Add credentials under '
-                        'Settings → Data sources for live Confirm / Autopilot.',
-                        style: ShadTheme.of(context).textTheme.small.copyWith(
-                              color: ShadTheme.of(context)
-                                  .colorScheme
-                                  .secondaryForeground,
-                            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const TabPageHeader(
+          title: 'Agents',
+          subtitle:
+              'Connect helpers and open chat. Confirm suggestions on the '
+              'Activity tab into Practice or live portfolios.',
+          subtitleSpacing: 6,
+        ),
+        if (canTrade &&
+            context.read<TradeExecutor>().liveVenues.isEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.secondary,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: theme.colorScheme.border),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'No live exchange connected yet — trading agents '
+                      'default to Practice (paper). Add credentials under '
+                      'Settings → Data sources for live Confirm / Autopilot.',
+                      style: theme.textTheme.small.copyWith(
+                        color: theme.colorScheme.secondaryForeground,
                       ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        height: 44,
-                        child: ShadButton(
-                          onPressed: () {
-                            context
-                                .read<ShellNavigationController>()
-                                .goToSettings(sectionId: 'dataSources');
-                          },
-                          child: const Text('Open Data sources'),
-                        ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      height: 44,
+                      child: ShadButton(
+                        onPressed: () {
+                          context
+                              .read<ShellNavigationController>()
+                              .goToSettings(sectionId: 'dataSources');
+                        },
+                        child: const Text('Open Data sources'),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          Expanded(
-            child: roles.isEmpty
-                ? const AppEmptyView(
-                    'No agent roles found. Add a role package under '
-                    'agents/omniscope_agents/ and list it in manifest.json.',
-                  )
-                : ListView(
-                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-                    children: [
-                      for (final role in roles) ...[
-                        _AgentCard(
-                          role: role,
-                          connection: agents.forRoleId(role.id),
-                          catalog: models,
-                          onConnect: () => onConnect(role),
-                          onDisconnect: () => onDisconnect(role),
-                          onOpenChat: () => onOpenChat(role),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                    ],
-                  ),
           ),
-        ],
-      ),
+        Expanded(
+          child: roles.isEmpty
+              ? const AppEmptyView(
+                  'No agent roles found. Add a role package under '
+                  'agents/omniscope_agents/ and list it in manifest.json.',
+                )
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                  children: [
+                    for (final role in roles) ...[
+                      _AgentCard(
+                        role: role,
+                        connection: agents.forRoleId(role.id),
+                        catalog: _models,
+                        onConnect: () => _openConnect(role),
+                        onDisconnect: () => _disconnect(role),
+                        onOpenChat: () => _openChat(role),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                  ],
+                ),
+        ),
+      ],
     );
   }
 }

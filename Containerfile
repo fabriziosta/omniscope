@@ -8,7 +8,7 @@
 # -----------------------------------------------------------------------------
 # Builder
 # -----------------------------------------------------------------------------
-FROM fedora:42 AS builder
+FROM registry.fedoraproject.org/fedora:45 AS builder
 
 RUN dnf install -y --setopt=install_weak_deps=False \
     clang \
@@ -50,7 +50,7 @@ RUN cp -n .env.example .env \
 # -----------------------------------------------------------------------------
 # Runtime (final)
 # -----------------------------------------------------------------------------
-FROM fedora:42
+FROM registry.fedoraproject.org/fedora:45
 
 # OCI labels link the GHCR package to this repo (override SOURCE_REPO in CI).
 ARG SOURCE_REPO=https://github.com/fabriziosta/omniscope

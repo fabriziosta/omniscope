@@ -14,15 +14,19 @@ import 'package:omniscope/data/portfolio/portfolio_repository.dart';
 import 'package:omniscope/data/settings/data_source_settings.dart';
 import 'package:omniscope/data/settings/display_settings.dart';
 import 'package:omniscope/data/settings/env_secrets_repository.dart';
+import 'package:omniscope/data/trading/broker_exchange_registry.dart';
 import 'package:omniscope/data/trading/order_models.dart';
 import 'package:omniscope/features/portfolio/portfolio_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import 'support/fake_live_venue.dart';
 import 'support/fake_market_data_client.dart';
 import 'support/memory_config.dart';
 
-class _PendingLiveCryptoClient implements CryptoExchangeClient {
+class _PendingLiveCryptoClient
+    with FakeCryptoLiveVenue
+    implements CryptoExchangeClient {
   @override
   final CryptoExchange exchange = CryptoComExchangeClient.meta;
 
@@ -105,6 +109,9 @@ void main() {
           ),
           Provider<CryptoExchangeRegistry>.value(
             value: CryptoExchangeRegistry([_PendingLiveCryptoClient()]),
+          ),
+          Provider<BrokerExchangeRegistry>.value(
+            value: BrokerExchangeRegistry.empty,
           ),
           ChangeNotifierProvider<PortfolioRepository>.value(value: portfolio),
           ChangeNotifierProvider<DataSourceSettings>.value(value: dataSources),

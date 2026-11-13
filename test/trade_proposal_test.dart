@@ -9,6 +9,7 @@ import 'package:omniscope/data/agents/llm_chat_client.dart';
 import 'package:omniscope/data/agents/models.dart';
 import 'package:omniscope/data/agents/trade_proposal.dart';
 import 'package:omniscope/data/agents/trade_proposal_repository.dart';
+import 'package:omniscope/data/brokers/alpaca/alpaca_exchange_client.dart';
 import 'package:omniscope/data/crypto/crypto_com/crypto_com_exchange_client.dart';
 import 'package:omniscope/data/crypto/crypto_exchange_registry.dart';
 import 'package:omniscope/data/market/exchange_credentials.dart';
@@ -85,6 +86,39 @@ Desk note: buy a little.
       expect(executor.canTrade, isTrue);
       expect(executor.tradableVenues.first.id, PortfolioDescriptor.practiceId);
       expect(executor.liveVenues, isEmpty);
+    });
+
+    test('Alpaca appears in liveVenues only when credentials are set', () async {
+      final store = await memoryConfig();
+      final dataSources = DataSourceSettings(store: store);
+      await dataSources.load();
+      final portfolio = PortfolioRepository(store: store);
+      await portfolio.load();
+
+      final pending = RoutingTradeExecutor(
+        cryptoRegistry: const CryptoExchangeRegistry([]),
+        brokerRegistry: BrokerExchangeRegistry([AlpacaExchangeClient()]),
+        dataSources: dataSources,
+        portfolio: portfolio,
+        marketData: FakeMarketDataClient(),
+      );
+      expect(pending.liveVenues, isEmpty);
+
+      final ready = RoutingTradeExecutor(
+        cryptoRegistry: const CryptoExchangeRegistry([]),
+        brokerRegistry: BrokerExchangeRegistry([
+          AlpacaExchangeClient(
+            credentials: const ExchangeCredentials(
+              apiKey: 'k',
+              apiSecret: 's',
+            ),
+          ),
+        ]),
+        dataSources: dataSources,
+        portfolio: portfolio,
+        marketData: FakeMarketDataClient(),
+      );
+      expect(ready.liveVenues.map((v) => v.id), contains('alpaca'));
     });
 
     test('submits Practice buy via portfolio quote', () async {

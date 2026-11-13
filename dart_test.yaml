@@ -1,0 +1,6 @@
+# Live venue canary hits real APIs — excluded from make check / pre-push.
+tags:
+  live_canary:
+    description: >-
+      Network probes through Dart venue adapters (make venue-canary /
+      scheduled venue-canary.yml). Never part of the offline PR gate.

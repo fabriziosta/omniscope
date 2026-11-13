@@ -1,0 +1,72 @@
+# Scheduled live venue / market-data canary (not a PR gate).
+# Probes Yahoo + Crypto.com public APIs through Dart adapters; Alpaca / CDC
+# portfolio only when repo secrets are configured. Never places orders.
+name: Venue canary
+
+on:
+  schedule:
+    # Daily ~06:15 UTC
+    - cron: '15 6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: venue-canary
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    name: canary
+    runs-on: ubuntu-latest
+    # Job goes red on probe failure for visibility; does not block merges.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Ensure .env
+        env:
+          OMNISCOPE_CRYPTO_COM_API_KEY: ${{ secrets.OMNISCOPE_CRYPTO_COM_API_KEY }}
+          OMNISCOPE_CRYPTO_COM_API_SECRET: ${{ secrets.OMNISCOPE_CRYPTO_COM_API_SECRET }}
+          OMNISCOPE_CRYPTO_COM_API_TOKEN: ${{ secrets.OMNISCOPE_CRYPTO_COM_API_TOKEN }}
+          OMNISCOPE_ALPACA_API_KEY: ${{ secrets.OMNISCOPE_ALPACA_API_KEY }}
+          OMNISCOPE_ALPACA_API_SECRET: ${{ secrets.OMNISCOPE_ALPACA_API_SECRET }}
+          OMNISCOPE_ALPACA_TRADING_MODE: ${{ secrets.OMNISCOPE_ALPACA_TRADING_MODE }}
+        run: |
+          cp .env.example .env
+          # Optional private probes when secrets are set in the repo.
+          if [ -n "${OMNISCOPE_CRYPTO_COM_API_KEY:-}" ]; then
+            {
+              echo "OMNISCOPE_CRYPTO_COM_API_KEY=${OMNISCOPE_CRYPTO_COM_API_KEY}"
+              echo "OMNISCOPE_CRYPTO_COM_API_SECRET=${OMNISCOPE_CRYPTO_COM_API_SECRET}"
+              echo "OMNISCOPE_CRYPTO_COM_API_TOKEN=${OMNISCOPE_CRYPTO_COM_API_TOKEN}"
+            } >> .env
+          fi
+          if [ -n "${OMNISCOPE_ALPACA_API_KEY:-}" ]; then
+            {
+              echo "OMNISCOPE_ALPACA_API_KEY=${OMNISCOPE_ALPACA_API_KEY}"
+              echo "OMNISCOPE_ALPACA_API_SECRET=${OMNISCOPE_ALPACA_API_SECRET}"
+              echo "OMNISCOPE_ALPACA_TRADING_MODE=${OMNISCOPE_ALPACA_TRADING_MODE:-paper}"
+            } >> .env
+          fi
+
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Run venue canary
+        run: flutter test test/venue_canary_test.dart --tags live_canary --reporter expanded
+
+      - name: Upload canary JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: venue-canary
+          path: build/venue-canary.json
+          if-no-files-found: ignore

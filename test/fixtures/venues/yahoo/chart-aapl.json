@@ -1,0 +1,29 @@
+{
+  "chart": {
+    "result": [
+      {
+        "meta": {
+          "symbol": "AAPL",
+          "regularMarketPrice": 190.5,
+          "previousClose": 188.0,
+          "currency": "USD",
+          "shortName": "Apple",
+          "fullExchangeName": "NasdaqGS"
+        },
+        "timestamp": [1700000000, 1700086400],
+        "indicators": {
+          "quote": [
+            {
+              "close": [188.0, 190.5],
+              "open": [187.0, 189.0],
+              "high": [189.0, 191.0],
+              "low": [186.0, 188.0],
+              "volume": [100, 200]
+            }
+          ]
+        }
+      }
+    ],
+    "error": null
+  }
+}

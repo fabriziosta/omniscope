@@ -93,9 +93,9 @@ class _NotificationInboxDialog extends StatelessWidget {
       title: const Text('Notifications'),
       description: Text(
         active.isEmpty
-            ? 'Scheduled agent runs show up here so you can open chat '
-                'to confirm or review.'
-            : 'Open a run to confirm a suggestion or review Autopilot.',
+            ? 'Scheduled agent runs show up here so you can open '
+                'Activity or chat to confirm or review.'
+            : 'Open a pending suggestion on Activity, or chat for the rest.',
         style: theme.textTheme.muted,
       ),
       actions: [
@@ -217,11 +217,16 @@ class _NotificationRow extends StatelessWidget {
                   await repo.markRead(item.id);
                   if (!context.mounted) return;
                   Navigator.of(context).pop();
-                  shellNav.goToAgentChat(
-                    roleId: item.roleId,
-                    symbol: item.symbol,
-                    notificationId: item.id,
-                  );
+                  final proposalId = item.proposalId?.trim();
+                  if (proposalId != null && proposalId.isNotEmpty) {
+                    shellNav.goToActivity(proposalId: proposalId);
+                  } else {
+                    shellNav.goToAgentChat(
+                      roleId: item.roleId,
+                      symbol: item.symbol,
+                      notificationId: item.id,
+                    );
+                  }
                 },
                 child: const Text('Open'),
               ),

@@ -9,9 +9,7 @@ import '../../core/fade_page_route.dart';
 import '../../core/formatting.dart';
 import '../../core/shell_navigation.dart';
 import '../../data/agents/agent_launch.dart';
-import '../../data/crypto/crypto_exchange_client.dart';
 import '../../data/crypto/crypto_exchange_registry.dart';
-import '../../data/crypto/exchange_portfolio.dart';
 import '../../data/market/market_data_client.dart';
 import '../../data/market/models.dart';
 import '../../data/portfolio/models.dart';
@@ -21,6 +19,9 @@ import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/display_settings.dart';
 import '../../data/settings/env_secrets_repository.dart';
 import '../../data/settings/settings_listen_keys.dart';
+import '../../data/trading/broker_exchange_registry.dart';
+import '../../data/venues/exchange_portfolio.dart';
+import '../../data/venues/live_venue_capabilities.dart';
 import '../../widgets/agent_launch_button.dart';
 import '../../widgets/app_progress.dart';
 import '../../widgets/in_tab_back.dart';
@@ -45,6 +46,7 @@ class PortfolioScreen extends StatelessWidget {
         marketData: context.read<MarketDataClient>(),
         portfolio: context.read<PortfolioRepository>(),
         cryptoRegistry: context.read<CryptoExchangeRegistry>(),
+        brokerRegistry: context.read<BrokerExchangeRegistry>(),
         dataSources: context.read<DataSourceSettings>(),
       )..refreshAll(),
       child: const _PortfolioView(),
@@ -119,8 +121,7 @@ class _PortfolioViewState extends State<_PortfolioView> {
 
     final descriptors = controller.portfolios;
     final hasLive = controller.hasLive;
-    final pendingLive =
-        context.read<CryptoExchangeRegistry>().pendingLivePortfolioClients;
+    final pendingLive = controller.pendingLiveClients;
 
     final wideSelected = _byId(descriptors, _selectedId) ??
         (descriptors.isEmpty ? null : descriptors.first);
@@ -280,12 +281,12 @@ class _PortfolioViewState extends State<_PortfolioView> {
 class _ConnectLivePortfolioCard extends StatelessWidget {
   const _ConnectLivePortfolioCard({required this.pending});
 
-  final List<CryptoExchangeClient> pending;
+  final List<LiveVenueCapabilities> pending;
 
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final names = pending.map((c) => c.exchange.displayName).toList();
+    final names = pending.map((c) => c.displayName).toList();
     final venues = names.length == 1
         ? names.single
         : names.length == 2

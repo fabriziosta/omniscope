@@ -8,6 +8,8 @@ import '../../data/agents/models.dart';
 import '../../data/crypto/crypto_exchange_registry.dart';
 import '../../data/market/models.dart';
 import '../../data/settings/env_secrets_repository.dart';
+import '../../data/trading/broker_exchange_registry.dart';
+import '../../data/venues/live_venue_capabilities.dart';
 import '../../widgets/app_toast.dart';
 import '../agents/agent_launch_actions.dart';
 import 'llm_api_keys_section.dart';
@@ -22,17 +24,22 @@ class ConnectionsSectionBody extends StatelessWidget {
     final theme = ShadTheme.of(context);
     final agents = context.watch<AgentsRepository>();
     final registry = context.watch<CryptoExchangeRegistry>();
+    final brokers = context.watch<BrokerExchangeRegistry>();
     final secrets = context.watch<EnvSecretsRepository>();
-    final exchangeCreds = secrets.exchangeCredentials;
 
     final connectedAgents = agents.availableRoles
         .where((role) => agents.forRoleId(role.id).connected)
         .map((role) => (role, agents.forRoleId(role.id)))
         .toList(growable: false);
 
-    final connectedExchanges = registry.exchanges
-        .where((client) => exchangeCreds.forId(client.exchange.id).isConfigured)
-        .toList(growable: false);
+    final connectedExchanges = <LiveVenueCapabilities>[
+      for (final client in registry.exchanges)
+        if (secrets.exchangeCredentialsFor(client.exchange.id).isConfigured)
+          client,
+      for (final client in brokers.brokers)
+        if (secrets.exchangeCredentialsFor(client.broker.id).isConfigured)
+          client,
+    ];
 
     final empty = connectedAgents.isEmpty && connectedExchanges.isEmpty;
 
@@ -95,7 +102,7 @@ class ConnectionsSectionBody extends StatelessWidget {
             for (var i = 0; i < connectedExchanges.length; i++) ...[
               if (i > 0) const SizedBox(height: 8),
               SettingsConnectionCard(
-                title: connectedExchanges[i].exchange.displayName,
+                title: connectedExchanges[i].displayName,
                 subtitle: connectedExchanges[i].canPlaceOrders
                     ? 'Trading enabled · credentials configured'
                     : 'API credentials configured',

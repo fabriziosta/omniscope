@@ -12,6 +12,8 @@ import '../../widgets/app_tooltip.dart';
 import '../../widgets/in_tab_back.dart';
 import '../../widgets/master_detail_shell.dart';
 import '../../widgets/notification_inbox.dart';
+import '../../data/agents/trade_proposal_repository.dart';
+import '../activity/activity_screen.dart';
 import '../agents/agent_schedule_coordinator.dart';
 import '../agents/agents_screen.dart';
 import '../markets/markets_screen.dart';
@@ -43,6 +45,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   static const _pages = <Widget>[
     MarketsScreen(),
     PortfolioScreen(),
+    ActivityScreen(),
     AgentsScreen(),
     SettingsScreen(),
   ];
@@ -50,8 +53,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   static const _tabs = <(int, String, String, IconData)>[
     (0, 'Markets', AppCopy.tabTooltipMarkets, LucideIcons.lineChart),
     (1, 'Portfolio', AppCopy.tabTooltipPortfolio, LucideIcons.wallet),
-    (2, 'Agents', AppCopy.tabTooltipAgents, LucideIcons.bot),
-    (3, 'Settings', AppCopy.tabTooltipSettings, LucideIcons.settings),
+    (2, 'Activity', AppCopy.tabTooltipActivity, LucideIcons.activity),
+    (3, 'Agents', AppCopy.tabTooltipAgents, LucideIcons.bot),
+    (4, 'Settings', AppCopy.tabTooltipSettings, LucideIcons.settings),
   ];
 
   @override
@@ -114,6 +118,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
     final index = context.watch<ShellNavigationController>().tabIndex;
+    final pendingCount =
+        context.watch<TradeProposalRepository>().pendingActionableCount;
     final wide = MediaQuery.sizeOf(context).width >=
         MasterDetailShell.wideBreakpointDefault;
 
@@ -170,6 +176,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                             tooltip: entry.$3,
                             icon: entry.$4,
                             selected: index == entry.$1,
+                            badgeCount: entry.$1 ==
+                                    ShellNavigationController.activityTabIndex
+                                ? pendingCount
+                                : 0,
                             onPressed: () => _onTabPressed(entry.$1),
                           ),
                         ),
@@ -287,6 +297,7 @@ class _NavTab extends StatelessWidget {
     required this.icon,
     required this.selected,
     required this.onPressed,
+    this.badgeCount = 0,
   });
 
   final String label;
@@ -294,6 +305,7 @@ class _NavTab extends StatelessWidget {
   final IconData icon;
   final bool selected;
   final VoidCallback onPressed;
+  final int badgeCount;
 
   @override
   Widget build(BuildContext context) {
@@ -328,7 +340,38 @@ class _NavTab extends StatelessWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(icon, size: 18, color: foreground),
+                        Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Icon(icon, size: 18, color: foreground),
+                            if (badgeCount > 0)
+                              Positioned(
+                                top: -6,
+                                right: -10,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.primary,
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                      vertical: 1,
+                                    ),
+                                    child: Text(
+                                      badgeCount > 99 ? '99+' : '$badgeCount',
+                                      style: theme.textTheme.small.copyWith(
+                                        color: theme
+                                            .colorScheme.primaryForeground,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                         const SizedBox(height: 2),
                         Text(
                           label,
