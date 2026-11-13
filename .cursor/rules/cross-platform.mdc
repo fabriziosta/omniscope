@@ -1,0 +1,26 @@
+---
+description: Every change must stay compatible with Linux, Windows, Android, Apple (iOS/macOS), and Web
+alwaysApply: true
+---
+
+# Cross-platform compatibility (required)
+
+Omniscope must stay runnable and correct on **Linux**, **Windows**, **Android**, **Apple** (**iOS** and **macOS**), and **Web**. Every change — UI, data, deps, native glue, scripts — must preserve that.
+
+## Rules
+
+- **No single-OS features** — do not land Linux-only, Windows-only, Android-only, Apple-only, or Web-only behavior without a working path on the other targets.
+- **Prefer portable Flutter APIs** — avoid raw `dart:io` / path / process assumptions that break on Web, mobile, or another desktop OS; use Flutter/plugin abstractions when needed (`path_provider`, conditional imports, etc.).
+- **Web-safe by default** — never assume filesystem, sockets, or `dart:io` exist; prefer APIs that compile for `flutter build web` as well as native.
+- **Conditional code only with full coverage** — if `Platform.isX` / `kIsWeb` / `defaultTargetPlatform` is required, every supported target must still compile and behave sensibly (including stubs or documented no-ops).
+- **Dependencies** — only add packages that support Linux, Windows, Android, iOS, macOS, and Web (or that you gate so unsupported targets still build).
+- **UI** — mobile-first for phones (Android / iOS); responsive for desktop (Linux / Windows / macOS) and browser viewports. A regression on any target is a bug.
+- **Native / tooling** — do not require Fedora-only, Homebrew-only, or Android-only steps in app code paths; document per-target setup in the README when needed.
+
+```dart
+// ❌ BAD — assumes desktop Linux paths / APIs (also fails on Web)
+final dir = Directory('/home/${Platform.environment['USER']}/.omniscope');
+
+// ✅ GOOD — portable storage
+final dir = await getApplicationSupportDirectory();
+```

@@ -1,0 +1,33 @@
+---
+description: UX-first, responsive, mobile-first UI for all new Omniscope features
+alwaysApply: true
+---
+
+# UX: mobile-first & responsive
+
+Omniscope targets **Android**, **iOS**, **Linux**, **Windows**, **macOS**, and **Web**. Treat every UI change as a product UX task. See also `cross-platform.mdc`.
+
+## Required for new features and UI edits
+
+- **Design mobile-first** — narrow phone viewport first (Android / iOS / narrow browser); then adapt for wide/desktop (Linux / Windows / macOS / wide Web). Never ship a desktop-only layout that breaks on phone.
+- **One job per screen** — keep flows simple; finance copy stays plain and non-intimidating.
+- **No overflow** — use `SafeArea`, scrollable bodies, `Expanded` / `Flexible`. Avoid fixed widths that assume a large window.
+- **Respond to size** — when layout must change by width, use `LayoutBuilder` / `MediaQuery` (or clear breakpoints). Charts and dense rows must reflow or scroll.
+- **Touch-friendly** — targets ~44×44 logical px; primary actions reachable; dialogs/toasts usable on small screens.
+- **shadcn_ui only** — `ShadButton`, `ShadCard`, `ShadInput`, `ShadDialog`, `ShadToast` / `ShadToaster`, `ShadProgress`; no Material-first or Cupertino shells.
+- **Brand colors only** — primary/secondary (and gain/loss for numbers) from `BrandColors` / theme scheme; see `brand-colors.mdc`.
+- **Verify all platforms** — Linux, Windows, Android, Apple (iOS / macOS), and Web; a regression on any target is a bug.
+
+```dart
+// ❌ BAD — assumes wide desktop, clips on phone
+Row(children: [
+  SizedBox(width: 400, child: chart),
+  SizedBox(width: 300, child: form),
+])
+
+// ✅ GOOD — stacks or flexes with available width
+LayoutBuilder(builder: (context, constraints) {
+  final wide = constraints.maxWidth >= 720;
+  return wide ? Row(...) : Column(...);
+})
+```

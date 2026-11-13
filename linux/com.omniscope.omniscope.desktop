@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Omniscope
+Comment=Learn investing and manage personal finance
+Exec=omniscope
+Icon=com.omniscope.omniscope
+Terminal=false
+Type=Application
+Categories=Finance;Education;
+StartupWMClass=com.omniscope.omniscope

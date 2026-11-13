@@ -1,0 +1,19 @@
+# Gitleaks config for Omniscope.
+# Docs: https://github.com/gitleaks/gitleaks
+
+title = "omniscope"
+
+[extend]
+# Use the default gitleaks ruleset (API keys, tokens, private keys, etc.).
+useDefault = true
+
+[allowlist]
+description = "Repo noise that is not a credential"
+paths = [
+  '''(^|/)\.dart_tool/''',
+  '''(^|/)build/''',
+  '''(^|/)coverage/''',
+  '''(^|/)test/.*\.dart$''',
+  '''\.gitleaks\.toml$''',
+  '''pubspec\.lock$''',
+]

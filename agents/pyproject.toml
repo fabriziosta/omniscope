@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "omniscope-agents"
+version = "0.1.0"
+description = "Omniscope educational AI agents (CrewAI research, LangGraph trader, hedge fund desk)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "crewai>=0.80.0",
+  "langgraph>=0.2.0",
+  "langchain-core>=0.3.0",
+  "langchain-openai>=0.2.0",
+  "langchain-anthropic>=0.2.0",
+  "langchain-google-genai>=2.0.0",
+  "yfinance>=0.2.40",
+  "pandas>=2.0.0",
+  "pandas-ta>=0.3.14b",
+  "edgartools>=3.0.0",
+  "feedparser>=6.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["omniscope_agents*"]

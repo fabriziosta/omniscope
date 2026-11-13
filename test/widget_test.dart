@@ -1,0 +1,380 @@
+import 'package:flutter/widgets.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:omniscope/app.dart';
+import 'package:omniscope/core/app_error_controller.dart';
+import 'package:omniscope/data/agents/agent_chat_repository.dart';
+import 'package:omniscope/data/agents/agent_role_catalog.dart';
+import 'package:omniscope/data/agents/agents_repository.dart';
+import 'package:omniscope/data/agents/llm_chat_client.dart';
+import 'package:omniscope/data/crypto/crypto_com/crypto_com_exchange_client.dart';
+import 'package:omniscope/data/crypto/crypto_exchange.dart';
+import 'package:omniscope/data/crypto/crypto_exchange_client.dart';
+import 'package:omniscope/data/crypto/crypto_exchange_registry.dart';
+import 'package:omniscope/data/crypto/exchange_portfolio.dart';
+import 'package:omniscope/data/market/equity_data_source.dart';
+import 'package:omniscope/data/market/market_data_client.dart';
+import 'package:omniscope/data/market/models.dart';
+import 'package:omniscope/data/portfolio/portfolio_repository.dart';
+import 'package:omniscope/data/settings/data_source_settings.dart';
+import 'package:omniscope/data/settings/display_settings.dart';
+import 'package:omniscope/data/settings/env_secrets_repository.dart';
+import 'package:omniscope/data/settings/favorites_repository.dart';
+import 'package:omniscope/data/settings/theme_settings.dart';
+import 'package:omniscope/data/settings/user_config_store.dart';
+import 'package:provider/provider.dart';
+
+import 'support/memory_config.dart';
+
+LlmChatClient _testLlmChatClient() {
+  return LlmChatClient(
+    httpClient: MockClient(
+      (_) async => http.Response('{}', 400),
+    ),
+  );
+}
+
+class _FakeMarketDataClient implements MarketDataClient {
+  @override
+  Future<List<Candle>> getHistory(
+    String symbol, {
+    required String range,
+    required String interval,
+  }) async {
+    final now = DateTime.now();
+    return [
+      Candle(time: now.subtract(const Duration(days: 2)), close: 100),
+      Candle(time: now.subtract(const Duration(days: 1)), close: 102),
+      Candle(time: now, close: 101),
+    ];
+  }
+
+  @override
+  Future<List<Quote>> getQuotes(List<String> symbols) async {
+    return symbols
+        .map(
+          (s) => Quote(
+            symbol: s,
+            name: 'Test $s',
+            price: 100,
+            previousClose: 99,
+            change: 1,
+            changePercent: 0.0101,
+            exchange: _exchangeFor(s),
+            dataSource: 'Yahoo Finance',
+            dataSourceId: 'yahoo',
+          ),
+        )
+        .toList();
+  }
+
+  static String _exchangeFor(String symbol) {
+    return switch (symbol) {
+      '^GSPC' => 'SNP',
+      '^DJI' => 'DJI',
+      '^IXIC' => 'Nasdaq GIDS',
+      'SPY' || 'QQQ' => 'NYSEArca',
+      'AAPL' || 'MSFT' => 'NMS',
+      'SAP.DE' => 'XETRA',
+      _ => 'Other',
+    };
+  }
+}
+
+class _FakeCryptoExchangeClient implements CryptoExchangeClient {
+  @override
+  final CryptoExchange exchange = const CryptoExchange(
+    id: 'crypto_com',
+    displayName: 'Crypto.com',
+    defaultSymbols: ['BTC_USD'],
+  );
+
+  @override
+  bool get supportsLivePortfolio => false;
+
+  @override
+  bool get canFetchPortfolio => false;
+
+  @override
+  bool handlesSymbol(String symbol) =>
+      CryptoComExchangeClient.meta.defaultSymbols.contains(symbol) ||
+      symbol.contains('_');
+
+  @override
+  Future<List<Candle>> getHistory(
+    String symbol, {
+    required String range,
+    required String interval,
+  }) async =>
+      const [];
+
+  @override
+  Future<List<Quote>> getQuotes(List<String> symbols) async {
+    return symbols
+        .map(
+          (s) => Quote(
+            symbol: s,
+            name: s.split('_').first,
+            price: 50,
+            change: 1,
+            changePercent: 0.02,
+            exchange: exchange.displayName,
+            dataSource: exchange.displayName,
+            dataSourceId: exchange.id,
+          ),
+        )
+        .toList();
+  }
+
+  @override
+  Future<List<String>> browseSymbols() async => exchange.defaultSymbols;
+
+  @override
+  Future<ExchangePortfolioSnapshot> fetchPortfolio() async {
+    throw UnsupportedError('Fake crypto client has no live portfolio.');
+  }
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  Future<void> pumpApp(WidgetTester tester) async {
+    final config = await memoryConfig();
+    final portfolio = PortfolioRepository(store: config);
+    await portfolio.load();
+    final themeSettings = ThemeSettings(store: config);
+    await themeSettings.load();
+    final displaySettings = DisplaySettings(store: config);
+    await displaySettings.load();
+    final dataSourceSettings = DataSourceSettings(store: config);
+    await dataSourceSettings.load();
+    final favorites = FavoritesRepository(store: config);
+    await favorites.load();
+    final agentRoles = await AgentRoleCatalog.load();
+    final agents = AgentsRepository(store: config, roleCatalog: agentRoles);
+    await agents.load(roleCatalog: agentRoles);
+    final agentChats = AgentChatRepository(store: config);
+    await agentChats.load();
+
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final marketClient = _FakeMarketDataClient();
+    final equitiesRegistry = EquityDataSourceRegistry([
+      EquityDataSourceEntry(
+        source: const EquityDataSource(
+          id: 'yahoo',
+          displayName: 'Yahoo Finance',
+        ),
+        client: marketClient,
+      ),
+    ]);
+    final cryptoRegistry = CryptoExchangeRegistry([
+      _FakeCryptoExchangeClient(),
+    ]);
+    final navigatorKey = GlobalKey<NavigatorState>();
+    final appErrors = AppErrorController(navigatorKey: navigatorKey);
+
+    final envSecrets =
+        EnvSecretsRepository(store: config, syncEnvFile: false);
+    await envSecrets.load();
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<UserConfigStore>.value(value: config),
+          Provider<MarketDataClient>.value(value: marketClient),
+          Provider<EquityDataSourceRegistry>.value(value: equitiesRegistry),
+          Provider<CryptoExchangeRegistry>.value(value: cryptoRegistry),
+          ChangeNotifierProvider<EnvSecretsRepository>.value(value: envSecrets),
+          ChangeNotifierProvider<FavoritesRepository>.value(value: favorites),
+          ChangeNotifierProvider<PortfolioRepository>.value(value: portfolio),
+          ChangeNotifierProvider<AgentsRepository>.value(value: agents),
+          ChangeNotifierProvider<AgentChatRepository>.value(value: agentChats),
+          Provider<LlmChatClient>.value(value: _testLlmChatClient()),
+          ChangeNotifierProvider<ThemeSettings>.value(value: themeSettings),
+          ChangeNotifierProvider<DisplaySettings>.value(value: displaySettings),
+          ChangeNotifierProvider<DataSourceSettings>.value(
+            value: dataSourceSettings,
+          ),
+          ChangeNotifierProvider<AppErrorController>.value(value: appErrors),
+        ],
+        child: OmniscopeApp(navigatorKey: navigatorKey),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+  }
+
+  testWidgets('shell tabs: markets, crypto, agents, settings', (tester) async {
+    await pumpApp(tester);
+
+    expect(find.text('Markets'), findsWidgets);
+    expect(find.text('Crypto'), findsWidgets);
+    expect(find.text('Agents'), findsWidgets);
+    expect(find.text('Settings'), findsWidgets);
+    expect(find.text('Favorites'), findsOneWidget);
+    expect(find.text('Indices'), findsOneWidget);
+    expect(find.text('ETFs'), findsOneWidget);
+    expect(find.text('Stocks'), findsOneWidget);
+    expect(find.text('0 symbols'), findsOneWidget);
+    expect(
+      find.text('${watchlistSymbolsForKind(MarketAssetKind.indices).length} symbols'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('${watchlistSymbolsForKind(MarketAssetKind.etfs).length} symbols'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('${watchlistSymbolsForKind(MarketAssetKind.stocks).length} symbols'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Stocks'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    // First page of stocks (page size 15); AAPL/MSFT → Nasdaq, rest → Other.
+    expect(find.text('Yahoo Finance'), findsNWidgets(15));
+    expect(find.text('Nasdaq  ·  2'), findsOneWidget);
+    expect(find.text('Other  ·  13'), findsOneWidget);
+    expect(find.text('Load more'), findsOneWidget);
+    // Nested tab navigators keep the shell bottom nav visible on detail pages.
+    expect(find.text('Crypto'), findsWidgets);
+    expect(find.text('Portfolio'), findsWidgets);
+
+    await tester.tap(find.text('Crypto').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Crypto.com'), findsOneWidget);
+    expect(find.text('Spot pairs'), findsOneWidget);
+
+    await tester.tap(find.text('Crypto.com'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    // Exchange hub: Favorites + Spot pairs (master–detail nested list).
+    expect(find.text('Favorites'), findsWidgets);
+    expect(find.text('Spot pairs'), findsWidgets);
+
+    await tester.tap(find.text('Spot pairs').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    // Quote load is async; wait briefly for the fake client.
+    for (var i = 0; i < 10 && find.text('BTC_USD').evaluate().isEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('BTC_USD'), findsOneWidget);
+    expect(find.text('Markets'), findsWidgets);
+    expect(find.text('Agents'), findsWidgets);
+
+    await tester.tap(find.text('Agents').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Market Research & Analysis'), findsOneWidget);
+    expect(find.text('Intraday Execution & Risk Control'), findsOneWidget);
+    expect(find.textContaining('CrewAI'), findsNothing);
+    expect(find.textContaining('LangGraph'), findsNothing);
+    final agentsCtx = tester.element(find.text('Market Research & Analysis'));
+    final roleTitles = agentsCtx
+        .read<AgentsRepository>()
+        .availableRoles
+        .map((r) => r.title)
+        .toList();
+    expect(roleTitles, contains('Hedge Fund Desk'));
+    // Third role may sit below the phone viewport — scroll Agents list only.
+    final agentsList = find.descendant(
+      of: find.ancestor(
+        of: find.text('Market Research & Analysis'),
+        matching: find.byType(ListView),
+      ),
+      matching: find.byType(Scrollable),
+    );
+    await tester.drag(agentsList, const Offset(0, -800));
+    await tester.pump();
+    expect(find.text('Hedge Fund Desk'), findsOneWidget);
+
+    await tester.tap(find.text('Settings').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    // Narrow: section list first (sidebar anchors).
+    expect(find.text('About'), findsWidgets);
+    expect(find.text('Appearance'), findsOneWidget);
+    expect(find.text('Data sources'), findsOneWidget);
+    expect(find.text('API keys'), findsOneWidget);
+    expect(find.text('Connections'), findsOneWidget);
+
+    await tester.tap(find.text('Appearance'));
+    await tester.pumpAndSettle();
+    expect(find.text('System'), findsOneWidget);
+    expect(find.text('Light'), findsOneWidget);
+    expect(find.text('Dark'), findsOneWidget);
+    expect(find.text('Lists'), findsOneWidget);
+    expect(find.text('Comfortable'), findsOneWidget);
+    expect(find.text('Compact'), findsWidgets);
+    expect(find.text('Numbers'), findsOneWidget);
+    expect(find.text('Charts'), findsOneWidget);
+    // Other sections are unloaded while Appearance is open.
+    expect(find.text('Market providers'), findsNothing);
+
+    await tester.tap(find.text('Back'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Data sources'));
+    await tester.pumpAndSettle();
+    expect(find.text('Market providers'), findsOneWidget);
+    expect(find.text('Crypto venues'), findsOneWidget);
+    expect(find.text('Yahoo Finance'), findsWidgets);
+    expect(find.text('Crypto.com'), findsWidgets);
+    expect(find.text('Credentials'), findsOneWidget);
+    expect(find.text('System'), findsNothing);
+
+    await tester.tap(find.text('Back'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Connections'));
+    await tester.tap(find.text('Connections'));
+    await tester.pumpAndSettle();
+    expect(find.text('Nothing connected yet.'), findsOneWidget);
+
+    await tester.tap(find.text('Back'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Appearance'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Dark'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+  });
+
+  test('groups watchlist quotes by kind then exchange', () {
+    final groups = groupQuotesByKindAndExchange(const [
+      Quote(symbol: 'AAPL', price: 1, exchange: 'NMS'),
+      Quote(symbol: 'SAP.DE', price: 1, exchange: 'XETRA'),
+      Quote(symbol: 'SPY', price: 1, exchange: 'NYSEArca'),
+      Quote(symbol: '^GSPC', price: 1, exchange: 'SNP'),
+    ]);
+
+    expect(groups.map((g) => g.kind), [
+      MarketAssetKind.indices,
+      MarketAssetKind.etfs,
+      MarketAssetKind.stocks,
+    ]);
+    expect(groups[2].exchanges.map((e) => e.exchange), ['Nasdaq', 'Xetra']);
+    expect(groups[2].exchanges[0].quotes.single.symbol, 'AAPL');
+  });
+
+  test('markets tab kinds expose curated symbol lists', () {
+    expect(marketTabKinds, [
+      MarketAssetKind.indices,
+      MarketAssetKind.etfs,
+      MarketAssetKind.stocks,
+    ]);
+    final indices = watchlistSymbolsForKind(MarketAssetKind.indices);
+    final etfs = watchlistSymbolsForKind(MarketAssetKind.etfs);
+    final stocks = watchlistSymbolsForKind(MarketAssetKind.stocks);
+    expect(indices, containsAll(['^GSPC', '^DJI', '^IXIC']));
+    expect(indices.length, greaterThanOrEqualTo(3));
+    expect(etfs, containsAll(['SPY', 'QQQ']));
+    expect(etfs.length, greaterThanOrEqualTo(2));
+    expect(stocks, containsAll(['AAPL', 'MSFT', 'SAP.DE']));
+    expect(stocks.length, greaterThanOrEqualTo(3));
+  });
+}

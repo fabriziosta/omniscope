@@ -1,0 +1,77 @@
+# After each push to main, bump Flutter patch (+ build) unless this push
+# already changed the pubspec version line (manual major/minor bump).
+name: Bump patch version
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bump-patch-version-main
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    # Skip bot re-entry and pure version-only follow-ups.
+    if: ${{ !contains(github.event.head_commit.message, '[skip version bump]') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Needed so the later push can trigger nothing (token + skip message).
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Detect manual version change in this push
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+          before="${{ github.event.before }}"
+          after="${{ github.event.after }}"
+          # First push / orphan: always bump.
+          if [[ "$before" =~ ^0+$ ]]; then
+            echo "manual=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --quiet "$before" "$after" -- pubspec.yaml; then
+            echo "manual=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff "$before" "$after" -- pubspec.yaml | grep -E '^[+-]version:'; then
+            echo "Manual version edit detected in pubspec.yaml — skipping auto patch bump."
+            echo "manual=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "manual=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump patch version
+        if: steps.detect.outputs.manual != 'true'
+        run: |
+          chmod +x tool/bump_patch_version.sh
+          tool/bump_patch_version.sh
+
+      - name: Commit and push
+        if: steps.detect.outputs.manual != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- pubspec.yaml lib/core/app_info.dart; then
+            echo "No version file changes; nothing to commit."
+            exit 0
+          fi
+          version="$(tool/bump_patch_version.sh --check)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pubspec.yaml lib/core/app_info.dart
+          git commit -m "$(cat <<EOF
+          chore: bump patch to ${version} [skip version bump]
+
+          Automated patch (+ build) bump after merge to main.
+          EOF
+          )"
+          git push origin HEAD:main

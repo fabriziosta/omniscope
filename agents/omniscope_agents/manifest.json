@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "updated": "2026-11-12",
+  "roles": [
+    {
+      "id": "marketResearch",
+      "title": "Market Research & Analysis",
+      "description": "Plain-language research brief for a symbol or topic.",
+      "framework": "crewAi",
+      "module": "omniscope_agents.market_research",
+      "packagePath": "market_research",
+      "workload": "investigation",
+      "suggestedModels": {
+        "gemini": "gemini-3.5-flash-lite",
+        "openAi": "gpt-6-luna",
+        "anthropic": "claude-haiku-5-5",
+        "deepSeek": "deepseek-flash",
+        "grok": "grok-4.3"
+      },
+      "suggestionNote": "Prefer a lighter model for market investigation — faster and cheaper for scanning."
+    },
+    {
+      "id": "intradayTrading",
+      "title": "Intraday Execution & Risk Control",
+      "description": "Paper-friendly trade checks with risk gates.",
+      "framework": "langGraph",
+      "module": "omniscope_agents.trading",
+      "packagePath": "trading",
+      "workload": "trading",
+      "suggestedModels": {
+        "gemini": "gemini-3.8-flash",
+        "openAi": "gpt-6-astra",
+        "anthropic": "claude-opus-5-5",
+        "deepSeek": "deepseek-v4-pro",
+        "grok": "grok-4.7"
+      },
+      "suggestionNote": "Prefer a heavier model for trading agents — stronger reasoning for risk and execution."
+    },
+    {
+      "id": "hedgeFundDesk",
+      "title": "Hedge Fund Desk",
+      "description": "Seven-role paper pipeline (analysts, bull/bear debate, risk veto, head trader) on live public market data.",
+      "framework": "langGraph",
+      "module": "omniscope_agents.hedge_fund",
+      "packagePath": "hedge_fund",
+      "workload": "trading",
+      "suggestedModels": {
+        "gemini": "gemini-3.8-flash",
+        "openAi": "gpt-6-astra",
+        "anthropic": "claude-opus-5-5",
+        "deepSeek": "deepseek-v4-pro",
+        "grok": "grok-4.7"
+      },
+      "suggestionNote": "Prefer a heavier model for debate, risk gates, and paper execution."
+    }
+  ]
+}
