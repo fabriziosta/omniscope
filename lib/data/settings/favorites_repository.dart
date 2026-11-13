@@ -3,32 +3,22 @@ import 'package:flutter/foundation.dart';
 import 'user_config_keys.dart';
 import 'user_config_store.dart';
 
-/// Starred Markets symbols and per-exchange Crypto pairs.
+/// Starred Markets symbols (equities and spot crypto) in one ordered list.
 class FavoritesRepository extends ChangeNotifier {
   FavoritesRepository({this.store});
 
   UserConfigStore? store;
-  final List<String> _markets = [];
-  final Map<String, List<String>> _crypto = {};
+  final List<String> _symbols = [];
   bool _ready = false;
 
   bool get isReady => _ready;
 
-  List<String> get marketSymbols => List.unmodifiable(_markets);
+  List<String> get symbols => List.unmodifiable(_symbols);
 
-  List<String> cryptoSymbolsFor(String exchangeId) =>
-      List.unmodifiable(_crypto[exchangeId] ?? const []);
-
-  bool isMarketFavorite(String symbol) {
+  bool isFavorite(String symbol) {
     final key = symbol.trim();
     if (key.isEmpty) return false;
-    return _markets.contains(key);
-  }
-
-  bool isCryptoFavorite(String exchangeId, String symbol) {
-    final key = symbol.trim();
-    if (exchangeId.isEmpty || key.isEmpty) return false;
-    return (_crypto[exchangeId] ?? const []).contains(key);
+    return _symbols.contains(key);
   }
 
   Future<void> load({UserConfigStore? store}) async {
@@ -38,114 +28,80 @@ class FavoritesRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> toggleMarketFavorite(String symbol) async {
+  Future<void> toggleFavorite(String symbol) async {
     final key = symbol.trim();
     if (key.isEmpty) return;
-    if (_markets.contains(key)) {
-      _markets.remove(key);
+    if (_symbols.contains(key)) {
+      _symbols.remove(key);
     } else {
-      _markets.add(key);
-    }
-    notifyListeners();
-    await _persist();
-  }
-
-  Future<void> toggleCryptoFavorite(String exchangeId, String symbol) async {
-    final key = symbol.trim();
-    if (exchangeId.isEmpty || key.isEmpty) return;
-    final list = _crypto.putIfAbsent(exchangeId, () => <String>[]);
-    if (list.contains(key)) {
-      list.remove(key);
-    } else {
-      list.add(key);
-    }
-    if (list.isEmpty) {
-      _crypto.remove(exchangeId);
+      _symbols.add(key);
     }
     notifyListeners();
     await _persist();
   }
 
   Future<void> clearAll() async {
-    _markets.clear();
-    _crypto.clear();
+    _symbols.clear();
     notifyListeners();
     await _persist();
   }
 
-  /// Reorders Markets favorites.
+  /// Reorders favorites.
   ///
   /// [newIndex] is the destination after the item is removed (as reported by
   /// Flutter's [ReorderableListView.onReorderItem]).
-  Future<void> reorderMarketFavorites(int oldIndex, int newIndex) async {
-    if (oldIndex < 0 || oldIndex >= _markets.length) return;
-    if (newIndex < 0 || newIndex >= _markets.length) return;
+  Future<void> reorderFavorites(int oldIndex, int newIndex) async {
+    if (oldIndex < 0 || oldIndex >= _symbols.length) return;
+    if (newIndex < 0 || newIndex >= _symbols.length) return;
     if (newIndex == oldIndex) return;
-    final item = _markets.removeAt(oldIndex);
-    _markets.insert(newIndex, item);
-    notifyListeners();
-    await _persist();
-  }
-
-  /// Reorders crypto favorites for [exchangeId].
-  ///
-  /// [newIndex] is the destination after the item is removed (as reported by
-  /// Flutter's [ReorderableListView.onReorderItem]).
-  Future<void> reorderCryptoFavorites(
-    String exchangeId,
-    int oldIndex,
-    int newIndex,
-  ) async {
-    final list = _crypto[exchangeId];
-    if (list == null || oldIndex < 0 || oldIndex >= list.length) return;
-    if (newIndex < 0 || newIndex >= list.length) return;
-    if (newIndex == oldIndex) return;
-    final item = list.removeAt(oldIndex);
-    list.insert(newIndex, item);
+    final item = _symbols.removeAt(oldIndex);
+    _symbols.insert(newIndex, item);
     notifyListeners();
     await _persist();
   }
 
   Future<void> _persist() async {
-    final cryptoOut = <String, List<String>>{};
-    final exchangeIds = _crypto.keys.toList()..sort();
-    for (final id in exchangeIds) {
-      cryptoOut[id] = List<String>.from(_crypto[id]!);
-    }
     await store?.setSlice(UserConfigKeys.favorites, {
-      'markets': List<String>.from(_markets),
-      'crypto': cryptoOut,
+      'symbols': List<String>.from(_symbols),
     });
   }
 
   void _applySlice(Object? slice) {
-    _markets.clear();
-    _crypto.clear();
+    _symbols.clear();
     if (slice is! Map) return;
     final map = Map<String, dynamic>.from(slice);
+
+    final unified = map['symbols'];
+    if (unified is List) {
+      _appendUnique(unified);
+      return;
+    }
+
+    // Legacy: { markets: [...], crypto: { exchangeId: [...] } }
     final markets = map['markets'];
     if (markets is List) {
-      for (final item in markets) {
-        if (item is String && item.trim().isNotEmpty) {
-          _markets.add(item.trim());
-        }
-      }
+      _appendUnique(markets);
     }
     final crypto = map['crypto'];
     if (crypto is Map) {
-      for (final entry in crypto.entries) {
-        final id = entry.key.toString();
+      final exchangeIds = crypto.keys.map((k) => k.toString()).toList()
+        ..sort();
+      for (final id in exchangeIds) {
         if (id.isEmpty) continue;
-        final symbols = entry.value;
-        if (symbols is! List) continue;
-        final list = <String>[
-          for (final item in symbols)
-            if (item is String && item.trim().isNotEmpty) item.trim(),
-        ];
-        if (list.isNotEmpty) {
-          _crypto[id] = list;
+        final symbols = crypto[id];
+        if (symbols is List) {
+          _appendUnique(symbols);
         }
       }
+    }
+  }
+
+  void _appendUnique(List<dynamic> items) {
+    for (final item in items) {
+      if (item is! String) continue;
+      final key = item.trim();
+      if (key.isEmpty || _symbols.contains(key)) continue;
+      _symbols.add(key);
     }
   }
 }

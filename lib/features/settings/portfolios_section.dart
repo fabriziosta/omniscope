@@ -109,21 +109,21 @@ class _PortfoliosSectionBodyState extends State<PortfoliosSectionBody> {
           title: 'Practice',
           subtitle: 'Paper money for learning — stored only on this device.',
           icon: LucideIcons.wallet,
-          trailing: const Row(
-            mainAxisSize: MainAxisSize.min,
+          trailing: const Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               AgentLaunchButton(
                 intent: AgentLaunchIntent.explainPortfolio,
                 outline: true,
                 label: 'Allocation',
               ),
-              SizedBox(width: 8),
               AgentLaunchButton(
                 intent: AgentLaunchIntent.paperReview,
                 outline: true,
                 label: 'Coach',
               ),
-              SizedBox(width: 8),
               AppTooltip(
                 message: 'Paper — practice money only',
                 wrapDetector: true,
@@ -207,8 +207,10 @@ class _PortfoliosSectionBodyState extends State<PortfoliosSectionBody> {
                     hasPartialCreds: partial,
                   ),
                   icon: LucideIcons.landmark,
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
+                  trailing: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       const AppTooltip(
                         message: 'Live — read-only exchange balances',
@@ -218,14 +220,12 @@ class _PortfoliosSectionBodyState extends State<PortfoliosSectionBody> {
                         ),
                       ),
                       if (ready) ...[
-                        const SizedBox(width: 8),
                         AgentLaunchButton(
                           exchangeId: desc.id,
                           intent: AgentLaunchIntent.explainLive,
                           outline: true,
                           label: 'Balances',
                         ),
-                        const SizedBox(width: 8),
                         AgentLaunchButton(
                           exchangeId: desc.id,
                           intent: AgentLaunchIntent.explainPortfolio,
@@ -233,14 +233,12 @@ class _PortfoliosSectionBodyState extends State<PortfoliosSectionBody> {
                           label: 'Allocation',
                         ),
                       ],
-                      if (!ready && widget.onOpenDataSources != null) ...[
-                        const SizedBox(width: 8),
+                      if (!ready && widget.onOpenDataSources != null)
                         ShadButton.outline(
                           size: ShadButtonSize.sm,
                           onPressed: widget.onOpenDataSources,
                           child: const Text('Data sources'),
                         ),
-                      ],
                     ],
                   ),
                 );

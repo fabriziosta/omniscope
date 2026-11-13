@@ -31,8 +31,8 @@ class QuoteListTile extends StatelessWidget {
   final VoidCallback onTap;
   final ListDensity density;
 
-  /// When non-null, the star toggles a crypto favorite for this exchange.
-  /// When null, the star toggles a Markets favorite.
+  /// Optional venue id for crypto rows (display / future routing); stars use
+  /// the shared Favorites list by symbol only.
   final String? cryptoExchangeId;
 
   /// Hide the star (e.g. non-quote surfaces). Defaults to on.
@@ -44,7 +44,9 @@ class QuoteListTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final priceFormat = context.watch<DisplaySettings>().priceFormat;
+    final priceFormat = context.select<DisplaySettings, PriceFormat>(
+      (d) => d.priceFormat,
+    );
     final priceText = formatDisplayMoney(quote.price, priceFormat);
     final changeColor = quote.isUp
         ? BrandColors.gainOf(context)
@@ -60,7 +62,6 @@ class QuoteListTile extends StatelessWidget {
     final favoriteButton = showFavorite
         ? _FavoriteStarButton(
             symbol: quote.symbol,
-            cryptoExchangeId: cryptoExchangeId,
             compact: compact,
           )
         : null;
@@ -144,21 +145,18 @@ class QuoteListTile extends StatelessWidget {
 class _FavoriteStarButton extends StatelessWidget {
   const _FavoriteStarButton({
     required this.symbol,
-    required this.cryptoExchangeId,
     required this.compact,
   });
 
   final String symbol;
-  final String? cryptoExchangeId;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final favorites = context.watch<FavoritesRepository>();
-    final favorited = cryptoExchangeId == null
-        ? favorites.isMarketFavorite(symbol)
-        : favorites.isCryptoFavorite(cryptoExchangeId!, symbol);
+    final favorited = context.select<FavoritesRepository, bool>(
+      (favorites) => favorites.isFavorite(symbol),
+    );
     final label =
         favorited ? 'Remove $symbol from favorites' : 'Add $symbol to favorites';
 
@@ -171,12 +169,7 @@ class _FavoriteStarButton extends StatelessWidget {
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () {
-            final repo = context.read<FavoritesRepository>();
-            if (cryptoExchangeId == null) {
-              repo.toggleMarketFavorite(symbol);
-            } else {
-              repo.toggleCryptoFavorite(cryptoExchangeId!, symbol);
-            }
+            context.read<FavoritesRepository>().toggleFavorite(symbol);
           },
           child: SizedBox(
             width: 44,

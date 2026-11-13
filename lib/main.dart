@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:provider/provider.dart';
 
 import 'app.dart';
@@ -14,6 +15,7 @@ import 'data/agents/trade_proposal_repository.dart';
 import 'data/notifications/app_notification_repository.dart';
 import 'data/crypto/crypto_com/crypto_com_exchange_client.dart';
 import 'data/crypto/crypto_exchange_registry.dart';
+import 'data/market/caching_market_data_client.dart';
 import 'data/market/equity_data_source.dart';
 import 'data/market/market_data_client.dart';
 import 'data/market/routing_market_data_client.dart';
@@ -30,7 +32,8 @@ import 'data/trading/trade_executor.dart';
 import 'features/agents/agent_schedule_coordinator.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
 
   final navigatorKey = GlobalKey<NavigatorState>();
   final appErrors = AppErrorController(navigatorKey: navigatorKey);
@@ -99,10 +102,12 @@ Future<void> main() async {
   final cryptoRegistry = CryptoExchangeRegistry([cryptoCom]);
   const brokerRegistry = BrokerExchangeRegistry.empty;
 
-  final MarketDataClient marketData = RoutingMarketDataClient(
-    equitiesRegistry: equitiesRegistry,
-    cryptoRegistry: cryptoRegistry,
-    dataSources: dataSourceSettings,
+  final MarketDataClient marketData = CachingMarketDataClient(
+    RoutingMarketDataClient(
+      equitiesRegistry: equitiesRegistry,
+      cryptoRegistry: cryptoRegistry,
+      dataSources: dataSourceSettings,
+    ),
   );
 
   final TradeExecutor tradeExecutor = RoutingTradeExecutor(
@@ -127,6 +132,7 @@ Future<void> main() async {
     portfolio: portfolio,
   );
 
+  FlutterNativeSplash.remove();
   runApp(
     MultiProvider(
       providers: [

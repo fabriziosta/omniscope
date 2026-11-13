@@ -269,17 +269,19 @@ void main() {
     addTearDown(agentSchedule.dispose);
   }
 
-  testWidgets('shell tabs: markets, crypto, agents, settings', (tester) async {
+  testWidgets('shell tabs: markets, portfolio, agents, settings', (tester) async {
     await pumpApp(tester);
 
     expect(find.text('Markets'), findsWidgets);
-    expect(find.text('Crypto'), findsWidgets);
+    expect(find.text('Portfolio'), findsWidgets);
     expect(find.text('Agents'), findsWidgets);
     expect(find.text('Settings'), findsWidgets);
     expect(find.text('Favorites'), findsOneWidget);
     expect(find.text('Indices'), findsOneWidget);
     expect(find.text('ETFs'), findsOneWidget);
     expect(find.text('Stocks'), findsOneWidget);
+    expect(find.text('Crypto.com'), findsOneWidget);
+    expect(find.text('Spot pairs'), findsOneWidget);
     expect(find.text('0 symbols'), findsOneWidget);
     expect(
       find.text('${watchlistSymbolsForKind(MarketAssetKind.indices).length} symbols'),
@@ -304,23 +306,15 @@ void main() {
     expect(find.text('Other  ·  13'), findsOneWidget);
     expect(find.text('Load more'), findsOneWidget);
     // Nested tab navigators keep the shell bottom nav visible on detail pages.
-    expect(find.text('Crypto'), findsWidgets);
     expect(find.text('Portfolio'), findsWidgets);
 
-    await tester.tap(find.text('Crypto').last);
+    // Narrow phone surface: leave Stocks via in-pane Back to see venue tiles.
+    expect(find.text('Crypto.com'), findsNothing);
+    await tester.tap(find.byType(NavBackButton));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 200));
     expect(find.text('Crypto.com'), findsOneWidget);
-    expect(find.text('Spot pairs'), findsOneWidget);
-
     await tester.tap(find.text('Crypto.com'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    // Exchange hub: Favorites + Spot pairs (master–detail nested list).
-    expect(find.text('Favorites'), findsWidgets);
-    expect(find.text('Spot pairs'), findsWidgets);
-
-    await tester.tap(find.text('Spot pairs').last);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     // Quote load is async; wait briefly for the fake client.
@@ -328,6 +322,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
     expect(find.text('BTC_USD'), findsOneWidget);
+    expect(find.text('Spot pairs'), findsWidgets);
     expect(find.text('Markets'), findsWidgets);
     expect(find.text('Agents'), findsWidgets);
 

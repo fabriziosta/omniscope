@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart' show SelectionArea;
+import 'package:omniscope/core/material_compat.dart' show SelectionArea;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscope/core/fade_page_route.dart';

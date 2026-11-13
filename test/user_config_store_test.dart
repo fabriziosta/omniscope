@@ -49,8 +49,7 @@ void main() {
     expect(store.getSlice(UserConfigKeys.theme), 'light');
     final favorites = FavoritesRepository(store: store);
     await favorites.load();
-    expect(favorites.marketSymbols, ['AAPL']);
-    expect(favorites.cryptoSymbolsFor('crypto_com'), ['BTC_USD']);
+    expect(favorites.symbols, ['AAPL', 'BTC_USD']);
   });
 
   test('exportJson is valid JSON with version', () async {

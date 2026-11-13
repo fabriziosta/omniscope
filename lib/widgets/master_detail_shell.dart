@@ -4,8 +4,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'app_tooltip.dart';
 import 'nav_back_button.dart';
 
-/// Size-aware master–detail layout for shell tabs (Markets, Crypto, Portfolio,
-/// Agents, Settings).
+/// Size-aware master–detail layout for shell tabs (Markets, Portfolio, Agents,
+/// Settings).
 ///
 /// Wide (≥ [wideBreakpoint]): persistent sidebar + content pane.
 /// Narrow: nav list, then content with Back (in-tab; no route push).

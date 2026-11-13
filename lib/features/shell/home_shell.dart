@@ -14,7 +14,6 @@ import '../../widgets/master_detail_shell.dart';
 import '../../widgets/notification_inbox.dart';
 import '../agents/agent_schedule_coordinator.dart';
 import '../agents/agents_screen.dart';
-import '../crypto/crypto_group_screen.dart';
 import '../markets/markets_screen.dart';
 import '../portfolio/portfolio_screen.dart';
 import '../settings/settings_screen.dart';
@@ -43,7 +42,6 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   static const _pages = <Widget>[
     MarketsScreen(),
-    CryptoGroupScreen(),
     PortfolioScreen(),
     AgentsScreen(),
     SettingsScreen(),
@@ -51,10 +49,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   static const _tabs = <(int, String, String, IconData)>[
     (0, 'Markets', AppCopy.tabTooltipMarkets, LucideIcons.lineChart),
-    (1, 'Crypto', AppCopy.tabTooltipCrypto, LucideIcons.coins),
-    (2, 'Portfolio', AppCopy.tabTooltipPortfolio, LucideIcons.wallet),
-    (3, 'Agents', AppCopy.tabTooltipAgents, LucideIcons.bot),
-    (4, 'Settings', AppCopy.tabTooltipSettings, LucideIcons.settings),
+    (1, 'Portfolio', AppCopy.tabTooltipPortfolio, LucideIcons.wallet),
+    (2, 'Agents', AppCopy.tabTooltipAgents, LucideIcons.bot),
+    (3, 'Settings', AppCopy.tabTooltipSettings, LucideIcons.settings),
   ];
 
   @override

@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart' show SelectionArea;
 import 'package:flutter/widgets.dart';
+
+import 'material_compat.dart' show SelectionArea;
 
 /// Fade transition used for tab roots and detail pushes.
 ///

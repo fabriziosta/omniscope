@@ -16,10 +16,9 @@ class PendingAgentChatOpen {
 /// Bottom-tab selection for [HomeShell], including deep-links from feature CTAs.
 class ShellNavigationController extends ChangeNotifier {
   static const marketsTabIndex = 0;
-  static const cryptoTabIndex = 1;
-  static const portfolioTabIndex = 2;
-  static const agentsTabIndex = 3;
-  static const settingsTabIndex = 4;
+  static const portfolioTabIndex = 1;
+  static const agentsTabIndex = 2;
+  static const settingsTabIndex = 3;
 
   var _tabIndex = marketsTabIndex;
   String? _pendingAgentConnectRoleId;

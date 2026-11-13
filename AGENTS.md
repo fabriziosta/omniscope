@@ -38,6 +38,8 @@ make agent-skills
 
 Optional: install the [Dart and Flutter Cursor marketplace plugin](https://docs.flutter.dev/ai/get-started) (`/add-plugin dart-flutter` or Customize → Dart and Flutter) for a machine-local bundle of skills + MCP; the committed `.agents/skills/` and `.cursor/mcp.json` already cover the project for anyone who clones the repo.
 
+**Hot reload vs restart:** Enable the Dart MCP server in Cursor (Tools / MCP) so [`flutter-hot-reload.mdc`](.cursor/rules/flutter-hot-reload.mdc) can call `hot_reload` / `hot_restart` against a running app. UI edits under `lib/` → hot reload. Changes to [`lib/main.dart`](lib/main.dart), the provider graph, or `initState` wiring → hot restart.
+
 Do not confuse this with **Agents** in the app (LLM chat / Confirm trades) or [`agents/`](agents/) (CrewAI / LangGraph CLI packages).
 
 ## Stack
@@ -49,7 +51,7 @@ Do not confuse this with **Agents** in the app (LLM chat / Confirm trades) or [`
 | State | `provider` |
 | HTTP | `http` |
 | Local persistence | `omniscope.json` via [`UserConfigStore`](lib/data/settings/user_config_store.dart) (`path_provider`; Web uses a prefs blob) |
-| Market data | `MarketDataClient` → `RoutingMarketDataClient` (Yahoo equities + crypto registry) |
+| Market data | `MarketDataClient` → `CachingMarketDataClient` → `RoutingMarketDataClient` (Yahoo equities + crypto registry; in-memory quote/history TTL) |
 | Crypto exchanges | `CryptoExchangeClient` + `CryptoExchangeRegistry` (Crypto.com first) |
 
 Do not add Material-first screens, Cupertino app shells, or a second component library. Prefer `ShadButton`, `ShadCard`, `ShadInput`, `ShadDialog`, `ShadToast` / `ShadToaster`, `ShadProgress`, etc.
@@ -72,8 +74,8 @@ lib/
 - Map provider-specific JSON **inside** the Yahoo / crypto exchange client, not in widgets.
 - Feature folders own their screens; shared chart stays under `widgets/`.
 - **Screen-scoped `ChangeNotifier`s** (provided at the route/screen with `ChangeNotifierProvider`, not in `main.dart`) own feature async: [`QuotesListController`](lib/features/quotes/quotes_list_controller.dart), [`PortfolioScreenController`](lib/features/portfolio/portfolio_screen_controller.dart), [`AssetDetailController`](lib/features/asset_detail/asset_detail_controller.dart), [`AgentChatController`](lib/features/agents/agent_chat_controller.dart). Use load-generation tokens so stale responses are ignored.
-- Shared chrome: `TabPageHeader`, `SubscreenAppBar`, `AppEmptyView`, `QuotesAsyncBody`, `MetricStat`, `SummaryWell`, `ThemedAccordionItem`, [`MasterDetailShell`](lib/widgets/master_detail_shell.dart) / `MasterDetailNavList` / `MasterDetailNavTile` / `MasterDetailContentPane` (Markets, Crypto, Portfolio, Agents, Settings — wide sidebar + content at ≥720; narrow list → detail with Back), `pushFadePage` / `FadePageRoute`, [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart) (in-context Investigate / Trade check). Prefer [`showAppToast`](lib/widgets/app_toast.dart) over raw `ShadToaster`.
-- Quote lists (Markets kind + Crypto exchange) always go through [`MarketDataClient`](lib/data/market/market_data_client.dart) — never call `CryptoExchangeClient.getQuotes` from UI.
+- Shared chrome: `TabPageHeader`, `SubscreenAppBar`, `AppEmptyView`, `QuotesAsyncBody`, `MetricStat`, `SummaryWell`, `ThemedAccordionItem`, [`MasterDetailShell`](lib/widgets/master_detail_shell.dart) / `MasterDetailNavList` / `MasterDetailNavTile` / `MasterDetailContentPane` (Markets, Portfolio, Agents, Settings — wide sidebar + content at ≥720; narrow list → detail with Back), `pushFadePage` / `FadePageRoute`, [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart) (in-context Investigate / Trade check). Prefer [`showAppToast`](lib/widgets/app_toast.dart) over raw `ShadToaster`.
+- Quote lists (Markets equity kinds + crypto exchange spot) always go through [`MarketDataClient`](lib/data/market/market_data_client.dart) — never call `CryptoExchangeClient.getQuotes` from UI.
 
 ## Market data — always use `MarketDataClient`
 
@@ -83,15 +85,17 @@ Widgets and portfolio code must depend on [`MarketDataClient`](lib/data/market/m
 Default wiring in [`lib/main.dart`](lib/main.dart):
 
 ```dart
-RoutingMarketDataClient(
-  equitiesRegistry: EquityDataSourceRegistry([
-    EquityDataSourceEntry(
-      source: YahooMarketDataClient.meta,
-      client: YahooMarketDataClient(),
-    ),
-  ]),
-  cryptoRegistry: CryptoExchangeRegistry([CryptoComExchangeClient()]),
-  dataSources: dataSourceSettings, // Settings → enable/disable (config slice)
+CachingMarketDataClient(
+  RoutingMarketDataClient(
+    equitiesRegistry: EquityDataSourceRegistry([
+      EquityDataSourceEntry(
+        source: YahooMarketDataClient.meta,
+        client: YahooMarketDataClient(),
+      ),
+    ]),
+    cryptoRegistry: CryptoExchangeRegistry([CryptoComExchangeClient()]),
+    dataSources: dataSourceSettings, // Settings → enable/disable (config slice)
+  ),
 )
 ```
 
@@ -120,7 +124,7 @@ Settings persists opt-outs in the unified config `dataSources` slice ([`DataSour
 - Unofficial / unstable; handle HTTP errors and empty `chart.result` gracefully.
 - Educational use; do not scrape aggressively.
 
-Default Markets watchlist: [`lib/data/market/models.dart`](lib/data/market/models.dart) (`defaultWatchlistEntries` / `defaultWatchlist`) — curated Yahoo symbols (no free “list all” API). Markets tab ([`MarketsScreen`](lib/features/markets/markets_screen.dart)) uses master–detail for **Favorites / Indices / ETFs / Stocks** ([`MarketFavoritesPane`](lib/features/markets/market_favorites_body.dart), [`MarketKindPane`](lib/features/markets/market_kind_body.dart)); each kind subgroup loads `watchlistSymbolsForKind` in pages via [`QuotesListController`](lib/features/quotes/quotes_list_controller.dart) and groups by exchange via `groupQuotesByKindAndExchange`. Crypto is **not** on the Markets tab.
+Default Markets watchlist: [`lib/data/market/models.dart`](lib/data/market/models.dart) (`defaultWatchlistEntries` / `defaultWatchlist`) — curated Yahoo symbols (no free “list all” API). Markets tab ([`MarketsScreen`](lib/features/markets/markets_screen.dart)) uses master–detail for **Favorites / Indices / ETFs / Stocks** plus each enabled **crypto exchange** ([`MarketFavoritesPane`](lib/features/markets/market_favorites_body.dart), [`MarketKindPane`](lib/features/markets/market_kind_body.dart), [`CryptoExchangePairsPane`](lib/features/crypto/crypto_exchange_pairs_body.dart)); equity kinds load `watchlistSymbolsForKind` in pages via [`QuotesListController`](lib/features/quotes/quotes_list_controller.dart) and group by exchange via `groupQuotesByKindAndExchange`. Favorites is one ordered list for equities and spot pairs.
 
 ## Crypto exchanges — `CryptoExchangeClient`
 
@@ -157,9 +161,7 @@ lib/data/crypto/
 
 ### Crypto UI
 
-- Shell tab **Crypto** → [`CryptoGroupScreen`](lib/features/crypto/crypto_group_screen.dart) (master–detail of exchanges).
-- Exchange content → [`CryptoExchangeHub`](lib/features/crypto/crypto_exchange_hub.dart) (nested master–detail: Favorites + Spot pairs).
-- Panes → [`CryptoExchangeFavoritesPane`](lib/features/crypto/crypto_exchange_favorites_body.dart) / [`CryptoExchangePairsPane`](lib/features/crypto/crypto_exchange_pairs_body.dart).
+- Markets sidebar lists each enabled venue; selecting one opens [`CryptoExchangePairsPane`](lib/features/crypto/crypto_exchange_pairs_body.dart) (Spot pairs). Starred pairs join the shared Markets Favorites list.
 
 ## Agents (AI helpers)
 
@@ -287,7 +289,7 @@ Locked examples: Market Research **27**, Live Balance / Portfolio Guide / Practi
 - **Schedule** (foreground only) — configured on Connect/Edit; [`AgentScheduleCoordinator`](lib/features/agents/agent_schedule_coordinator.dart) polls while the app is open and resumed (Linux / Windows / Android / iOS / macOS / Web). Pauses on background / hidden tab; does **not** run with the app closed. Each due tick Runs symbols via the same chat `sendRun` path (research or trade check + Autopilot if enabled). Activity logs `scheduledRun` events. Every scheduled outcome also enqueues a stacked shell notification ([`AppNotificationRepository`](lib/data/notifications/app_notification_repository.dart) / bell in [`HomeShell`](lib/features/shell/home_shell.dart)) so the user can **Open** chat to Confirm a pending proposal or review an Autopilot result (Dismiss clears the inbox item).
 - **In-app launches** — other screens deep-link into chat via [`AgentLaunchActions`](lib/features/agents/agent_launch_actions.dart) + [`AgentLaunchIntent`](lib/data/agents/agent_launch.dart) (`investigate` → Market Research + Hedge Fund Desk; `tradeCheck` → Intraday + Desk; `explainLive` → Live Balance Explainer; `explainPortfolio` → Portfolio Guide; `paperReview` → Practice Coach). Shared CTA: [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart).
   - Asset detail app bar **Investigate**; Practice trade card **Practice coach** + **Trade check**; successful paper trade offers a Trade check dialog.
-  - Quote rows (Markets / Crypto) sparkles icon → Investigate.
+  - Quote rows (Markets) sparkles icon → Investigate.
   - Portfolio practice holdings sparkles → Trade check.
   - Portfolio **Practice** summary **Allocation** / **Coach**; Portfolio **Live** **Balances** / **Allocation** + per-asset sparkles → Live Balance Explainer.
   - Settings → Portfolios Practice **Allocation** / **Coach**; live cards **Balances** / **Allocation** when credentials are ready.
@@ -311,11 +313,11 @@ Single JSON document for secrets, favorites, and all customizations ([`UserConfi
 - **`.env` dual-write:** secrets still upsert into the project `.env` when writable (Python CLI). On startup, non-empty `.env` / asset keys that are missing or empty in the config are **promoted** into `omniscope.json` so checkout edits persist for Flutter.
 - Treat the file as secrets — it may contain API keys.
 
-Favorites ([`FavoritesRepository`](lib/data/settings/favorites_repository.dart)): star quote rows; Markets landing has a **Favorites** subgroup; each Crypto exchange landing has **Favorites** + **Spot pairs**.
+Favorites ([`FavoritesRepository`](lib/data/settings/favorites_repository.dart)): one ordered `symbols` list for equities and spot crypto; Markets sidebar has a single **Favorites** subgroup. Legacy `{ markets, crypto }` config slices migrate on load.
 
 ## Settings
 
-Shell tab **Settings** (and Markets / Crypto) use [`MasterDetailShell`](lib/widgets/master_detail_shell.dart): wide (≥720) = persistent sidebar + content pane; narrow = list → detail with Back. Switching sections unloads the previous body ([`settings_screen.dart`](lib/features/settings/settings_screen.dart)).
+Shell tab **Settings** (and Markets) use [`MasterDetailShell`](lib/widgets/master_detail_shell.dart): wide (≥720) = persistent sidebar + content pane; narrow = list → detail with Back. Switching sections unloads the previous body ([`settings_screen.dart`](lib/features/settings/settings_screen.dart)).
 
 - **About** — tagline ([`AppCopy`](lib/core/app_copy.dart)), version ([`AppInfo`](lib/core/app_info.dart)), educational disclaimer.
 - **Appearance** — brightness + color set ([`ThemeSettings`](lib/data/settings/theme_settings.dart) / [`BrandPalette`](lib/core/brand_colors.dart)), list density / price format / default chart range ([`DisplaySettings`](lib/data/settings/display_settings.dart)).
@@ -368,7 +370,7 @@ Canonical tokens live in [`lib/core/brand_colors.dart`](lib/core/brand_colors.da
 
 ### Product UX
 
-- One clear job per screen (Markets master–detail, Crypto exchange hub, Asset detail, Portfolio summary, Agents connect).
+- One clear job per screen (Markets master–detail with equity kinds + spot venues, Asset detail, Portfolio summary, Agents connect).
 - Asset detail: curated overviews for default symbols ([`asset_overviews.dart`](lib/data/market/asset_overviews.dart)); external research links ([`market_data_links.dart`](lib/data/market/market_data_links.dart)): provider attribution plus Wikipedia (when mapped), Google Finance / TradingView; open via `url_launcher` in the system browser (educational only).
 - Settings → About: tagline from [`app_copy.dart`](lib/core/app_copy.dart) plus educational disclaimer.
 - Loading: `ShadProgress`. Errors: short message + retry.
@@ -376,7 +378,7 @@ Canonical tokens live in [`lib/core/brand_colors.dart`](lib/core/brand_colors.da
 - Theme: slate neutrals + brand primary/secondary via `BrandColors` in `app.dart`.
 - Keep copy plain — this product is for people who find finance intimidating.
 - Shared brand mark: [`lib/widgets/app_placeholder_icon.dart`](lib/widgets/app_placeholder_icon.dart) in a compact shell header (uses [`assets/brand/app_icon.png`](assets/brand/app_icon.png)).
-- Launcher / favicon pipeline: edit masters under `assets/brand/`, then run `make icons` (or [`tool/regen_icons.sh`](tool/regen_icons.sh)) (Android / iOS / macOS / Web / Windows via `flutter_launcher_icons`, plus Linux `linux/runner/resources/`).
+- Launcher / favicon / splash pipeline: edit masters under `assets/brand/`, then run `make icons` (or [`tool/regen_icons.sh`](tool/regen_icons.sh)) — Android / iOS / macOS / Web / Windows via `flutter_launcher_icons`, Linux `linux/runner/resources/`, plus Android / iOS / Web splash via `flutter_native_splash` (Teal `#CCFBF1` / `#134E4A`; desktop has no native splash).
 
 ## Commands
 

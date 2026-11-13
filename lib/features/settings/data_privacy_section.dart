@@ -256,16 +256,16 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
 
   Future<void> _clearFavorites() async {
     final favorites = context.read<FavoritesRepository>();
-    final marketCount = favorites.marketSymbols.length;
+    final count = favorites.symbols.length;
     final ok = await confirmDestructiveAction(
       context,
       title: 'Clear all favorites?',
-      description: marketCount == 0
-          ? 'Removes every starred Markets and Crypto symbol from the '
-              'data file. This cannot be undone.'
-          : 'Removes $marketCount market '
-              '${marketCount == 1 ? 'favorite' : 'favorites'} and all '
-              'crypto favorites from the data file. This cannot be undone.',
+      description: count == 0
+          ? 'Removes every starred Markets symbol from the data file. '
+              'This cannot be undone.'
+          : 'Removes $count '
+              '${count == 1 ? 'favorite' : 'favorites'} from the data file. '
+              'This cannot be undone.',
       confirmLabel: 'Clear favorites',
     );
     if (!ok || !mounted) return;
@@ -274,7 +274,7 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
     showAppToast(
       context,
       title: 'Favorites cleared',
-      description: 'Starred Markets and Crypto symbols were removed.',
+      description: 'Starred Markets symbols were removed.',
     );
   }
 

@@ -17,6 +17,7 @@ import '../../data/market/market_data_client.dart';
 import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/env_secrets_repository.dart';
+import '../../data/settings/settings_listen_keys.dart';
 import '../../data/trading/trade_executor.dart';
 import '../../widgets/app_confirm_dialog.dart';
 import '../../widgets/app_empty_view.dart';
@@ -282,9 +283,9 @@ class _AgentChatViewState extends State<_AgentChatView> {
         context.watch<AgentsRepository>().forRoleId(widget.role.id).connected;
     final controller = context.watch<AgentChatController>();
     final proposals = context.watch<TradeProposalRepository>();
-    // Rebuild when credentials / toggles change so the exchange gate updates.
-    context.watch<EnvSecretsRepository>();
-    context.watch<DataSourceSettings>();
+    // Rebuild when exchange credential readiness / source toggles change.
+    context.select<EnvSecretsRepository, String>(exchangeCredsFingerprint);
+    context.select<DataSourceSettings, String>(dataSourceFingerprint);
     final tradeExecutor = context.read<TradeExecutor>();
     final sending = controller.sending;
     final wantsTrade = AgentRolePrompts.supportsTradeProposals(widget.role.id);

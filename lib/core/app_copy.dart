@@ -8,8 +8,7 @@ abstract final class AppCopy {
 
   /// Bottom-nav hover / long-press hints (plain language, not just the label).
   static const tabTooltipMarkets =
-      'Browse favorites, indices, ETFs, and stocks';
-  static const tabTooltipCrypto = 'Spot markets by exchange';
+      'Browse favorites, equities, and spot crypto by exchange';
   static const tabTooltipPortfolio =
       'Practice paper trading and live exchange balances';
   static const tabTooltipAgents =
@@ -42,10 +41,8 @@ abstract final class AppCopy {
   static const noQuotes = 'No quotes available';
 
   static const noMarketFavorites =
-      'No market favorites yet. Star a symbol in Indices, ETFs, or Stocks.';
-
-  static const noCryptoFavorites =
-      'No favorites for this exchange yet. Star a pair in Spot pairs.';
+      'No favorites yet. Star a symbol from Indices, ETFs, Stocks, or '
+      'any spot exchange list.';
 
   static const noMarketSourcesEnabled =
       'No market data sources enabled. Turn one on in Settings.';

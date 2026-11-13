@@ -4,6 +4,7 @@ import 'dart:developer' as developer;
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
 
+import '../../../core/async_pool.dart';
 import '../../market/exchange_credentials.dart';
 import '../../market/market_data_client.dart';
 import '../../market/models.dart';
@@ -74,9 +75,18 @@ class CryptoComExchangeClient implements CryptoExchangeClient {
   /// Spot instrument names like `BTC_USD` / `ETH_USDT`.
   static final _spotSymbol = RegExp(r'^[A-Z0-9]+_[A-Z0-9]+$');
 
+  /// Parallel per-symbol ticker fetches when bulk tickers are unavailable.
+  static const quoteFetchConcurrency = 5;
+
+  /// How long [listSpotUsdSymbols] / [browseSymbols] reuse one instruments list.
+  static const instrumentsCacheTtl = Duration(hours: 1);
+
   final http.Client _http;
 
   ExchangeCredentials _credentials;
+
+  List<String>? _cachedSpotUsdSymbols;
+  DateTime? _cachedSpotUsdSymbolsAt;
 
   /// Local credentials (`.env` / Settings UI; may be empty for public endpoints).
   ExchangeCredentials get credentials => _credentials;
@@ -136,6 +146,15 @@ class CryptoComExchangeClient implements CryptoExchangeClient {
 
   /// Public USD spot pairs from `GET /public/get-instruments`.
   Future<List<String>> listSpotUsdSymbols() async {
+    final now = DateTime.now();
+    final cached = _cachedSpotUsdSymbols;
+    final at = _cachedSpotUsdSymbolsAt;
+    if (cached != null &&
+        at != null &&
+        now.difference(at) < instrumentsCacheTtl) {
+      return List<String>.from(cached);
+    }
+
     final body = await _getJson('/public/get-instruments', const {});
     final data = _resultData(body);
     final symbols = <String>[];
@@ -167,17 +186,30 @@ class CryptoComExchangeClient implements CryptoExchangeClient {
       symbols.add(symbol);
     }
     symbols.sort();
-    return symbols;
+    _cachedSpotUsdSymbols = symbols;
+    _cachedSpotUsdSymbolsAt = now;
+    return List<String>.from(symbols);
   }
 
   @override
   Future<List<Quote>> getQuotes(List<String> symbols) async {
     if (symbols.isEmpty) return const [];
 
-    final quotes = <Quote>[];
-    Object? lastError;
-    for (final symbol in symbols) {
-      try {
+    try {
+      final bulk = await _quotesFromBulkTickers(symbols);
+      if (bulk.isNotEmpty) return bulk;
+    } catch (e, st) {
+      developer.log(
+        'Crypto.com bulk get-tickers failed, falling back: $e',
+        name: 'CryptoComExchangeClient',
+        stackTrace: st,
+      );
+    }
+
+    return mapPool<String, Quote>(
+      items: symbols,
+      concurrency: quoteFetchConcurrency,
+      mapper: (symbol) async {
         final body = await _getJson(
           '/public/get-tickers',
           {'instrument_name': symbol},
@@ -186,15 +218,34 @@ class CryptoComExchangeClient implements CryptoExchangeClient {
         if (data.isEmpty) {
           throw MarketDataException('No ticker data for $symbol');
         }
-        quotes.add(quoteFromTicker(data.first, fallbackSymbol: symbol));
-      } catch (e) {
-        lastError = e;
+        return quoteFromTicker(data.first, fallbackSymbol: symbol);
+      },
+      onError: (_, _) => null,
+    );
+  }
+
+  /// One `get-tickers` call (no instrument filter), then keep requested symbols.
+  Future<List<Quote>> _quotesFromBulkTickers(List<String> symbols) async {
+    final wanted = {for (final s in symbols) s.toUpperCase(): s};
+    final body = await _getJson('/public/get-tickers', const {});
+    final data = _resultData(body);
+    final bySymbol = <String, Quote>{};
+    for (final row in data) {
+      final raw = (row['i'] as String?)?.trim();
+      if (raw == null || raw.isEmpty) continue;
+      final key = raw.toUpperCase();
+      if (!wanted.containsKey(key)) continue;
+      try {
+        bySymbol[key] = quoteFromTicker(row, fallbackSymbol: wanted[key]);
+      } catch (_) {
+        // Skip malformed rows; per-symbol fallback may recover.
       }
     }
-    if (quotes.isEmpty && lastError != null) {
-      throw lastError;
-    }
-    return quotes;
+    return [
+      for (final s in symbols)
+        if (bySymbol.containsKey(s.toUpperCase()))
+          bySymbol[s.toUpperCase()]!,
+    ];
   }
 
   @override

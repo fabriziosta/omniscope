@@ -12,6 +12,7 @@ import '../../data/agents/llm_model_catalog.dart';
 import '../../data/agents/models.dart';
 import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/env_secrets_repository.dart';
+import '../../data/settings/settings_listen_keys.dart';
 import '../../data/trading/trade_executor.dart';
 import '../../widgets/app_empty_view.dart';
 import '../../widgets/app_toast.dart';
@@ -266,11 +267,92 @@ class _AgentsScreenState extends State<AgentsScreen> {
     pushFadePage(context, AgentChatScreen(role: role));
   }
 
-  Widget _rolesBody({required bool showBack}) {
+  @override
+  Widget build(BuildContext context) {
+    return InTabBackEffect(
+      onBack: _narrowSelected != null ? _backToNavList : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_narrowSelected == null)
+            const TabPageHeader(
+              title: 'Agents',
+              subtitle:
+                  'Connect helpers, confirm suggestions into Practice or live '
+                  'portfolios, and track activity.',
+              subtitleSpacing: 6,
+            ),
+          Expanded(
+            child: MasterDetailShell<AgentsNavSection>(
+              selected: _selected,
+              narrowSelected: _narrowSelected,
+              onNarrowBack: _backToNavList,
+              sidebarBuilder: (context, highlighted, {required wide}) {
+                return MasterDetailNavList(
+                  tiles: [
+                    for (final section in AgentsNavSection.values)
+                      MasterDetailNavTile(
+                        title: section.title,
+                        icon: section.icon,
+                        meta: section.subtitle,
+                        selected: highlighted == section,
+                        onTap: () => _select(section, wide: wide),
+                      ),
+                  ],
+                );
+              },
+              contentBuilder: (context, section, {required showBack, onBack}) {
+                return switch (section) {
+                  AgentsNavSection.roles => _AgentsRolesBody(
+                      key: const ValueKey('agents-roles'),
+                      showBack: showBack,
+                      models: _models,
+                      onBack: _backToNavList,
+                      onConnect: _openConnect,
+                      onDisconnect: _disconnect,
+                      onOpenChat: _openChat,
+                    ),
+                  AgentsNavSection.activity => AgentActivityPane(
+                      key: const ValueKey('agents-activity'),
+                      showBack: showBack,
+                      onBack: onBack,
+                    ),
+                };
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Own [build] so `context.select` is valid under [MasterDetailShell]'s
+/// [LayoutBuilder] (State.context.select from a layout callback is not).
+class _AgentsRolesBody extends StatelessWidget {
+  const _AgentsRolesBody({
+    super.key,
+    required this.showBack,
+    required this.models,
+    required this.onBack,
+    required this.onConnect,
+    required this.onDisconnect,
+    required this.onOpenChat,
+  });
+
+  final bool showBack;
+  final LlmModelCatalog? models;
+  final VoidCallback onBack;
+  final ValueChanged<AgentRoleDefinition> onConnect;
+  final ValueChanged<AgentRoleDefinition> onDisconnect;
+  final ValueChanged<AgentRoleDefinition> onOpenChat;
+
+  @override
+  Widget build(BuildContext context) {
     final agents = context.watch<AgentsRepository>();
     final roles = agents.availableRoles;
-    context.watch<EnvSecretsRepository>();
-    context.watch<DataSourceSettings>();
+    context.select<EnvSecretsRepository, String>(exchangeCredsFingerprint);
+    context.select<DataSourceSettings, String>(dataSourceFingerprint);
     final canTrade = context.read<TradeExecutor>().canTrade;
 
     return MasterDetailContentPane(
@@ -279,7 +361,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
           'Connect an AI helper, then open chat. Keys and chats stay on this '
           'device. Trading agents can target Practice or a live portfolio.',
       showBack: showBack,
-      onBack: _backToNavList,
+      onBack: onBack,
       backLabel: 'Agents',
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -341,69 +423,15 @@ class _AgentsScreenState extends State<AgentsScreen> {
                         _AgentCard(
                           role: role,
                           connection: agents.forRoleId(role.id),
-                          catalog: _models,
-                          onConnect: () => _openConnect(role),
-                          onDisconnect: () => _disconnect(role),
-                          onOpenChat: () => _openChat(role),
+                          catalog: models,
+                          onConnect: () => onConnect(role),
+                          onDisconnect: () => onDisconnect(role),
+                          onOpenChat: () => onOpenChat(role),
                         ),
                         const SizedBox(height: 12),
                       ],
                     ],
                   ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return InTabBackEffect(
-      onBack: _narrowSelected != null ? _backToNavList : null,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_narrowSelected == null)
-            const TabPageHeader(
-              title: 'Agents',
-              subtitle:
-                  'Connect helpers, confirm suggestions into Practice or live '
-                  'portfolios, and track activity.',
-              subtitleSpacing: 6,
-            ),
-          Expanded(
-            child: MasterDetailShell<AgentsNavSection>(
-              selected: _selected,
-              narrowSelected: _narrowSelected,
-              onNarrowBack: _backToNavList,
-              sidebarBuilder: (context, highlighted, {required wide}) {
-                return MasterDetailNavList(
-                  tiles: [
-                    for (final section in AgentsNavSection.values)
-                      MasterDetailNavTile(
-                        title: section.title,
-                        icon: section.icon,
-                        meta: section.subtitle,
-                        selected: highlighted == section,
-                        onTap: () => _select(section, wide: wide),
-                      ),
-                  ],
-                );
-              },
-              contentBuilder: (context, section, {required showBack, onBack}) {
-                return switch (section) {
-                  AgentsNavSection.roles => KeyedSubtree(
-                      key: const ValueKey('agents-roles'),
-                      child: _rolesBody(showBack: showBack),
-                    ),
-                  AgentsNavSection.activity => AgentActivityPane(
-                      key: const ValueKey('agents-activity'),
-                      showBack: showBack,
-                      onBack: onBack,
-                    ),
-                };
-              },
-            ),
           ),
         ],
       ),

@@ -198,7 +198,7 @@ const defaultWatchlistEntries = <WatchlistEntry>[
 final defaultWatchlist =
     defaultWatchlistEntries.map((e) => e.symbol).toList(growable: false);
 
-/// Markets tab subgroups (crypto lives on the Crypto tab).
+/// Markets tab equity subgroups (crypto venues are listed separately).
 const marketTabKinds = <MarketAssetKind>[
   MarketAssetKind.indices,
   MarketAssetKind.etfs,

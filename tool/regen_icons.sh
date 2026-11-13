@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regenerate platform launcher icons from assets/brand/.
+# Regenerate platform launcher icons + native splash from assets/brand/.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -26,4 +26,6 @@ src.resize((256, 256), Image.Resampling.LANCZOS).save(
 print("Updated linux/runner/resources/app_icon*.png")
 PY
 
-echo "Done. Masters: assets/brand/ — launchers refreshed for Android/iOS/macOS/Web/Windows + Linux."
+dart run flutter_native_splash:create
+
+echo "Done. Masters: assets/brand/ — launchers (Android/iOS/macOS/Web/Windows + Linux) + splash (Android/iOS/Web)."

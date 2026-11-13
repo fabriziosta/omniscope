@@ -204,7 +204,7 @@ class _NotificationRow extends StatelessWidget {
             children: [
               const Spacer(),
               ShadButton.ghost(
-                height: 36,
+                height: 44,
                 onPressed: () async {
                   await repo.dismiss(item.id);
                 },
@@ -212,7 +212,7 @@ class _NotificationRow extends StatelessWidget {
               ),
               const SizedBox(width: 4),
               ShadButton(
-                height: 36,
+                height: 44,
                 onPressed: () async {
                   await repo.markRead(item.id);
                   if (!context.mounted) return;

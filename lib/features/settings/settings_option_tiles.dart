@@ -153,31 +153,58 @@ class SettingsConnectionCard extends StatelessWidget {
 
     return ShadCard(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: theme.colorScheme.secondary,
-              borderRadius: theme.radius,
-            ),
-            child: Icon(icon, size: 18, color: theme.colorScheme.primary),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: theme.textTheme.large),
-                const SizedBox(height: 2),
-                Text(subtitle, style: theme.textTheme.muted),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final stackTrailing =
+              trailing != null && constraints.maxWidth < 480;
+          final header = Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.secondary,
+                  borderRadius: theme.radius,
+                ),
+                child: Icon(icon, size: 18, color: theme.colorScheme.primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: theme.textTheme.large),
+                    const SizedBox(height: 2),
+                    Text(subtitle, style: theme.textTheme.muted),
+                  ],
+                ),
+              ),
+              if (!stackTrailing && trailing != null) ...[
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: trailing!,
+                  ),
+                ),
               ],
-            ),
-          ),
-          ?trailing,
-        ],
+            ],
+          );
+          if (!stackTrailing) return header;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              header,
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: trailing!,
+              ),
+            ],
+          );
+        },
       ),
     );
   }

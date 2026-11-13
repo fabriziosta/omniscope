@@ -141,7 +141,43 @@ class AssetDetailController extends ChangeNotifier {
   Future<void> setRange(int index) async {
     if (index < 0 || index >= ranges.length || index == _rangeIndex) return;
     _rangeIndex = index;
-    await load();
+    // Keep the open quote; only the chart series changes with the range chip.
+    if (_quote != null) {
+      await _loadHistoryOnly();
+    } else {
+      await load();
+    }
+  }
+
+  Future<void> _loadHistoryOnly() async {
+    final gen = ++_loadGen;
+    _loading = true;
+    _hasError = false;
+    _errorMessage = null;
+    notifyListeners();
+
+    final range = ranges[_rangeIndex];
+    try {
+      final candles = await _marketData.getHistory(
+        symbol,
+        range: range.$2,
+        interval: range.$3,
+      );
+      if (gen != _loadGen) return;
+      _candles = candles;
+      _loading = false;
+      _hasError = false;
+      _errorMessage = null;
+      _fetchedAt = DateTime.now();
+      notifyListeners();
+    } catch (e, st) {
+      debugPrint('Asset detail history failed for $symbol: $e\n$st');
+      if (gen != _loadGen) return;
+      _hasError = true;
+      _loading = false;
+      _errorMessage = userFacingMarketError(e);
+      notifyListeners();
+    }
   }
 
   /// Parses shares and executes a paper trade. Returns null if quantity invalid.

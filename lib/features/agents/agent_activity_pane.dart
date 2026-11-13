@@ -233,7 +233,7 @@ class _FilterChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
     return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 36),
+      constraints: const BoxConstraints(minHeight: 44),
       child: ShadButton.raw(
         variant: selected ? ShadButtonVariant.secondary : ShadButtonVariant.outline,
         size: ShadButtonSize.sm,

@@ -7,63 +7,74 @@ import 'support/memory_config.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('toggles market and crypto favorites and persists', () async {
+  test('toggles favorites and persists', () async {
     final store = await memoryConfig();
     final repo = FavoritesRepository(store: store);
     await repo.load();
 
-    expect(repo.marketSymbols, isEmpty);
-    await repo.toggleMarketFavorite('AAPL');
-    await repo.toggleMarketFavorite('SPY');
-    expect(repo.isMarketFavorite('AAPL'), isTrue);
-    expect(repo.marketSymbols, ['AAPL', 'SPY']);
+    expect(repo.symbols, isEmpty);
+    await repo.toggleFavorite('AAPL');
+    await repo.toggleFavorite('SPY');
+    await repo.toggleFavorite('BTC_USD');
+    expect(repo.isFavorite('AAPL'), isTrue);
+    expect(repo.symbols, ['AAPL', 'SPY', 'BTC_USD']);
 
-    await repo.toggleCryptoFavorite('crypto_com', 'BTC_USD');
-    expect(repo.isCryptoFavorite('crypto_com', 'BTC_USD'), isTrue);
-
-    await repo.toggleMarketFavorite('AAPL');
-    expect(repo.isMarketFavorite('AAPL'), isFalse);
-    expect(repo.marketSymbols, ['SPY']);
+    await repo.toggleFavorite('AAPL');
+    expect(repo.isFavorite('AAPL'), isFalse);
+    expect(repo.symbols, ['SPY', 'BTC_USD']);
 
     final again = FavoritesRepository(store: store);
     await again.load();
-    expect(again.marketSymbols, ['SPY']);
-    expect(again.cryptoSymbolsFor('crypto_com'), ['BTC_USD']);
+    expect(again.symbols, ['SPY', 'BTC_USD']);
 
     final slice = store.getSlice(UserConfigKeys.favorites) as Map;
-    expect(slice['markets'], ['SPY']);
+    expect(slice['symbols'], ['SPY', 'BTC_USD']);
   });
 
   test('clearAll wipes favorites', () async {
     final store = await memoryConfig();
     final repo = FavoritesRepository(store: store);
     await repo.load();
-    await repo.toggleMarketFavorite('MSFT');
-    await repo.toggleCryptoFavorite('crypto_com', 'ETH_USD');
+    await repo.toggleFavorite('MSFT');
+    await repo.toggleFavorite('ETH_USD');
     await repo.clearAll();
-    expect(repo.marketSymbols, isEmpty);
-    expect(repo.cryptoSymbolsFor('crypto_com'), isEmpty);
+    expect(repo.symbols, isEmpty);
   });
 
-  test('reorderMarketFavorites and reorderCryptoFavorites persist', () async {
+  test('reorderFavorites persists', () async {
     final store = await memoryConfig();
     final repo = FavoritesRepository(store: store);
     await repo.load();
-    await repo.toggleMarketFavorite('AAPL');
-    await repo.toggleMarketFavorite('MSFT');
-    await repo.toggleMarketFavorite('SPY');
+    await repo.toggleFavorite('AAPL');
+    await repo.toggleFavorite('MSFT');
+    await repo.toggleFavorite('SPY');
     // Move index 0 → end (destination after removal).
-    await repo.reorderMarketFavorites(0, 2);
-    expect(repo.marketSymbols, ['MSFT', 'SPY', 'AAPL']);
-
-    await repo.toggleCryptoFavorite('crypto_com', 'BTC_USD');
-    await repo.toggleCryptoFavorite('crypto_com', 'ETH_USD');
-    await repo.reorderCryptoFavorites('crypto_com', 1, 0);
-    expect(repo.cryptoSymbolsFor('crypto_com'), ['ETH_USD', 'BTC_USD']);
+    await repo.reorderFavorites(0, 2);
+    expect(repo.symbols, ['MSFT', 'SPY', 'AAPL']);
 
     final again = FavoritesRepository(store: store);
     await again.load();
-    expect(again.marketSymbols, ['MSFT', 'SPY', 'AAPL']);
-    expect(again.cryptoSymbolsFor('crypto_com'), ['ETH_USD', 'BTC_USD']);
+    expect(again.symbols, ['MSFT', 'SPY', 'AAPL']);
+  });
+
+  test('migrates legacy markets/crypto slice', () async {
+    final store = await memoryConfig();
+    await store.setSlice(UserConfigKeys.favorites, {
+      'markets': ['AAPL', 'SPY', 'AAPL'],
+      'crypto': {
+        'crypto_com': ['BTC_USD', 'ETH_USD'],
+        'other': ['SOL_USD'],
+      },
+    });
+
+    final repo = FavoritesRepository(store: store);
+    await repo.load();
+    expect(repo.symbols, ['AAPL', 'SPY', 'BTC_USD', 'ETH_USD', 'SOL_USD']);
+
+    await repo.toggleFavorite('MSFT');
+    final slice = store.getSlice(UserConfigKeys.favorites) as Map;
+    expect(slice['symbols'], ['AAPL', 'SPY', 'BTC_USD', 'ETH_USD', 'SOL_USD', 'MSFT']);
+    expect(slice.containsKey('markets'), isFalse);
+    expect(slice.containsKey('crypto'), isFalse);
   });
 }

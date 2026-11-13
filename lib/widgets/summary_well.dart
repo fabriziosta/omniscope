@@ -74,10 +74,30 @@ class SummaryWell extends StatelessWidget {
             Text(totalValue, style: theme.textTheme.h3),
             if (stats.isNotEmpty) ...[
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  for (final stat in stats) Expanded(child: stat),
-                ],
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final stack = constraints.maxWidth < 360 || stats.length > 3;
+                  if (stack) {
+                    return Wrap(
+                      spacing: 16,
+                      runSpacing: 12,
+                      children: [
+                        for (final stat in stats)
+                          SizedBox(
+                            width: constraints.maxWidth < 280
+                                ? constraints.maxWidth
+                                : (constraints.maxWidth - 16) / 2,
+                            child: stat,
+                          ),
+                      ],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      for (final stat in stats) Expanded(child: stat),
+                    ],
+                  );
+                },
               ),
             ],
             if (footer != null) ...[

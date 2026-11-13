@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart' show ThemeMode;
+import 'package:omniscope/core/material_compat.dart' show ThemeMode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscope/core/brand_colors.dart';
 import 'package:omniscope/data/settings/theme_settings.dart';

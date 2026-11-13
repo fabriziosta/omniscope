@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart' show RefreshIndicator;
+import '../core/material_compat.dart' show RefreshIndicator;
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';

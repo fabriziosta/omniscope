@@ -39,7 +39,8 @@ class NavBackButton extends StatelessWidget {
                     color: theme.colorScheme.primary,
                   ),
                   const SizedBox(width: 6),
-                  Flexible(
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 160),
                     child: Text(
                       label,
                       maxLines: 1,

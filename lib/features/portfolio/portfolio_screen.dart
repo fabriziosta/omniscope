@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart' show RefreshIndicator;
+import '../../core/material_compat.dart' show RefreshIndicator;
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -20,6 +20,7 @@ import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/display_settings.dart';
 import '../../data/settings/env_secrets_repository.dart';
+import '../../data/settings/settings_listen_keys.dart';
 import '../../widgets/agent_launch_button.dart';
 import '../../widgets/app_progress.dart';
 import '../../widgets/in_tab_back.dart';
@@ -104,21 +105,22 @@ class _PortfolioViewState extends State<_PortfolioView> {
 
   @override
   Widget build(BuildContext context) {
-    final priceFormat = context.watch<DisplaySettings>().priceFormat;
+    final priceFormat = context.select<DisplaySettings, PriceFormat>(
+      (d) => d.priceFormat,
+    );
     final portfolio = context.watch<PortfolioRepository>();
     final state = portfolio.state;
-    // Rebuild when credentials change so Live subgroups appear immediately.
-    context.watch<EnvSecretsRepository>();
-    context.watch<DataSourceSettings>();
-    context.watch<CryptoExchangeRegistry>();
+    // Rebuild when exchange credential readiness or source toggles change
+    // so Live subgroups appear without listening to unrelated secret edits.
+    context.select<EnvSecretsRepository, String>(exchangeCredsFingerprint);
+    context.select<DataSourceSettings, String>(dataSourceFingerprint);
     final controller = context.watch<PortfolioScreenController>();
     controller.syncLiveClientsIfNeeded();
 
     final descriptors = controller.portfolios;
     final hasLive = controller.hasLive;
-    final pendingLive = context
-        .watch<CryptoExchangeRegistry>()
-        .pendingLivePortfolioClients;
+    final pendingLive =
+        context.read<CryptoExchangeRegistry>().pendingLivePortfolioClients;
 
     final wideSelected = _byId(descriptors, _selectedId) ??
         (descriptors.isEmpty ? null : descriptors.first);
@@ -359,7 +361,9 @@ class _PracticeBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final priceFormat = context.watch<DisplaySettings>().priceFormat;
+    final priceFormat = context.select<DisplaySettings, PriceFormat>(
+      (d) => d.priceFormat,
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -469,7 +473,9 @@ class _LiveBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final priceFormat = context.watch<DisplaySettings>().priceFormat;
+    final priceFormat = context.select<DisplaySettings, PriceFormat>(
+      (d) => d.priceFormat,
+    );
 
     if (loading) {
       return const Padding(
@@ -603,7 +609,9 @@ class _HoldingTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final priceFormat = context.watch<DisplaySettings>().priceFormat;
+    final priceFormat = context.select<DisplaySettings, PriceFormat>(
+      (d) => d.priceFormat,
+    );
     final price = quote?.price ?? holding.avgCost;
     final value = holding.shares * price;
     final pnl = value - holding.costBasis;
@@ -654,19 +662,25 @@ class _HoldingTile extends StatelessWidget {
             quantity: holding.shares,
           ),
           const SizedBox(width: 4),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                formatDisplayMoney(value, priceFormat),
-                style: theme.textTheme.large,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                formatSignedMoney(pnl),
-                style: theme.textTheme.small.copyWith(color: pnlColor),
-              ),
-            ],
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  formatDisplayMoney(value, priceFormat),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.large,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  formatSignedMoney(pnl),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.small.copyWith(color: pnlColor),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -686,7 +700,9 @@ class _BalanceTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final priceFormat = context.watch<DisplaySettings>().priceFormat;
+    final priceFormat = context.select<DisplaySettings, PriceFormat>(
+      (d) => d.priceFormat,
+    );
     return ShadCard(
       padding: const EdgeInsets.all(16),
       child: ConstrainedBox(
@@ -713,21 +729,27 @@ class _BalanceTile extends StatelessWidget {
               iconOnly: true,
             ),
             const SizedBox(width: 4),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  formatDisplayMoney(balance.marketValue, priceFormat),
-                  style: theme.textTheme.large,
-                ),
-                if (balance.available != null) ...[
-                  const SizedBox(height: 2),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
                   Text(
-                    'avail ${formatShares(balance.available!)}',
-                    style: theme.textTheme.muted,
+                    formatDisplayMoney(balance.marketValue, priceFormat),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.large,
                   ),
+                  if (balance.available != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'avail ${formatShares(balance.available!)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.muted,
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ],
         ),

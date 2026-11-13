@@ -9,8 +9,7 @@ Targets: **Linux**, **Windows**, **Android**, **Apple** (**iOS** / **macOS**), a
 
 ## Features (v0)
 
-- **Markets** — Favorites, Indices, ETFs, and Stocks as separate subgroups; each lists live quotes by exchange (star symbols to save favorites)
-- **Crypto** — exchange group (Crypto.com subgroup today); each exchange has Favorites + Spot pairs from public APIs
+- **Markets** — Favorites (one shared list), Indices, ETFs, Stocks, and enabled crypto exchanges (Spot pairs); star any symbol to save favorites
 - **Asset detail** — price, day change, short curated overview (default symbols), 1M / 3M / 1Y history chart, paper buy/sell, plus external research links (provider page, Wikipedia when mapped, Google Finance, TradingView) opened in the system browser
 - **Portfolio** — practice paper trading (default $10,000 starting cash, configurable in Settings, local holdings, P&L, reset) plus **Live** exchange balance subgroups when API credentials are configured (e.g. Crypto.com)
 - **Agents** — connect AI helpers with your own API key and model, then chat on-device (freeform + symbol Run); trading roles can Confirm into Practice or a live exchange (optional Connect default portfolio). Keys and chat threads stay local. Python CrewAI/LangGraph CLIs remain available under `agents/`
@@ -25,7 +24,7 @@ Equities / indices use **Yahoo Finance** chart endpoints (keyless, unofficial). 
 - **Web:** Yahoo’s chart host does not send CORS headers, so Chrome blocks direct `query1.finance.yahoo.com` calls. Equities requests on Web go through a public GET proxy (`https://proxy.cors.dev/…`) inside [`YahooMarketDataClient`](lib/data/market/yahoo_market_data_client.dart); native targets call Yahoo directly. Crypto.com public REST already allows browser origins.
 - For **educational / personal** use in this POC only. Check Yahoo’s and Crypto.com’s terms before redistribution or commercial use.
 - To add another equities provider: implement `MarketDataClient` and pass it as `equities:` to the router in [`lib/main.dart`](lib/main.dart).
-- To add another crypto exchange: implement `CryptoExchangeClient`, then append it to `CryptoExchangeRegistry` in `main.dart` (new Crypto subgroup appears automatically).
+- To add another crypto exchange: implement `CryptoExchangeClient`, then append it to `CryptoExchangeRegistry` in `main.dart` (new Markets sidebar venue appears automatically).
 
 ## Prerequisites
 
@@ -183,7 +182,7 @@ lib/
   features/markets|crypto|asset_detail|portfolio|agents|shell/
   widgets/                  # chart + brand mark
 agents/                     # Python CrewAI + LangGraph CLI agents
-assets/brand/               # master app icon (source of truth for launchers)
+assets/brand/               # master app icon (launchers + Android/iOS/Web splash)
 assets/agents/              # llm_models.json (selectable models)
 ```
 
@@ -191,16 +190,22 @@ UI uses **[`shadcn_ui`](https://pub.dev/packages/shadcn_ui)** only (`ShadApp`). 
 
 Non-UI packages: `http`, `shared_preferences`, `intl`, `provider`.
 
-### App icon
+### App icon and splash
 
-Master art lives in [`assets/brand/app_icon.png`](assets/brand/app_icon.png) (adaptive foreground: [`app_icon_foreground.png`](assets/brand/app_icon_foreground.png)). After editing the masters, regenerate every platform icon:
+Master art lives in [`assets/brand/app_icon.png`](assets/brand/app_icon.png) (adaptive foreground: [`app_icon_foreground.png`](assets/brand/app_icon_foreground.png)). After editing the masters, regenerate launchers and splash:
 
 ```bash
 make icons
 # or: tool/regen_icons.sh
 ```
 
-That runs [`flutter_launcher_icons`](https://pub.dev/packages/flutter_launcher_icons) (Android / iOS / macOS / Web / Windows from [`pubspec.yaml`](pubspec.yaml)) and refreshes Linux window icons under [`linux/runner/resources/`](linux/runner/resources/).
+That runs:
+
+- [`flutter_launcher_icons`](https://pub.dev/packages/flutter_launcher_icons) — Android / iOS / macOS / Web / Windows icons (config in [`pubspec.yaml`](pubspec.yaml))
+- Linux window icons under [`linux/runner/resources/`](linux/runner/resources/)
+- [`flutter_native_splash`](https://pub.dev/packages/flutter_native_splash) — branded Teal splash for **Android, iOS, and Web** (including Android 12+). Desktop (Linux / Windows / macOS) has no native OS splash; window/launcher icons still come from the same masters.
+
+[`lib/main.dart`](lib/main.dart) keeps the native splash visible with `FlutterNativeSplash.preserve` until config/repos finish loading, then calls `remove` before `runApp`.
 
 Selectable LLM models live in [`assets/agents/llm_models.json`](assets/agents/llm_models.json) so the list can be refreshed later without changing Flutter UI code. Optional local secrets: copy [`.env.example`](.env.example) → `.env` (gitignored) for LLM provider keys and exchange credentials (e.g. Crypto.com). The UI suggests those values and saves edits back to `.env` when running from a desktop checkout (prefs cover every platform). Agent role → framework rules and layout are in [`AGENTS.md`](AGENTS.md).
 

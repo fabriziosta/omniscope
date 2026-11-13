@@ -54,7 +54,7 @@ class DataSourcesSectionBody extends StatelessWidget {
         const SettingsSubsectionLabel(
           'Crypto venues',
           description:
-              'Choose which exchanges appear under Crypto and supply live quotes. '
+              'Choose which exchanges appear under Markets and supply live quotes. '
               'Crypto.com can use API credentials from .env or from this screen '
               '(saved both ways when possible).',
         ),

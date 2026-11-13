@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart' show ThemeMode;
+import '../../core/material_compat.dart' show ThemeMode;
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -27,7 +27,7 @@ class AppearanceSectionBody extends StatelessWidget {
     (
       ListDensity.compact,
       'Compact',
-      'Tighter rows for longer Markets and Crypto lists',
+      'Tighter rows for longer Markets lists',
     ),
   ];
 
@@ -103,7 +103,7 @@ class AppearanceSectionBody extends StatelessWidget {
         const SizedBox(height: 20),
         const SettingsSubsectionLabel(
           'Lists',
-          description: 'How dense Markets and Crypto rows look.',
+          description: 'How dense Markets list rows look.',
         ),
         const SizedBox(height: 10),
         for (var i = 0; i < _densityOptions.length; i++) ...[
@@ -120,7 +120,7 @@ class AppearanceSectionBody extends StatelessWidget {
         const SettingsSubsectionLabel(
           'Numbers',
           description:
-              'How prices appear in Markets, Crypto, Portfolio, and Asset detail.',
+              'How prices appear in Markets, Portfolio, and Asset detail.',
         ),
         const SizedBox(height: 10),
         for (var i = 0; i < _priceOptions.length; i++) ...[

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart'
+import '../core/material_compat.dart'
     show ReorderableDragStartListener, ReorderableListView;
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
@@ -16,7 +16,7 @@ import 'quote_list_tile.dart';
 import 'quotes_async_body.dart';
 import 'quotes_refresh_body.dart';
 
-/// Shared Favorites content pane (Markets or Crypto exchange).
+/// Shared Favorites content pane for Markets.
 ///
 /// [onReorder] should persist the new order and return the updated symbol list
 /// so the [QuotesListController] can stay in sync without remounting.
@@ -30,9 +30,7 @@ class FavoritesQuotesPane extends StatelessWidget {
     required this.showBack,
     this.onBack,
     this.backLabel = 'Back',
-    this.cryptoExchangeId,
     this.blockedMessage,
-    this.membershipKeyPrefix,
   });
 
   final List<String> symbols;
@@ -43,23 +41,14 @@ class FavoritesQuotesPane extends StatelessWidget {
   final VoidCallback? onBack;
   final String backLabel;
 
-  /// When non-null, star toggles a crypto favorite for this exchange.
-  final String? cryptoExchangeId;
-
-  /// When non-null (e.g. no equity sources enabled), shown instead of the list.
+  /// When non-null (e.g. no data sources enabled), shown instead of the list.
   final String? blockedMessage;
-
-  /// Extra prefix for the provider [ValueKey] (e.g. exchange id).
-  final String? membershipKeyPrefix;
 
   @override
   Widget build(BuildContext context) {
     final membershipKey = ([...symbols]..sort()).join('|');
-    final key = membershipKeyPrefix == null
-        ? membershipKey
-        : '$membershipKeyPrefix|$membershipKey';
     return ChangeNotifierProvider(
-      key: ValueKey(key),
+      key: ValueKey(membershipKey),
       create: (context) => QuotesListController(
         client: context.read<MarketDataClient>(),
         symbols: symbols,
@@ -73,7 +62,6 @@ class FavoritesQuotesPane extends StatelessWidget {
         showBack: showBack,
         onBack: onBack,
         backLabel: backLabel,
-        cryptoExchangeId: cryptoExchangeId,
         blockedMessage: blockedMessage,
       ),
     );
@@ -89,7 +77,6 @@ class _FavoritesQuotesPaneView extends StatelessWidget {
     required this.showBack,
     required this.backLabel,
     this.onBack,
-    this.cryptoExchangeId,
     this.blockedMessage,
   });
 
@@ -100,7 +87,6 @@ class _FavoritesQuotesPaneView extends StatelessWidget {
   final bool showBack;
   final VoidCallback? onBack;
   final String backLabel;
-  final String? cryptoExchangeId;
   final String? blockedMessage;
 
   void _openAsset(BuildContext context, String symbol) {
@@ -169,7 +155,6 @@ class _FavoritesQuotesPaneView extends StatelessWidget {
                                   child: QuoteListTile(
                                     quote: quote,
                                     density: density,
-                                    cryptoExchangeId: cryptoExchangeId,
                                     onTap: () =>
                                         _openAsset(context, quote.symbol),
                                   ),

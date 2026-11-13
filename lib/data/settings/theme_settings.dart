@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart' show ThemeMode;
+import '../../core/material_compat.dart' show ThemeMode;
 
 import '../../core/brand_colors.dart';
 import 'user_config_keys.dart';

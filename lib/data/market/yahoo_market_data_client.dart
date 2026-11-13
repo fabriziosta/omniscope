@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
+import '../../core/async_pool.dart';
 import 'equity_data_source.dart';
 import 'market_data_client.dart';
 import 'models.dart';
@@ -39,23 +40,21 @@ class YahooMarketDataClient implements MarketDataClient {
   /// Prefix prepended to the Yahoo URL on Web only (must end with `/`).
   final String webCorsProxyPrefix;
 
+  /// Parallel chart fetches for a watchlist page (avoids serial N+1).
+  static const quoteFetchConcurrency = 5;
+
   @override
   Future<List<Quote>> getQuotes(List<String> symbols) async {
     if (symbols.isEmpty) return const [];
-    final quotes = <Quote>[];
-    Object? lastError;
-    for (final symbol in symbols) {
-      try {
+    return mapPool<String, Quote>(
+      items: symbols,
+      concurrency: quoteFetchConcurrency,
+      mapper: (symbol) async {
         final chart = await _fetchChart(symbol, range: '5d', interval: '1d');
-        quotes.add(_quoteFromChart(chart));
-      } catch (e) {
-        lastError = e;
-      }
-    }
-    if (quotes.isEmpty && lastError != null) {
-      throw lastError;
-    }
-    return quotes;
+        return _quoteFromChart(chart);
+      },
+      onError: (_, _) => null,
+    );
   }
 
   @override

@@ -17,7 +17,8 @@ dependencies:
   crypto: ^3.0.8
   url_launcher: ^6.3.3
   path_provider: ^2.1.6
-
+  # Runtime preserve/remove while main() loads config; assets from make icons.
+  flutter_native_splash: ^2.4.8
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -25,7 +26,7 @@ dev_dependencies:
   flutter_launcher_icons: ^0.14.4
 
 # Master art: assets/brand/app_icon.png (+ adaptive foreground).
-# Regenerate platform icons: dart run flutter_launcher_icons
+# Regenerate: make icons → flutter_launcher_icons + flutter_native_splash:create
 flutter_launcher_icons:
   android: true
   ios: true
@@ -39,6 +40,21 @@ flutter_launcher_icons:
   adaptive_icon_foreground: assets/brand/app_icon_foreground.png
   adaptive_icon_background: "#CCFBF1"
   remove_alpha_ios: true
+
+# Teal default brand (secondaryLight / secondaryDark). Android / iOS / Web only.
+flutter_native_splash:
+  color: "#CCFBF1"
+  color_dark: "#134E4A"
+  image: assets/brand/app_icon.png
+  android: true
+  ios: true
+  web: true
+  android_12:
+    color: "#CCFBF1"
+    color_dark: "#134E4A"
+    image: assets/brand/app_icon_foreground.png
+    icon_background_color: "#CCFBF1"
+    icon_background_color_dark: "#134E4A"
 
 flutter:
   uses-material-design: true
