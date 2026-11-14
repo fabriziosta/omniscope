@@ -1,14 +1,11 @@
-import 'dart:convert';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 import 'package:omniscope/data/agents/agent_activity.dart';
 import 'package:omniscope/data/agents/agent_activity_repository.dart';
 import 'package:omniscope/data/agents/agent_chat_repository.dart';
 import 'package:omniscope/data/agents/agent_role_catalog.dart';
 import 'package:omniscope/data/agents/agents_repository.dart';
-import 'package:omniscope/data/agents/llm_chat_client.dart';
+import 'support/fake_genkit_agent_runner.dart';
 import 'package:omniscope/data/agents/models.dart';
 import 'package:omniscope/data/agents/trade_proposal_repository.dart';
 import 'package:omniscope/data/crypto/crypto_exchange_registry.dart';
@@ -31,9 +28,7 @@ const _manifestFixture = '''
       "id": "marketResearch",
       "title": "Market Research & Analysis",
       "description": "Research brief",
-      "framework": "crewAi",
-      "module": "omniscope_agents.market_research",
-      "packagePath": "market_research",
+      "framework": "genkit",
       "workload": "investigation",
       "suggestedModels": {
         "openAi": "gpt-6-luna"
@@ -195,8 +190,9 @@ void main() {
           AgentActivityRepository activity,
           AgentChatRepository chats,
           AppNotificationRepository notifications,
+          ValueGetter<int> agentCalls,
         })> harness({
-      required MockClient httpClient,
+      void Function()? onAgentCall,
     }) async {
       final store = await memoryConfig();
       final roles = AgentRoleCatalog.parse(_manifestFixture);
@@ -215,12 +211,19 @@ void main() {
       final portfolio = PortfolioRepository(store: store);
       await portfolio.load();
       final market = FakeMarketDataClient();
+      var calls = 0;
 
       final coord = AgentScheduleCoordinator(
         agents: agents,
         chats: chats,
         marketData: market,
-        llm: LlmChatClient(httpClient: httpClient),
+        agentRunner: fakeGenkitAgentRunner(
+          replyFor: (roleId, lastUser) {
+            calls++;
+            onAgentCall?.call();
+            return 'Scheduled brief';
+          },
+        ),
         tradeExecutor: RoutingTradeExecutor(
           cryptoRegistry: const CryptoExchangeRegistry([]),
           brokerRegistry: BrokerExchangeRegistry.empty,
@@ -242,30 +245,12 @@ void main() {
         activity: activity,
         chats: chats,
         notifications: notifications,
+        agentCalls: () => calls,
       );
     }
 
     test('skips when paused or not due', () async {
-      var llmCalls = 0;
-      final h = await harness(
-        httpClient: MockClient((_) async {
-          llmCalls++;
-          return http.Response(
-            jsonEncode({
-              'choices': [
-                {
-                  'message': {
-                    'role': 'assistant',
-                    'content': 'Brief',
-                  },
-                },
-              ],
-            }),
-            200,
-            headers: {'content-type': 'application/json'},
-          );
-        }),
-      );
+      final h = await harness();
 
       await h.agents.connect(
         roleId: 'marketResearch',
@@ -277,7 +262,7 @@ void main() {
       );
 
       await h.coord.tick(now: DateTime.utc(2026, 6, 1));
-      expect(llmCalls, 0);
+      expect(h.agentCalls(), 0);
       expect(h.coord.isPolling, isFalse);
 
       h.coord.resume();
@@ -288,7 +273,7 @@ void main() {
         DateTime.utc(2026, 6, 1),
       );
       await h.coord.tick(now: DateTime.utc(2026, 6, 1, 0, 30));
-      expect(llmCalls, 0);
+      expect(h.agentCalls(), 0);
 
       h.coord.pause();
       expect(h.coord.isResumed, isFalse);
@@ -296,26 +281,7 @@ void main() {
     });
 
     test('runs due symbols when resumed and logs scheduled activity', () async {
-      var llmCalls = 0;
-      final h = await harness(
-        httpClient: MockClient((_) async {
-          llmCalls++;
-          return http.Response(
-            jsonEncode({
-              'choices': [
-                {
-                  'message': {
-                    'role': 'assistant',
-                    'content': 'Scheduled brief',
-                  },
-                },
-              ],
-            }),
-            200,
-            headers: {'content-type': 'application/json'},
-          );
-        }),
-      );
+      final h = await harness();
 
       await h.agents.connect(
         roleId: 'marketResearch',
@@ -332,7 +298,7 @@ void main() {
       final now = DateTime.utc(2026, 7, 1, 10);
       await h.coord.tick(now: now);
 
-      expect(llmCalls, 2);
+      expect(h.agentCalls(), 2);
       expect(
         h.agents.forRoleId('marketResearch').scheduleLastRunAt,
         now,
@@ -360,7 +326,7 @@ void main() {
 
       // Second tick inside the interval must not re-run.
       await h.coord.tick(now: now.add(const Duration(minutes: 10)));
-      expect(llmCalls, 2);
+      expect(h.agentCalls(), 2);
       expect(h.notifications.active, hasLength(2));
 
       h.coord.dispose();

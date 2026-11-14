@@ -1,7 +1,5 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 import 'package:omniscope/app.dart';
 import 'package:omniscope/core/app_error_controller.dart';
 import 'package:omniscope/core/shell_navigation.dart';
@@ -9,7 +7,8 @@ import 'package:omniscope/data/agents/agent_activity_repository.dart';
 import 'package:omniscope/data/agents/agent_chat_repository.dart';
 import 'package:omniscope/data/agents/agent_role_catalog.dart';
 import 'package:omniscope/data/agents/agents_repository.dart';
-import 'package:omniscope/data/agents/llm_chat_client.dart';
+import 'package:omniscope/data/agents/genkit/genkit_agent_runner.dart';
+import 'support/fake_genkit_agent_runner.dart';
 import 'package:omniscope/data/agents/trade_proposal_repository.dart';
 import 'package:omniscope/data/notifications/app_notification_repository.dart';
 import 'package:omniscope/data/crypto/crypto_com/crypto_com_exchange_client.dart';
@@ -39,12 +38,8 @@ import 'support/fake_live_venue.dart';
 import 'support/fake_market_data_client.dart';
 import 'support/memory_config.dart';
 
-LlmChatClient _testLlmChatClient() {
-  return LlmChatClient(
-    httpClient: MockClient(
-      (_) async => http.Response('{}', 400),
-    ),
-  );
+GenkitAgentRunner _testAgentRunner() {
+  return fakeGenkitAgentRunner();
 }
 
 String _exchangeFor(String symbol) {
@@ -198,7 +193,7 @@ void main() {
       _FakeCryptoExchangeClient(),
     ]);
     const brokerRegistry = BrokerExchangeRegistry.empty;
-    final llmChat = _testLlmChatClient();
+    final agentRunner = _testAgentRunner();
     final tradeExecutor = RoutingTradeExecutor(
       cryptoRegistry: cryptoRegistry,
       brokerRegistry: brokerRegistry,
@@ -210,7 +205,7 @@ void main() {
       agents: agents,
       chats: agentChats,
       marketData: marketClient,
-      llm: llmChat,
+      agentRunner: agentRunner,
       tradeExecutor: tradeExecutor,
       proposals: tradeProposals,
       activity: agentActivity,
@@ -255,7 +250,7 @@ void main() {
           ChangeNotifierProvider<AppNotificationRepository>.value(
             value: appNotifications,
           ),
-          Provider<LlmChatClient>.value(value: llmChat),
+          Provider<GenkitAgentRunner>.value(value: agentRunner),
           ChangeNotifierProvider<ThemeSettings>.value(value: themeSettings),
           ChangeNotifierProvider<DisplaySettings>.value(value: displaySettings),
           ChangeNotifierProvider<DataSourceSettings>.value(
@@ -348,7 +343,6 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('Market Research & Analysis'), findsOneWidget);
-    expect(find.textContaining('CrewAI'), findsNothing);
     expect(find.textContaining('LangGraph'), findsNothing);
     final agentsCtx = tester.element(find.text('Market Research & Analysis'));
     final roleTitles = agentsCtx
@@ -357,18 +351,18 @@ void main() {
         .map((r) => r.title)
         .toList();
     expect(roleTitles, contains('Intraday Execution & Risk Control'));
-    expect(roleTitles, contains('Hedge Fund Desk'));
+    expect(roleTitles, isNot(contains('Hedge Fund Desk')));
     // Lower roles may sit below the phone viewport — scroll the Roles list.
     final rolesScrollable = find.byWidgetPredicate(
       (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
     );
     await tester.scrollUntilVisible(
-      find.text('Hedge Fund Desk'),
+      find.text('Intraday Execution & Risk Control'),
       300,
       scrollable: rolesScrollable.last,
     );
     await tester.pump();
-    expect(find.text('Hedge Fund Desk'), findsOneWidget);
+    expect(find.text('Intraday Execution & Risk Control'), findsOneWidget);
 
     await tester.tap(find.text('Settings').last);
     await tester.pump();

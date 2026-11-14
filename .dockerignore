@@ -22,14 +22,6 @@ credentials.json
 service-account*.json
 secrets/
 
-# Agents venv / Python junk (not needed for Linux app image)
-agents/.venv
-agents/**/__pycache__
-agents/**/*.egg-info
-agents/.pytest_cache
-agents/dist
-agents/build
-
 *.log
 *.pyc
 .DS_Store

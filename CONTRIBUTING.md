@@ -20,7 +20,6 @@ before larger changes (UI kit, market data, agents, portfolio).
 - Flutter SDK (stable; see [README](README.md))
 - For desktop/mobile targets: the matching toolchain (`flutter doctor`)
 - Optional: `pre-commit` for local hooks
-- Optional (Python agents CLI): Python 3 + `make agents-setup`
 
 ## Setup
 

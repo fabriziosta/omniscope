@@ -19,14 +19,14 @@ v0 is a Flutter POC with **no user accounts**. Supported targets: **Linux**, **W
 
 ## Coding-assistant tooling
 
-Editor AI helpers (Cursor, Codex, Claude Code, and similar) — **not** the in-app Agents tab or the Python CLIs under [`agents/`](agents/).
+Editor AI helpers (Cursor, Codex, Claude Code, and similar) — **not** the in-app Agents tab (Genkit Dart).
 
 **Single source of truth:** root [`AGENTS.md`](AGENTS.md) (this file) plus [`.agents/skills/`](.agents/skills/). Do **not** add parallel `.claude/` or `.codex/` instruction trees that restate product rules (brand, UX, cross-platform, in-app agents). Those rules stay in [`.cursor/rules/`](.cursor/rules/) for Cursor and in this handbook for every agent.
 
 | Path | Role |
 |------|------|
 | [`AGENTS.md`](AGENTS.md) | Shared project guidance for Codex, Claude Code, Cursor, and humans |
-| [`.agents/skills/`](.agents/skills/) | Official Flutter + Dart [Agent Skills](https://docs.flutter.dev/ai/tools) (on-demand recipes: layouts, tests, analysis, etc.) |
+| [`.agents/skills/`](.agents/skills/) | Official Flutter + Dart [Agent Skills](https://docs.flutter.dev/ai/tools) plus [Genkit](https://genkit.dev/docs/dart/get-started/) (on-demand recipes: layouts, tests, analysis, Genkit flows, etc.) |
 | [`.cursor/rules/`](.cursor/rules/) | Cursor-only persistent Omniscope product rules plus official [`flutter-hot-reload.mdc`](.cursor/rules/flutter-hot-reload.mdc) |
 | [`.cursor/mcp.json`](.cursor/mcp.json) | Cursor Dart / Flutter MCP server (`dart mcp-server`) for analyzer, tests, and runtime hot reload |
 
@@ -45,13 +45,14 @@ make agent-skills
 # or:
 # npx skills add flutter/agent-plugins --skill '*' --agent universal --yes
 # npx skills add dart-lang/skills --skill '*' --agent universal --yes
+# npx skills add genkit-ai/skills --skill developing-genkit-dart --agent universal --yes
 ```
 
 Optional: install the [Dart and Flutter Cursor marketplace plugin](https://docs.flutter.dev/ai/get-started) (`/add-plugin dart-flutter` or Customize → Dart and Flutter) for a machine-local bundle of skills + MCP; the committed `.agents/skills/` and `.cursor/mcp.json` already cover the project for anyone who clones the repo.
 
 **Hot reload vs restart:** Enable the Dart MCP server in Cursor (Tools / MCP) so [`flutter-hot-reload.mdc`](.cursor/rules/flutter-hot-reload.mdc) can call `hot_reload` / `hot_restart` against a running app. UI edits under `lib/` → hot reload. Changes to [`lib/main.dart`](lib/main.dart), the provider graph, or `initState` wiring → hot restart.
 
-Do not confuse this with **Agents** in the app (LLM chat / Confirm trades) or [`agents/`](agents/) (CrewAI / LangGraph CLI packages). [`.agents/`](.agents/) is editor skills only.
+Do not confuse this with **Agents** in the app (Genkit chat / Confirm trades). [`.agents/`](.agents/) is editor skills only.
 
 ## Stack
 
@@ -211,80 +212,51 @@ Do **not** add curl suites or live network calls to `make check` / pre-push. Tra
 
 ## Agents (AI helpers)
 
-Optional local LLM connections for roles listed in the agents package manifest. Educational context — users Confirm live suggestions; Autopilot is opt-in per agent.
+Optional on-device LLM connections for roles listed in the Genkit role catalog. Educational context — users Confirm live suggestions; Autopilot is opt-in per agent.
 
 **Practice (paper) and live exchanges are both valid agent trade targets.** Connect can set an optional **default portfolio**; Confirm uses that default when set, otherwise asks the user to pick (Practice + live venues). Autopilot requires a default (or a single available target). With no live credentials, Practice alone unlocks trading Runs and is the default target. Live venues still need credentials under Settings → Data sources.
 
-### Role → framework (fixed — do not swap)
+### Role → Genkit (in-process)
 
 | Role | Framework | Workload | Model preset |
 |------|-----------|----------|--------------|
-| **Market Research & Analysis** | **Always CrewAI** | Investigation | Prefer **lighter** models |
-| **Live Balance Explainer** | **Always CrewAI** | Investigation | Prefer **lighter** models |
-| **Portfolio & Allocation Guide** | **Always CrewAI** | Investigation | Prefer **lighter** models |
-| **Practice Portfolio Coach** | **Always CrewAI** | Investigation | Prefer **lighter** models |
-| **Intraday Execution & Risk Control** | **Always LangGraph** | Trading | Prefer **heavier** models |
-| **Hedge Fund Desk** | **LangGraph** orchestration (CrewAI for analyst + bull/bear stages) | Trading | Prefer **heavier** models |
+| **Market Research & Analysis** | **Genkit** | Investigation | Prefer **lighter** models |
+| **Live Balance Explainer** | **Genkit** | Investigation | Prefer **lighter** models |
+| **Portfolio & Allocation Guide** | **Genkit** | Investigation | Prefer **lighter** models |
+| **Practice Portfolio Coach** | **Genkit** | Investigation | Prefer **lighter** models |
+| **Intraday Execution & Risk Control** | **Genkit** | Trading | Prefer **heavier** models |
 
-The Agents tab role list is **populated from** [`agents/omniscope_agents/manifest.json`](agents/omniscope_agents/manifest.json) (not hard-coded in the UI). When you add a CrewAI or LangGraph package under `agents/omniscope_agents/`, register it in that manifest so Flutter discovers it.
+The Agents tab role list is **populated from** [`assets/agents/manifest.json`](assets/agents/manifest.json). Chat turns run **in-process Genkit** (`defineAgent` + tools) via [`GenkitAgentRunner`](lib/data/agents/genkit/genkit_agent_runner.dart) — not hand-rolled provider HTTP and not Python. Hedge Fund Desk was dropped for this Genkit cutover.
 
-Users choose the **LLM provider** (Gemini, ChatGPT/OpenAI, Claude, DeepSeek, Grok, Custom), **API key**, and **model**. Frameworks are read-only per role. Connect dialog **preselects** the role’s `suggestedModels` entry for the chosen provider (lighter for investigation, heavier for trading).
-
-DeepSeek and Grok use OpenAI-compatible APIs (`https://api.deepseek.com`, `https://api.x.ai/v1`) with the user’s own key; model IDs live in the catalog JSON (`weight`: `light` / `heavy`).
+Users choose the **LLM provider** (Gemini, ChatGPT/OpenAI, Claude, DeepSeek, Grok, Custom), **API key**, and **model**. Connect dialog **preselects** the role’s `suggestedModels` entry for the chosen provider (lighter for investigation, heavier for trading). Genkit plugins (`genkit_google_genai`, `genkit_openai`, `genkit_anthropic`) talk to providers under the hood.
 
 ### Layout
 
 ```text
-agents/                         # Python package (CLI runners)
-  omniscope_agents/
-    manifest.json               # available roles + model presets (Flutter asset)
-    disclaimer.py               # shared CLI educational disclaimer string
-    trade_schema.py             # shared trade JSON field contract (CLI + docs)
-    llm.py                      # provider + model + api_key → LLM
-    market_research/            # CrewAI (+ prompts.py)
-    live_balance/               # CrewAI (CLI snapshot explainer; in-app is primary)
-    portfolio_guide/            # CrewAI (CLI allocation note; in-app is primary)
-    paper_portfolio/            # CrewAI (CLI practice coach; in-app is primary)
-    trading/                    # LangGraph (+ prompts.py)
-    hedge_fund/                 # LangGraph desk + CrewAI analysts/debate + live tools
-                                # (+ prompts.py; analysts/research have prompts.py)
-
+assets/agents/manifest.json     # role catalog (ids, workload, model presets)
 assets/agents/llm_models.json   # selectable models per provider (data-driven)
 .env.example / .env             # optional local secrets: LLM + exchange/market (gitignored)
 
-lib/data/agents/                # Flutter models + AgentsRepository + catalog loaders
-                                # agent_role_prompts.dart = in-app chat prompt SoT
+lib/data/agents/                # models, AgentsRepository, catalog, prompts
+  genkit/                       # GenkitAgentRunner, tools, runtime factory
 lib/data/trading/               # TradeExecutor, order models, BrokerExchangeRegistry
 lib/features/agents/            # Agents tab UI (Roles / connect / chat)
 lib/features/activity/          # Activity shell tab (proposals + confirm)
 ```
 
-### Prompt source of truth (do not mega-JSON)
+### Prompt source of truth
 
-Keep **three layers** — do **not** put Flutter + CLI harness prompts in one `prompts.json`:
+1. **Role catalog** — [`assets/agents/manifest.json`](assets/agents/manifest.json): ids, titles, framework (`genkit`), model presets. No prompt bodies.
+2. **In-app Genkit prompts** — [`agent_role_prompts.dart`](lib/data/agents/agent_role_prompts.dart): system + Run user templates for `defineAgent`.
 
-1. **Role catalog** — [`manifest.json`](agents/omniscope_agents/manifest.json): ids, titles, framework, model presets. No prompt bodies.
-2. **In-app chat prompts (Flutter only)** — [`agent_role_prompts.dart`](lib/data/agents/agent_role_prompts.dart): system + Run user templates for HTTPS chat. Practice or live portfolio wording; user picks target on Confirm. Do not feed Python from this file.
-3. **CLI prompts (package-local)** — `prompts.py` next to each role package (`market_research/`, `trading/`, `hedge_fund/` and its analyst/research crews). Paper / educational multi-agent. Do not merge with Flutter prose.
-
-**Shared across surfaces (schema only, not prompt prose):** trade proposal fields `{ticker, action, quantity, rationale, risk_approved}` — see [`trade_schema.py`](agents/omniscope_agents/trade_schema.py) and [`TradeProposalLlmSchema.canonicalLlmKeys`](lib/data/agents/trade_proposal.dart). In-app = live Confirm; CLI Head Trader = paper proposal.
+Trade proposal fields `{ticker, action, quantity, rationale, risk_approved}` — [`TradeProposalLlmSchema.canonicalLlmKeys`](lib/data/agents/trade_proposal.dart).
 
 ### Live trade suggestions (in-app)
 
-- Trading roles (`intradayTrading`, `hedgeFundDesk`) emit a fenced JSON block `{ticker, action, quantity, rationale, risk_approved}` parsed into [`TradeProposal`](lib/data/agents/trade_proposal.dart).
-- [`TradeExecutor`](lib/data/trading/trade_executor.dart) routes Confirm / Autopilot to Practice (paper buy/sell) or live venues with `canPlaceOrders` (Crypto.com + Alpaca via [`VenueCatalog`](lib/data/venues/venue_catalog.dart) / [`BrokerExchangeRegistry`](lib/data/trading/broker_exchange_registry.dart)).
+- Trading role `intradayTrading` emits a fenced JSON block parsed into [`TradeProposal`](lib/data/agents/trade_proposal.dart).
+- [`TradeExecutor`](lib/data/trading/trade_executor.dart) routes Confirm / Autopilot to Practice or live venues with `canPlaceOrders` (Crypto.com + Alpaca).
 - Chat shows Confirm / Dismiss; Autopilot is configured on Connect/Edit (default **off**).
-- Shell tab **Activity** lists proposals and events (`tradeProposals` / `agentActivity` config slices) with portfolio labels; pending rows support Confirm / Dismiss.
-
-### Hedge Fund Desk (Python CLI)
-
-CLI multi-agent pipeline inspired by TradingAgents-style role separation (not spawned from Flutter):
-
-1. **Analysts (CrewAI)** — Technical (yfinance + pandas-ta), Sentiment & News (Yahoo news + public RSS), Fundamental (SEC EDGAR via edgartools).
-2. **Researchers (CrewAI)** — Bullish vs Bearish dialectical debate over the analyst packet.
-3. **Risk Manager + Head Trader (LangGraph)** — hard educational gates (position %, cash, max shares, realized-vol cap) with absolute veto; approved trades emit JSON `{ticker, action, quantity, rationale, risk_approved}` (no broker API).
-
-CLI: `python -m omniscope_agents.hedge_fund.run --symbol AAPL ...` (see [`agents/README.md`](agents/README.md)).
+- Shell tab **Activity** lists proposals and events with portfolio labels; pending rows support Confirm / Dismiss.
 
 ### Persistence & keys
 
@@ -292,23 +264,21 @@ CLI: `python -m omniscope_agents.hedge_fund.run --symbol AAPL ...` (see [`agents
 - Chat threads: one thread per role via [`AgentChatRepository`](lib/data/agents/agent_chat_repository.dart) (`agentChats` slice).
 - API keys stay **on device only** (plaintext in the config file / Web blob; no cloud sync).
 - Disconnect clears the stored API key (chat history is kept until Clear).
-- Role list: [`AgentRoleCatalog`](lib/data/agents/agent_role_catalog.dart) ← `agents/omniscope_agents/manifest.json`.
-- Model IDs come from [`assets/agents/llm_models.json`](assets/agents/llm_models.json) via `LlmModelCatalog` — refresh that JSON later without changing UI code. Custom provider uses free-text model id + base URL.
-- Optional **local `.env`** (same file for LLM and venues): copy [`.env.example`](.env.example) → `.env`. Dual sync via [`EnvSecretsRepository`](lib/data/settings/env_secrets_repository.dart) (asset + live file bootstrap, config `secrets` overlay, UI write-back).
-  - LLM: `OMNISCOPE_<PROVIDER>_API_KEY` → Agents → Connect suggests the key; connecting saves to the config file and upserts `.env` when the project file is writable (desktop checkout).
-  - Exchanges: `OMNISCOPE_<EXCHANGE_ID>_API_{KEY|SECRET|TOKEN}` (e.g. Crypto.com) → Settings → Configure suggests values; save/clear syncs config + `.env` when possible. Injected into clients such as [`CryptoComExchangeClient`](lib/data/crypto/crypto_com/crypto_com_exchange_client.dart). Public market data still works with empty values.
+- Role list: [`AgentRoleCatalog`](lib/data/agents/agent_role_catalog.dart) ← `assets/agents/manifest.json`.
+- Model IDs come from [`assets/agents/llm_models.json`](assets/agents/llm_models.json) via `LlmModelCatalog`. Custom provider uses free-text model id + base URL.
+- Optional **local `.env`** (same file for LLM and venues): copy [`.env.example`](.env.example) → `.env`. Dual sync via [`EnvSecretsRepository`](lib/data/settings/env_secrets_repository.dart).
+  - LLM: `OMNISCOPE_<PROVIDER>_API_KEY` → Agents → Connect suggests the key.
+  - Exchanges: `OMNISCOPE_<EXCHANGE_ID>_API_{KEY|SECRET|TOKEN}` → Settings → Configure.
   - Web / mobile keep full UX via the config blob; `.env` file write is a no-op there.
-  - `.env` is gitignored and bundled as an asset — run `make get` / `make check` (or `tool/flutter_checks.sh`, or copy the example) so the file exists before `flutter run` / test.
 
 ### In-app chat
 
 - Connected role → **Open chat** → [`AgentChatScreen`](lib/features/agents/agent_chat_screen.dart).
-- Flutter calls provider HTTPS directly via [`LlmChatClient`](lib/data/agents/llm_chat_client.dart) (OpenAI-compatible, Anthropic, Gemini) using the stored connection — **does not** spawn Python CrewAI/LangGraph.
-- Freeform messages plus a role-aware **Run** shortcut (symbol → structured turn; Live Balance Explainer, Portfolio Guide, and Practice Coach can Run without a symbol). Before the LLM call, a compact quote/history snapshot may be injected from [`MarketDataClient`](lib/data/market/market_data_client.dart); trading / live-balance / portfolio roles also get Practice and/or live exchange context when available.
+- Turns go through [`GenkitAgentRunner`](lib/data/agents/genkit/genkit_agent_runner.dart): in-process Genkit `defineAgent` with market/portfolio **tools** (`getQuotes`, `getHistory`, `getPracticePortfolio`, `getLiveBalances`).
+- Freeform messages plus a role-aware **Run** shortcut (symbol → structured turn; Live Balance Explainer, Portfolio Guide, and Practice Coach can Run without a symbol).
 - Trading Runs require a tradable exchange; otherwise the UI gates with a CTA to Settings → Data sources. Live Balance Explainer needs a venue that can fetch balances.
-- Proposal cards under assistant bubbles: Confirm → [`TradeExecutor.submit`](lib/data/trading/trade_executor.dart) (Practice via paper buy/sell, or live `create-order`); portfolio picker when no Connect default. Dismiss updates status.
+- Proposal cards under assistant bubbles: Confirm → [`TradeExecutor.submit`](lib/data/trading/trade_executor.dart); portfolio picker when no Connect default.
 - One persisted thread per role; reload on reopen. Clear chat is optional and local-only.
-- Full multi-agent Python pipelines remain CLI-only under `agents/` (see [`agents/README.md`](agents/README.md)).
 
 ### Robustness score (1–100)
 
@@ -321,21 +291,21 @@ score = \mathrm{clamp}(W + F + D + G + T,\ 1,\ 100)
 | Factor | Max | Points |
 |--------|-----|--------|
 | Workload \(W\) | 20 | investigation 8 / trading 20 |
-| Framework \(F\) | 20 | CrewAI 8 / LangGraph 16 / hybrid (LangGraph + CrewAI) 20 |
+| Framework \(F\) | 20 | Genkit 14 |
 | Pipeline depth \(D\) | 25 | 1 stage 6 / 2–3 14 / 4–6 20 / 7+ 25 |
 | Risk gates \(G\) | 20 | none 0 / soft 10 / hard veto + trade JSON 20 |
 | Context & tools \(T\) | 15 | quotes-only 5 / portfolio snapshot 10 / multi-source 15 |
 
-**Meaning:** higher = more complex pipeline and stronger controls — **not** “better advice” or live reliability. Depth / gates / tools / hybrid come from a per-role architecture profile keyed by id; unknown ids default to depth 1, no gates, quotes-only, and framework points from the manifest enum only.
+**Meaning:** higher = more complex pipeline and stronger controls — **not** “better advice” or live reliability.
 
-Locked examples: Market Research **27**, Live Balance / Portfolio Guide / Practice Coach **32**, Intraday **80**, Hedge Fund Desk **100**.
+Locked examples: Market Research **41**, Live Balance / Portfolio Guide / Practice Coach **46**, Intraday **78**.
 
 ### UI
 
 - Shell tab **Activity** → pending confirmations + accepted/refused history with portfolio; Confirm / Dismiss without opening chat ([`ActivityScreen`](lib/features/activity/activity_screen.dart)). Shared confirm path: [`TradeProposalActions`](lib/data/trading/trade_proposal_actions.dart).
 - Shell tab **Agents** → role cards; connect/edit/disconnect with suggested model presets + Autopilot for trading roles + optional **Schedule** (interval presets + symbols) for every role; **Open chat** when connected. Each role card shows a **Robustness N** badge (see above).
 - **Schedule** (foreground only) — configured on Connect/Edit; [`AgentScheduleCoordinator`](lib/features/agents/agent_schedule_coordinator.dart) polls while the app is open and resumed (Linux / Windows / Android / iOS / macOS / Web). Pauses on background / hidden tab; does **not** run with the app closed. Each due tick Runs symbols via the same chat `sendRun` path (research or trade check + Autopilot if enabled). Activity logs `scheduledRun` events. Every scheduled outcome also enqueues a stacked shell notification ([`AppNotificationRepository`](lib/data/notifications/app_notification_repository.dart) / bell in [`HomeShell`](lib/features/shell/home_shell.dart)) so the user can **Open** Activity (when a `proposalId` is present) or chat to Confirm / review (Dismiss clears the inbox item).
-- **In-app launches** — other screens deep-link into chat via [`AgentLaunchActions`](lib/features/agents/agent_launch_actions.dart) + [`AgentLaunchIntent`](lib/data/agents/agent_launch.dart) (`investigate` → Market Research + Hedge Fund Desk; `tradeCheck` → Intraday + Desk; `explainLive` → Live Balance Explainer; `explainPortfolio` → Portfolio Guide; `paperReview` → Practice Coach). Shared CTA: [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart).
+- **In-app launches** — other screens deep-link into chat via [`AgentLaunchActions`](lib/features/agents/agent_launch_actions.dart) + [`AgentLaunchIntent`](lib/data/agents/agent_launch.dart) (`investigate` → Market Research; `tradeCheck` → Intraday; `explainLive` → Live Balance Explainer; `explainPortfolio` → Portfolio Guide; `paperReview` → Practice Coach). Shared CTA: [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart).
   - Asset detail app bar **Investigate**; Practice trade card **Practice coach** + **Trade check**; successful paper trade offers a Trade check dialog.
   - Quote rows (Markets) sparkles icon → Investigate.
   - Portfolio practice holdings sparkles → Trade check.
@@ -358,7 +328,7 @@ Single JSON document for secrets, favorites, and all customizations ([`UserConfi
 - **Web:** no filesystem path — full document in prefs blob `omniscope.config.v1`; Import / Export in Settings → Data & privacy.
 - **Slices:** `theme`, `display`, `dataSources`, `secrets`, `agents`, `agentChats`, `tradeProposals`, `agentActivity`, `notifications`, `paperPortfolio`, `favorites`.
 - **Legacy migration:** first load absorbs old per-feature prefs keys then removes them.
-- **`.env` dual-write:** secrets still upsert into the project `.env` when writable (Python CLI). On startup, non-empty `.env` / asset keys that are missing or empty in the config are **promoted** into `omniscope.json` so checkout edits persist for Flutter.
+- **`.env` dual-write:** secrets still upsert into the project `.env` when writable (desktop checkout). On startup, non-empty `.env` / asset keys that are missing or empty in the config are **promoted** into `omniscope.json` so checkout edits persist for Flutter.
 - Treat the file as secrets — it may contain API keys.
 
 Favorites ([`FavoritesRepository`](lib/data/settings/favorites_repository.dart)): one ordered `symbols` list for equities and spot crypto; Markets sidebar has a single **Favorites** subgroup. Legacy `{ markets, crypto }` config slices migrate on load.
@@ -446,8 +416,7 @@ make run DEVICE=chrome  # Web (or edge / web-server)
 make build              # host-capable release builds (skips other OS targets)
 make build-linux        # or: build-windows / build-macos / build-ios / build-apk / build-appbundle / build-web
 make icons
-make agents-setup       # agents/ venv + pip install -e .
-make agent-skills       # refresh Flutter/Dart skills into .agents/skills/
+make agent-skills       # refresh Flutter/Dart/Genkit skills into .agents/skills/
 make bump-patch         # local patch bump (pubspec + AppInfo); CI also runs this on main
 make container-build    # podman: slim Linux runtime image (omniscope:runtime)
 make container-run      # podman run (needs host DISPLAY)

@@ -8,7 +8,7 @@ import '../../data/agents/agent_chat_repository.dart';
 import '../../data/agents/agent_role_prompts.dart';
 import '../../data/agents/agents_repository.dart';
 import '../../data/agents/chat_models.dart';
-import '../../data/agents/llm_chat_client.dart';
+import '../../data/agents/genkit/genkit_agent_runner.dart';
 import '../../data/agents/models.dart';
 import '../../data/agents/trade_proposal.dart';
 import '../../data/agents/trade_proposal_repository.dart';
@@ -62,7 +62,7 @@ class AgentChatScreen extends StatelessWidget {
         agents: context.read<AgentsRepository>(),
         chats: context.read<AgentChatRepository>(),
         marketData: context.read<MarketDataClient>(),
-        llm: context.read<LlmChatClient>(),
+        agentRunner: context.read<GenkitAgentRunner>(),
         tradeExecutor: context.read<TradeExecutor>(),
         proposals: context.read<TradeProposalRepository>(),
         activity: context.read<AgentActivityRepository>(),
@@ -652,7 +652,7 @@ class _RunAgentDialogState extends State<_RunAgentDialog> {
   String _side = 'buy';
 
   bool get _isTrading =>
-      widget.roleId == 'intradayTrading' || widget.roleId == 'hedgeFundDesk';
+      widget.roleId == 'intradayTrading';
 
   @override
   void initState() {

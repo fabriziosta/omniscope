@@ -261,7 +261,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
           child: roles.isEmpty
               ? const AppEmptyView(
                   'No agent roles found. Add a role package under '
-                  'agents/omniscope_agents/ and list it in manifest.json.',
+                  'lib/data/agents/genkit/ and list it in assets/agents/manifest.json.',
                 )
               : ListView(
                   padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),

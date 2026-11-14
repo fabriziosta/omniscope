@@ -10,7 +10,7 @@ void main() {
         keys,
         ['ticker', 'action', 'quantity', 'rationale', 'risk_approved'],
       );
-      for (final roleId in ['intradayTrading', 'hedgeFundDesk']) {
+      for (final roleId in ['intradayTrading']) {
         final system = AgentRolePrompts.forRoleId(roleId);
         for (final key in keys) {
           expect(system, contains('"$key"'), reason: '$roleId missing $key');

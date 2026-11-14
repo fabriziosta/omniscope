@@ -12,7 +12,7 @@ Targets: **Linux**, **Windows**, **Android**, **Apple** (**iOS** / **macOS**), a
 - **Markets** — Favorites (one shared list), Indices, ETFs, Stocks, and enabled crypto exchanges (Spot pairs); star any symbol to save favorites
 - **Asset detail** — price, day change, short curated overview (default symbols), 1M / 3M / 1Y history chart, paper buy/sell, plus external research links (provider page, Wikipedia when mapped, Google Finance, TradingView) opened in the system browser
 - **Portfolio** — practice paper trading (default $10,000 starting cash, configurable in Settings, local holdings, P&L, reset) plus **Live** balance subgroups when API credentials are configured (Crypto.com, Alpaca, …)
-- **Agents** — connect AI helpers with your own API key and model, then chat on-device (freeform + symbol Run); trading roles can Confirm into Practice or a live exchange (optional Connect default portfolio). Keys and chat threads stay local. Python CrewAI/LangGraph CLIs remain available under `agents/`
+- **Agents** — connect AI helpers with your own API key and model, then chat on-device via in-process Genkit agents (tools + Run); trading roles can Confirm into Practice or a live exchange (optional Connect default portfolio). Keys and chat threads stay local.
 - **Settings** — sidebar section navigator (one pane at a time): appearance, data sources & credentials, practice starting cash, connections (LLM keys + agents/exchanges), data & privacy (path / import / export / clear local data), and About (tagline *My trusted learning and trading buddy* + educational disclaimer)
 - **No accounts** — everything stays on device in one `omniscope.json` config (Web: browser storage + import/export)
 
@@ -180,12 +180,11 @@ lib/
   data/brokers/             # Alpaca (+ future equity brokers)
   data/venues/              # VenueCatalog, shared live portfolio models
   data/portfolio/           # local paper portfolio (shared_preferences)
-  data/agents/              # connections, chat threads, LlmChatClient, catalog
+  data/agents/              # connections, chat threads, GenkitAgentRunner, catalog
   features/markets|crypto|asset_detail|portfolio|agents|shell/
   widgets/                  # chart + brand mark
-agents/                     # Python CrewAI + LangGraph CLI agents
 assets/brand/               # master app icon (launchers + Android/iOS/Web splash)
-assets/agents/              # llm_models.json (selectable models)
+assets/agents/              # manifest.json (roles) + llm_models.json
 ```
 
 UI uses **[`shadcn_ui`](https://pub.dev/packages/shadcn_ui)** only (`ShadApp`). Charts are drawn with `CustomPaint` so no second UI kit is required.
@@ -209,7 +208,7 @@ That runs:
 
 [`lib/main.dart`](lib/main.dart) keeps the native splash visible with `FlutterNativeSplash.preserve` until config/repos finish loading, then calls `remove` before `runApp`.
 
-Selectable LLM models live in [`assets/agents/llm_models.json`](assets/agents/llm_models.json) so the list can be refreshed later without changing Flutter UI code. Optional local secrets: copy [`.env.example`](.env.example) → `.env` (gitignored) for LLM provider keys and exchange credentials (e.g. Crypto.com). The UI suggests those values and saves edits back to `.env` when running from a desktop checkout (prefs cover every platform). Agent role → framework rules and layout are in [`AGENTS.md`](AGENTS.md).
+Selectable LLM models live in [`assets/agents/llm_models.json`](assets/agents/llm_models.json); roles in [`assets/agents/manifest.json`](assets/agents/manifest.json). Optional local secrets: copy [`.env.example`](.env.example) → `.env` (gitignored) for LLM provider keys and exchange credentials (e.g. Crypto.com). The UI suggests those values and saves edits back to `.env` when running from a desktop checkout (prefs cover every platform). In-app agents use Genkit Dart — see [`AGENTS.md`](AGENTS.md).
 
 ## Docs for agents
 
@@ -217,7 +216,7 @@ See [`AGENTS.md`](AGENTS.md) for conventions when extending Omniscope (UI rules,
 
 ### AI coding assistants
 
-Shared guidance for Cursor, Codex, and Claude Code lives in [`AGENTS.md`](AGENTS.md) plus vendored Flutter + Dart [Agent Skills](https://docs.flutter.dev/ai/tools) under [`.agents/skills/`](.agents/skills/) (separate from the in-app Agents tab and the Python [`agents/`](agents/) CLIs). Do not add parallel `.claude/` / `.codex/` instruction mirrors. Cursor-only product rules live in [`.cursor/rules/`](.cursor/rules/); Dart MCP is in [`.cursor/mcp.json`](.cursor/mcp.json). Refresh skills with `make agent-skills`. Details: [`AGENTS.md`](AGENTS.md) **Coding-assistant tooling**.
+Shared guidance for Cursor, Codex, and Claude Code lives in [`AGENTS.md`](AGENTS.md) plus vendored Flutter + Dart [Agent Skills](https://docs.flutter.dev/ai/tools) and [Genkit](https://genkit.dev/docs/dart/get-started/) skills under [`.agents/skills/`](.agents/skills/) (editor skills — separate from the in-app Agents tab). Do not add parallel `.claude/` / `.codex/` instruction mirrors. Cursor-only product rules live in [`.cursor/rules/`](.cursor/rules/); Dart MCP is in [`.cursor/mcp.json`](.cursor/mcp.json). Refresh skills with `make agent-skills`. Details: [`AGENTS.md`](AGENTS.md) **Coding-assistant tooling**.
 
 ## Contributing
 

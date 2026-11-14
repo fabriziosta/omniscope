@@ -23,11 +23,9 @@ extension AgentLaunchIntentX on AgentLaunchIntent {
   List<String> get preferredRoleIds => switch (this) {
         AgentLaunchIntent.investigate => const [
             'marketResearch',
-            'hedgeFundDesk',
           ],
         AgentLaunchIntent.tradeCheck => const [
             'intradayTrading',
-            'hedgeFundDesk',
           ],
         AgentLaunchIntent.explainLive => const [
             'liveBalanceExplainer',

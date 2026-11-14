@@ -1,15 +1,15 @@
 enum AgentFramework {
-  crewAi,
-  langGraph,
+  genkit,
 }
 
 extension AgentFrameworkX on AgentFramework {
   String get label => switch (this) {
-        AgentFramework.crewAi => 'CrewAI',
-        AgentFramework.langGraph => 'LangGraph',
+        AgentFramework.genkit => 'Genkit',
       };
 
   static AgentFramework parse(String raw) {
+    // Legacy manifests / connections may still say crewAi / langGraph.
+    if (raw == 'crewAi' || raw == 'langGraph') return AgentFramework.genkit;
     return AgentFramework.values.byName(raw);
   }
 }
@@ -123,15 +123,13 @@ extension LlmProviderX on LlmProvider {
   String get catalogKey => name;
 }
 
-/// A role discovered from [agents/omniscope_agents/manifest.json].
+/// A role discovered from [assets/agents/manifest.json].
 class AgentRoleDefinition {
   const AgentRoleDefinition({
     required this.id,
     required this.title,
     required this.description,
     required this.framework,
-    required this.module,
-    required this.packagePath,
     required this.workload,
     required this.suggestedModels,
     this.suggestionNote,
@@ -141,8 +139,6 @@ class AgentRoleDefinition {
   final String title;
   final String description;
   final AgentFramework framework;
-  final String module;
-  final String packagePath;
   final AgentWorkload workload;
   final Map<LlmProvider, String> suggestedModels;
   final String? suggestionNote;
@@ -167,9 +163,9 @@ class AgentRoleDefinition {
       id: json['id'] as String,
       title: json['title'] as String,
       description: json['description'] as String? ?? '',
-      framework: AgentFrameworkX.parse(json['framework'] as String),
-      module: json['module'] as String? ?? '',
-      packagePath: json['packagePath'] as String? ?? '',
+      framework: AgentFrameworkX.parse(
+        json['framework'] as String? ?? 'genkit',
+      ),
       workload: AgentWorkload.values.byName(json['workload'] as String),
       suggestedModels: suggested,
       suggestionNote: json['suggestionNote'] as String?,

@@ -32,7 +32,7 @@ void main() {
     final agents = AgentsRepository(store: store, roleCatalog: roles);
     await agents.load(roleCatalog: roles);
     await agents.connect(
-      roleId: 'hedgeFundDesk',
+      roleId: 'intradayTrading',
       llmProvider: LlmProvider.openAi,
       apiKey: 'sk',
       modelId: 'gpt',
@@ -71,7 +71,7 @@ void main() {
     final h = await harness();
     final proposal = TradeProposal(
       id: 'tp_actions_ok',
-      roleId: 'hedgeFundDesk',
+      roleId: 'intradayTrading',
       exchangeId: 'practice',
       symbol: 'AAPL',
       side: TradeProposalSide.buy,
@@ -108,7 +108,7 @@ void main() {
     final h = await harness();
     final proposal = TradeProposal(
       id: 'tp_actions_dismiss',
-      roleId: 'hedgeFundDesk',
+      roleId: 'intradayTrading',
       exchangeId: 'practice',
       symbol: 'MSFT',
       side: TradeProposalSide.sell,
@@ -141,7 +141,7 @@ void main() {
     await h.proposals.upsert(
       TradeProposal(
         id: 'tp_hold',
-        roleId: 'hedgeFundDesk',
+        roleId: 'intradayTrading',
         exchangeId: 'practice',
         symbol: 'AAPL',
         side: TradeProposalSide.hold,
@@ -155,7 +155,7 @@ void main() {
     await h.proposals.upsert(
       TradeProposal(
         id: 'tp_buy',
-        roleId: 'hedgeFundDesk',
+        roleId: 'intradayTrading',
         exchangeId: 'practice',
         symbol: 'AAPL',
         side: TradeProposalSide.buy,

@@ -5,7 +5,7 @@ import 'package:omniscope/data/agents/agent_activity_repository.dart';
 import 'package:omniscope/data/agents/agent_chat_repository.dart';
 import 'package:omniscope/data/agents/agent_role_catalog.dart';
 import 'package:omniscope/data/agents/agents_repository.dart';
-import 'package:omniscope/data/agents/llm_chat_client.dart';
+import 'support/fake_genkit_agent_runner.dart';
 import 'package:omniscope/data/agents/models.dart';
 import 'package:omniscope/data/agents/trade_proposal.dart';
 import 'package:omniscope/data/agents/trade_proposal_repository.dart';
@@ -40,7 +40,7 @@ Desk note: buy a little.
       expect(map, isNotNull);
       final proposal = TradeProposal.fromLlmJson(
         map!,
-        roleId: 'hedgeFundDesk',
+        roleId: 'intradayTrading',
         exchangeId: 'crypto_com',
       );
       expect(proposal.symbol, 'BTC_USD');
@@ -235,17 +235,7 @@ Desk note: buy a little.
         agents: agents,
         chats: chats,
         marketData: market,
-        llm: LlmChatClient(
-          httpClient: MockClient(
-            (_) async => http.Response(
-              'ok\n```json\n'
-              '{"ticker":"AAPL","action":"hold","quantity":0,'
-              '"rationale":"wait","risk_approved":false}\n```',
-              200,
-              headers: {'content-type': 'application/json'},
-            ),
-          ),
-        ),
+        agentRunner: fakeGenkitAgentRunner(),
         tradeExecutor: RoutingTradeExecutor(
           cryptoRegistry: const CryptoExchangeRegistry([]),
           brokerRegistry: BrokerExchangeRegistry.empty,
@@ -273,7 +263,7 @@ Desk note: buy a little.
       final agents = AgentsRepository(store: store, roleCatalog: roles);
       await agents.load(roleCatalog: roles);
       await agents.connect(
-        roleId: 'hedgeFundDesk',
+        roleId: 'intradayTrading',
         llmProvider: LlmProvider.openAi,
         apiKey: 'sk',
         modelId: 'gpt',
@@ -299,13 +289,11 @@ Desk note: buy a little.
       );
 
       final controller = AgentChatController(
-        role: roles.byId('hedgeFundDesk')!,
+        role: roles.byId('intradayTrading')!,
         agents: agents,
         chats: chats,
         marketData: market,
-        llm: LlmChatClient(
-          httpClient: MockClient((_) async => http.Response('{}', 500)),
-        ),
+        agentRunner: fakeGenkitAgentRunner(),
         tradeExecutor: executor,
         proposals: proposals,
         activity: activity,
@@ -316,7 +304,7 @@ Desk note: buy a little.
 
       final proposal = TradeProposal(
         id: 'tp_paper',
-        roleId: 'hedgeFundDesk',
+        roleId: 'intradayTrading',
         exchangeId: 'practice',
         symbol: 'AAPL',
         side: TradeProposalSide.buy,
@@ -345,7 +333,7 @@ Desk note: buy a little.
       final agents = AgentsRepository(store: store, roleCatalog: roles);
       await agents.load(roleCatalog: roles);
       await agents.connect(
-        roleId: 'hedgeFundDesk',
+        roleId: 'intradayTrading',
         llmProvider: LlmProvider.openAi,
         apiKey: 'sk',
         modelId: 'gpt',
@@ -392,13 +380,11 @@ Desk note: buy a little.
       );
 
       final controller = AgentChatController(
-        role: roles.byId('hedgeFundDesk')!,
+        role: roles.byId('intradayTrading')!,
         agents: agents,
         chats: chats,
         marketData: market,
-        llm: LlmChatClient(
-          httpClient: MockClient((_) async => http.Response('{}', 500)),
-        ),
+        agentRunner: fakeGenkitAgentRunner(),
         tradeExecutor: executor,
         proposals: proposals,
         activity: activity,
@@ -412,7 +398,7 @@ Desk note: buy a little.
 
       final proposal = TradeProposal(
         id: 'tp_ambig',
-        roleId: 'hedgeFundDesk',
+        roleId: 'intradayTrading',
         exchangeId: 'practice',
         symbol: 'BTC_USD',
         side: TradeProposalSide.buy,
@@ -444,7 +430,7 @@ Desk note: buy a little.
       final agents = AgentsRepository(store: store, roleCatalog: roles);
       await agents.load(roleCatalog: roles);
       await agents.connect(
-        roleId: 'hedgeFundDesk',
+        roleId: 'intradayTrading',
         llmProvider: LlmProvider.openAi,
         apiKey: 'sk',
         modelId: 'gpt',
@@ -489,13 +475,11 @@ Desk note: buy a little.
       );
 
       final controller = AgentChatController(
-        role: roles.byId('hedgeFundDesk')!,
+        role: roles.byId('intradayTrading')!,
         agents: agents,
         chats: chats,
         marketData: market,
-        llm: LlmChatClient(
-          httpClient: MockClient((_) async => http.Response('{}', 500)),
-        ),
+        agentRunner: fakeGenkitAgentRunner(),
         tradeExecutor: executor,
         proposals: proposals,
         activity: activity,
@@ -509,7 +493,7 @@ Desk note: buy a little.
 
       final proposal = TradeProposal(
         id: 'tp_test',
-        roleId: 'hedgeFundDesk',
+        roleId: 'intradayTrading',
         exchangeId: 'crypto_com',
         symbol: 'BTC_USD',
         side: TradeProposalSide.buy,

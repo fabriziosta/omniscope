@@ -91,6 +91,12 @@
       "skillPath": "skills/dart-write-documentation/SKILL.md",
       "computedHash": "672d8e9e5dc290c11eaf58da617a1d07349d0b728f0440cfcf22bf644a50dba6"
     },
+    "developing-genkit-dart": {
+      "source": "genkit-ai/skills",
+      "sourceType": "github",
+      "skillPath": "skills/developing-genkit-dart/SKILL.md",
+      "computedHash": "ab85d7e5e5a78e78ea25d72bcf5653925ef5a2211e2737988774cd46582ee5a6"
+    },
     "flutter-add-integration-test": {
       "source": "flutter/agent-plugins",
       "sourceType": "github",

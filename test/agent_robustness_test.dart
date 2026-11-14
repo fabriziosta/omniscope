@@ -12,8 +12,6 @@ AgentRoleDefinition _role({
     title: id,
     description: '',
     framework: framework,
-    module: 'm',
-    packagePath: 'p',
     workload: workload,
     suggestedModels: const {},
   );
@@ -21,85 +19,60 @@ AgentRoleDefinition _role({
 
 void main() {
   group('AgentRobustness', () {
-    test('locked scores for current roles', () {
+    test('locked scores for current Genkit roles', () {
+      // W8 + F14 + D14 + G0 + T5 = 41
       expect(
         AgentRobustness.score(
           _role(
             id: 'marketResearch',
-            framework: AgentFramework.crewAi,
+            framework: AgentFramework.genkit,
             workload: AgentWorkload.investigation,
           ),
         ),
-        27,
+        41,
       );
+      // W8 + F14 + D14 + G0 + T10 = 46
       expect(
         AgentRobustness.score(
           _role(
             id: 'liveBalanceExplainer',
-            framework: AgentFramework.crewAi,
+            framework: AgentFramework.genkit,
             workload: AgentWorkload.investigation,
           ),
         ),
-        32,
+        46,
       );
       expect(
         AgentRobustness.score(
           _role(
             id: 'portfolioGuide',
-            framework: AgentFramework.crewAi,
+            framework: AgentFramework.genkit,
             workload: AgentWorkload.investigation,
           ),
         ),
-        32,
+        46,
       );
       expect(
         AgentRobustness.score(
           _role(
             id: 'paperPortfolioCoach',
-            framework: AgentFramework.crewAi,
+            framework: AgentFramework.genkit,
             workload: AgentWorkload.investigation,
           ),
         ),
-        32,
+        46,
       );
+      // W20 + F14 + D14 + G20 + T10 = 78
       expect(
         AgentRobustness.score(
           _role(
             id: 'intradayTrading',
-            framework: AgentFramework.langGraph,
+            framework: AgentFramework.genkit,
             workload: AgentWorkload.trading,
           ),
         ),
-        80,
+        78,
       );
-      expect(
-        AgentRobustness.score(
-          _role(
-            id: 'hedgeFundDesk',
-            framework: AgentFramework.langGraph,
-            workload: AgentWorkload.trading,
-          ),
-        ),
-        100,
-      );
-    });
-
-    test('hedgeFundDesk uses hybrid framework points despite langGraph meta',
-        () {
-      final b = AgentRobustness.breakdown(
-        _role(
-          id: 'hedgeFundDesk',
-          framework: AgentFramework.langGraph,
-          workload: AgentWorkload.trading,
-        ),
-      );
-      expect(b.workload, 20);
-      expect(b.framework, 20);
-      expect(b.depth, 25);
-      expect(b.riskGates, 20);
-      expect(b.contextTools, 15);
-      expect(b.rawTotal, 100);
-      expect(b.score, 100);
     });
 
     test('unknown role id uses defaults from workload and framework', () {
@@ -107,21 +80,21 @@ void main() {
         AgentRobustness.score(
           _role(
             id: 'futureUnknownRole',
-            framework: AgentFramework.crewAi,
+            framework: AgentFramework.genkit,
             workload: AgentWorkload.investigation,
           ),
         ),
-        27, // W8 + F8 + D6 + G0 + T5
+        33, // W8 + F14 + D6 + G0 + T5
       );
       expect(
         AgentRobustness.score(
           _role(
             id: 'futureUnknownTrading',
-            framework: AgentFramework.langGraph,
+            framework: AgentFramework.genkit,
             workload: AgentWorkload.trading,
           ),
         ),
-        47, // W20 + F16 + D6 + G0 + T5
+        45, // W20 + F14 + D6 + G0 + T5
       );
     });
 

@@ -10,7 +10,7 @@ import 'data/agents/agent_activity_repository.dart';
 import 'data/agents/agent_chat_repository.dart';
 import 'data/agents/agent_role_catalog.dart';
 import 'data/agents/agents_repository.dart';
-import 'data/agents/llm_chat_client.dart';
+import 'data/agents/genkit/genkit_agent_runner.dart';
 import 'data/agents/trade_proposal_repository.dart';
 import 'data/crypto/crypto_exchange_registry.dart';
 import 'data/market/caching_market_data_client.dart';
@@ -74,7 +74,7 @@ Future<void> main() async {
   final appNotifications = AppNotificationRepository(store: config);
   await appNotifications.load();
 
-  final llmChat = LlmChatClient();
+  final agentRunner = GenkitAgentRunner();
 
   ExchangeCredentialsConfig.defaultExchangeIds =
       VenueCatalog.knownCredentialVenueIds;
@@ -121,7 +121,7 @@ Future<void> main() async {
     agents: agents,
     chats: agentChats,
     marketData: marketData,
-    llm: llmChat,
+    agentRunner: agentRunner,
     tradeExecutor: tradeExecutor,
     proposals: tradeProposals,
     activity: agentActivity,
@@ -156,7 +156,7 @@ Future<void> main() async {
         ChangeNotifierProvider<AppNotificationRepository>.value(
           value: appNotifications,
         ),
-        Provider<LlmChatClient>.value(value: llmChat),
+        Provider<GenkitAgentRunner>.value(value: agentRunner),
         ChangeNotifierProvider<ThemeSettings>.value(value: themeSettings),
         ChangeNotifierProvider<DisplaySettings>.value(value: displaySettings),
         ChangeNotifierProvider<DataSourceSettings>.value(

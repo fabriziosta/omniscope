@@ -6,7 +6,9 @@ import '../../data/agents/agent_chat_repository.dart';
 import '../../data/agents/agent_role_prompts.dart';
 import '../../data/agents/agents_repository.dart';
 import '../../data/agents/chat_models.dart';
-import '../../data/agents/llm_chat_client.dart';
+import '../../data/agents/genkit/genkit_agent_runner.dart';
+import '../../data/agents/genkit/genkit_runtime_factory.dart';
+import '../../data/agents/genkit/omniscope_agent_tools.dart';
 import '../../data/agents/market_context_builder.dart';
 import '../../data/agents/models.dart';
 import '../../data/agents/trade_proposal.dart';
@@ -49,7 +51,7 @@ class AgentChatController extends ChangeNotifier {
     required this._agents,
     required this._chats,
     required this._marketData,
-    required this._llm,
+    required this._agentRunner,
     required this._tradeExecutor,
     required this._proposals,
     required this._activity,
@@ -63,7 +65,7 @@ class AgentChatController extends ChangeNotifier {
   final AgentsRepository _agents;
   final AgentChatRepository _chats;
   final MarketDataClient _marketData;
-  final LlmChatClient _llm;
+  final GenkitAgentRunner _agentRunner;
   final TradeExecutor _tradeExecutor;
   final TradeProposalRepository _proposals;
   final AgentActivityRepository _activity;
@@ -238,7 +240,6 @@ class AgentChatController extends ChangeNotifier {
       return _blockNoExchange();
     }
 
-    final preferredId = wantsTrade ? preferredPortfolioId(connection) : null;
     final stampedId = wantsTrade ? resolveTargetExchangeId(connection) : null;
     final liveExplainId =
         wantsLiveExplain ? resolveLiveBalanceExchangeId(exchangeId) : null;
@@ -270,89 +271,29 @@ class AgentChatController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      String? marketContext;
       final hint = symbolHint?.trim();
-      final builder = MarketContextBuilder(_marketData);
-      if (wantsPractice || (wantsLiveExplain && role.id != 'liveBalanceExplainer')) {
-        final parts = <String>[];
-        if (wantsPractice) {
-          Map<String, double>? lastPrices;
-          if (AgentRolePrompts.usesAllocationContext(role.id) &&
-              _portfolio.state.holdings.isNotEmpty) {
-            try {
-              final quotes = await _marketData.getQuotes([
-                for (final h in _portfolio.state.holdings) h.symbol,
-              ]);
-              lastPrices = {
-                for (final q in quotes) q.symbol: q.price,
-              };
-            } catch (_) {
-              // Weights are optional enrichment.
-            }
-          }
-          final practiceCtx = builder.buildPracticePortfolioContext(
-            state: _portfolio.state,
-            symbolHint: hint,
-            listAllHoldings: true,
-            lastPrices: lastPrices,
-          );
-          if (practiceCtx != null) parts.add(practiceCtx);
-        }
-        if (wantsLiveExplain && liveExplainId != null) {
-          final client = _clientForExchange(liveExplainId);
-          if (client != null) {
-            final liveCtx = await builder.buildLiveExchangeContext(
-              client: client,
-              symbolHint: hint,
-              listAllBalances: true,
-            );
-            if (liveCtx != null) parts.add(liveCtx);
-          }
-        }
-        if (parts.isNotEmpty) marketContext = parts.join('\n\n');
-      } else if (wantsLiveExplain && liveExplainId != null) {
-        final client = _clientForExchange(liveExplainId);
-        if (client != null) {
-          marketContext = await builder.buildLiveExchangeContext(
-            client: client,
-            symbolHint: hint,
-            listAllBalances: true,
-          );
-        }
-      } else if (hint != null && hint.isNotEmpty) {
-        if (wantsTrade && stampedId != null) {
-          final usePractice = stampedId == PortfolioDescriptor.practiceId ||
-              preferredId == null;
-          marketContext = await builder.buildForTradingSymbol(
-            symbol: hint,
-            exchangeClient:
-                usePractice ? null : _clientForExchange(stampedId),
-            practiceState: usePractice ? _portfolio.state : null,
-          );
-        } else {
-          marketContext = await builder.buildForSymbol(hint);
-        }
-      } else if (wantsTrade && stampedId != null) {
-        if (stampedId == PortfolioDescriptor.practiceId || preferredId == null) {
-          marketContext = builder.buildPracticePortfolioContext(
-            state: _portfolio.state,
-          );
-        } else {
-          final client = _clientForExchange(stampedId);
-          if (client != null) {
-            marketContext = await builder.buildLiveExchangeContext(
-              client: client,
-            );
-          }
-        }
+      LiveVenueCapabilities? liveVenue;
+      if (liveExplainId != null) {
+        liveVenue = _clientForExchange(liveExplainId);
+      } else if (wantsTrade &&
+          stampedId != null &&
+          stampedId != PortfolioDescriptor.practiceId) {
+        liveVenue = _clientForExchange(stampedId);
       }
 
+      final toolDeps = OmniscopeAgentToolDeps(
+        marketData: _marketData,
+        practice: (wantsPractice || wantsTrade) ? _portfolio.state : null,
+        liveVenue: liveVenue,
+        symbolHint: hint,
+      );
+
       final thread = _chats.threadFor(role.id);
-      final reply = await _llm.complete(
+      final reply = await _agentRunner.complete(
         connection: connection,
         roleId: role.id,
         messages: thread.messages,
-        marketContext: marketContext,
+        toolDeps: toolDeps,
       );
 
       final assistantId = AgentChatMessage.newId();
@@ -405,7 +346,7 @@ class AgentChatController extends ChangeNotifier {
       }
 
       return AgentChatSendOk(proposal: proposal);
-    } on LlmChatException catch (e) {
+    } on GenkitAgentException catch (e) {
       return AgentChatSendFailed(e.message);
     } catch (e, st) {
       debugPrint('Agent chat send failed: $e\n$st');

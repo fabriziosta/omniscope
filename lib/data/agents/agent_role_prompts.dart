@@ -1,8 +1,8 @@
-/// In-app chat prompt source of truth (Flutter HTTPS LLM only).
+/// In-app Genkit agent system + Run user prompt source of truth.
 ///
-/// Do **not** merge these strings with Python CLI `prompts.py` files — live
-/// exchange vs paper educational wording differ on purpose. Shared across
-/// surfaces is only the trade JSON field set in [TradeProposal.canonicalLlmKeys].
+/// Used by [GenkitAgentRunner] as each role's `defineAgent` system string.
+/// Shared across surfaces is the trade JSON field set in
+/// [TradeProposalLlmSchema.canonicalLlmKeys].
 class AgentRolePrompts {
   AgentRolePrompts._();
 
@@ -32,8 +32,9 @@ class AgentRolePrompts {
             'Produce plain-language research briefs for a symbol or topic: '
             'what the asset is, recent price move, simple risks, and what a '
             'beginner might watch next. Prefer shorter answers with clear '
-            'sections. Do not invent precise fundamentals you were not given. '
-            'Do not suggest executable buy/sell JSON.',
+            'sections. Call getQuotes and getHistory tools when you need '
+            'live figures. Do not invent precise fundamentals you were not '
+            'given. Do not suggest executable buy/sell JSON.',
     'liveBalanceExplainer':
         '$_sharedGuardrails Your role is Live Balance Explainer. '
             'Explain the user\'s live exchange snapshot in plain language: '
@@ -41,20 +42,22 @@ class AgentRolePrompts {
             'what each balance line means, and that Portfolio Live is '
             'read-only while Confirm / Autopilot on trading agents can place '
             'orders only when the user opts in. Prefer short sections. '
+            'Call getLiveBalances (and getQuotes if helpful). '
             'Do not invent balances you were not given. '
             'Do not suggest executable buy/sell JSON.',
     'portfolioGuide':
         '$_sharedGuardrails Your role is Portfolio & Allocation Guide. '
             'Review the user\'s Practice and/or Live portfolio snapshot: '
             'cash vs holdings, concentration, diversification, and cash drag '
-            'in plain language. Prefer short sections with concrete figures '
-            'from the snapshot. Do not invent positions. '
-            'Do not suggest executable buy/sell JSON.',
+            'in plain language. Prefer short sections with concrete figures. '
+            'Call getPracticePortfolio and/or getLiveBalances tools. '
+            'Do not invent positions. Do not suggest executable buy/sell JSON.',
     'paperPortfolioCoach':
         '$_sharedGuardrails Your role is Practice Portfolio Coach. '
             'Coach the user on practice (paper) cash, holdings, proposed '
             'buy/sell size, and average cost. Emphasize that Practice money '
             'is fake and for learning. Prefer short sections. '
+            'Call getPracticePortfolio (and getQuotes if helpful). '
             'Do not invent positions you were not given. '
             'Do not suggest executable buy/sell JSON.',
     'intradayTrading':
@@ -62,13 +65,8 @@ class AgentRolePrompts {
             'Help the user think through size, side, and risk gates for a '
             'Practice or live portfolio suggestion. Emphasize position size '
             'vs available balance and why a trade might be vetoed. '
-            '$_tradeJsonFooter',
-    'hedgeFundDesk':
-        '$_sharedGuardrails Your role is a simplified Hedge Fund Desk. '
-            'Structure answers like a short desk note: technical view, '
-            'sentiment/news caution, fundamental caution, bull vs bear '
-            'tension, then a risk gate and a head-trader recommendation. '
-            '$_tradeJsonFooter',
+            'Use getQuotes, getHistory, getPracticePortfolio, and '
+            'getLiveBalances tools when needed. $_tradeJsonFooter',
   };
 
   static String forRoleId(String roleId) {
@@ -79,7 +77,7 @@ class AgentRolePrompts {
 
   /// Roles that may emit a structured live trade proposal.
   static bool supportsTradeProposals(String roleId) {
-    return roleId == 'intradayTrading' || roleId == 'hedgeFundDesk';
+    return roleId == 'intradayTrading';
   }
 
   /// Roles that inject live exchange balances even without a trade Run.
@@ -112,7 +110,6 @@ class AgentRolePrompts {
       'portfolioGuide' => 'Review allocation',
       'paperPortfolioCoach' => 'Coach practice',
       'intradayTrading' => 'Run trade check',
-      'hedgeFundDesk' => 'Run desk',
       _ => 'Run',
     };
   }
@@ -185,11 +182,6 @@ class AgentRolePrompts {
           'End with the required JSON trade block.',
         );
         return buf.toString();
-      case 'hedgeFundDesk':
-        return 'Run the hedge-fund desk pipeline for $sym '
-            '(Practice or a connected live portfolio). Summarize analysts, '
-            'bull/bear tension, risk veto, and a recommendation. End with '
-            'the required JSON trade block.';
       default:
         return 'Investigate $sym.';
     }

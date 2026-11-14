@@ -42,8 +42,7 @@ extension TradeProposalStatusX on TradeProposalStatus {
 
 /// Canonical LLM JSON keys for trade proposals (snake_case).
 ///
-/// Keep in sync with `agents/omniscope_agents/trade_schema.py` (`TRADE_JSON_KEYS`).
-/// Prompt prose differs by surface (Flutter = live; CLI = paper); only keys match.
+/// Keep keys stable for Genkit trading agents and Activity Confirm parsing.
 abstract final class TradeProposalLlmSchema {
   static const List<String> canonicalLlmKeys = [
     'ticker',

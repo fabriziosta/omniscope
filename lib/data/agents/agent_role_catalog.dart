@@ -4,14 +4,14 @@ import 'package:flutter/services.dart';
 
 import 'models.dart';
 
-/// Loads available agent roles from the Python agents package manifest.
+/// Loads available agent roles from the Genkit role catalog asset.
 ///
-/// Source of truth: [agents/omniscope_agents/manifest.json] — add a role there
-/// when you add a CrewAI or LangGraph package under `agents/omniscope_agents/`.
+/// Source of truth: [assets/agents/manifest.json] — add a role there when you
+/// add a Genkit agent definition under `lib/data/agents/genkit/`.
 class AgentRoleCatalog {
   AgentRoleCatalog._(this.roles);
 
-  static const assetPath = 'agents/omniscope_agents/manifest.json';
+  static const assetPath = 'assets/agents/manifest.json';
 
   final List<AgentRoleDefinition> roles;
 

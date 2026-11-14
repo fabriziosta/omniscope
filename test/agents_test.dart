@@ -15,9 +15,7 @@ const _manifestFixture = '''
       "id": "marketResearch",
       "title": "Market Research & Analysis",
       "description": "Research brief",
-      "framework": "crewAi",
-      "module": "omniscope_agents.market_research",
-      "packagePath": "market_research",
+      "framework": "genkit",
       "workload": "investigation",
       "suggestedModels": {
         "openAi": "gpt-6-luna",
@@ -29,9 +27,7 @@ const _manifestFixture = '''
       "id": "intradayTrading",
       "title": "Intraday Execution & Risk Control",
       "description": "Risk gates",
-      "framework": "langGraph",
-      "module": "omniscope_agents.trading",
-      "packagePath": "trading",
+      "framework": "genkit",
       "workload": "trading",
       "suggestedModels": {
         "openAi": "gpt-6-astra",
@@ -76,13 +72,13 @@ UNKNOWN_KEY=nope
       expect(catalog.roles, hasLength(2));
 
       final research = catalog.byId('marketResearch')!;
-      expect(research.framework, AgentFramework.crewAi);
+      expect(research.framework, AgentFramework.genkit);
       expect(research.workload, AgentWorkload.investigation);
       expect(research.suggestedModelId(LlmProvider.openAi), 'gpt-6-luna');
       expect(research.workload.preferredModelWeight, ModelWeight.light);
 
       final trading = catalog.byId('intradayTrading')!;
-      expect(trading.framework, AgentFramework.langGraph);
+      expect(trading.framework, AgentFramework.genkit);
       expect(trading.workload, AgentWorkload.trading);
       expect(trading.suggestedModelId(LlmProvider.openAi), 'gpt-6-astra');
       expect(trading.workload.preferredModelWeight, ModelWeight.heavy);

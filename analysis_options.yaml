@@ -10,6 +10,9 @@
 include: package:flutter_lints/flutter.yaml
 
 analyzer:
+  errors:
+    # Genkit Agents API is experimental; we accept churn for in-app agents.
+    experimental_member_use: ignore
   exclude:
     - build/**
     - android/**

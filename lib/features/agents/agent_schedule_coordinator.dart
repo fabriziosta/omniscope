@@ -6,7 +6,7 @@ import '../../data/agents/agent_activity.dart';
 import '../../data/agents/agent_activity_repository.dart';
 import '../../data/agents/agent_chat_repository.dart';
 import '../../data/agents/agents_repository.dart';
-import '../../data/agents/llm_chat_client.dart';
+import '../../data/agents/genkit/genkit_agent_runner.dart';
 import '../../data/agents/models.dart';
 import '../../data/agents/trade_proposal.dart';
 import '../../data/agents/trade_proposal_repository.dart';
@@ -30,7 +30,7 @@ class AgentScheduleCoordinator extends ChangeNotifier {
     required this._agents,
     required this._chats,
     required this._marketData,
-    required this._llm,
+    required this._agentRunner,
     required this._tradeExecutor,
     required this._proposals,
     required this._activity,
@@ -44,7 +44,7 @@ class AgentScheduleCoordinator extends ChangeNotifier {
   final AgentsRepository _agents;
   final AgentChatRepository _chats;
   final MarketDataClient _marketData;
-  final LlmChatClient _llm;
+  final GenkitAgentRunner _agentRunner;
   final TradeExecutor _tradeExecutor;
   final TradeProposalRepository _proposals;
   final AgentActivityRepository _activity;
@@ -127,7 +127,7 @@ class AgentScheduleCoordinator extends ChangeNotifier {
         agents: _agents,
         chats: _chats,
         marketData: _marketData,
-        llm: _llm,
+        agentRunner: _agentRunner,
         tradeExecutor: _tradeExecutor,
         proposals: _proposals,
         activity: _activity,

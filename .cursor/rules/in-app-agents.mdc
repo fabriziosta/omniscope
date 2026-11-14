@@ -16,9 +16,9 @@ When designing or changing Omniscope UI, **proactively suggest** where an AI age
 
 ## How to wire it
 
-- Use [`AgentLaunchIntent`](lib/data/agents/agent_launch.dart): `investigate` (research/desk), `tradeCheck` (intraday/desk), `explainLive` (live balances), `explainPortfolio` (allocation guide), or `paperReview` (practice coach).
+- Use [`AgentLaunchIntent`](lib/data/agents/agent_launch.dart): `investigate` (research), `tradeCheck` (intraday), `explainLive` (live balances), `explainPortfolio` (allocation guide), or `paperReview` (practice coach).
 - Launch via [`AgentLaunchActions.launch`](lib/features/agents/agent_launch_actions.dart) or [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart) — do not push `AgentChatScreen` with a hard-coded role unless intentional.
-- Pass the **symbol**; set `autoRun` through the shared helper so chat runs the role prompt + market snapshot.
+- Pass the **symbol**; set `autoRun` through the shared helper so chat runs the Genkit role agent (tools + prompt).
 - Mobile-first: one CTA if a single connected agent applies; picker when several; when none connected, call `ShellNavigationController.goToAgents(connectRoleId: …)` so the user lands on Agents with Connect open.
 - Brand / shadcn only — no ad-hoc Material menus.
 
@@ -35,6 +35,7 @@ AgentLaunchButton(
 
 ## Do not
 
-- Spawn Python CrewAI/LangGraph from Flutter UI (chat stays HTTPS LLM).
+- Hand-roll provider HTTPS outside [`GenkitAgentRunner`](lib/data/agents/genkit/genkit_agent_runner.dart) — chat turns go through in-process Genkit `defineAgent` + tools.
+- Spawn Python or remote agent workers from Flutter UI.
 - Claim live brokerage execution from agent output.
 - Invent new agent frameworks per screen — extend intents / role mapping instead.

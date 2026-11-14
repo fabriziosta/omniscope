@@ -13,7 +13,7 @@ ifeq ($(shell command -v flutter 2>/dev/null),)
 endif
 
 .PHONY: help ensure-env get analyze test check run doctor icons \
-	hooks hooks-run agents-setup agent-skills bump-patch clean \
+	hooks hooks-run agent-skills bump-patch clean \
 	build build-linux build-windows build-macos build-ios \
 	build-apk build-appbundle build-web \
 	container-build container-run venue-canary
@@ -39,8 +39,7 @@ help:
 	@echo "  make icons            tool/regen_icons.sh"
 	@echo "  make hooks            install pre-commit + pre-push hooks"
 	@echo "  make hooks-run        pre-commit run --all-files"
-	@echo "  make agents-setup     agents/ venv + pip install -e ."
-	@echo "  make agent-skills     refresh Flutter/Dart skills into .agents/skills/"
+	@echo "  make agent-skills     refresh Flutter/Dart/Genkit skills into .agents/skills/"
 	@echo "  make bump-patch       bump patch; AppInfo gets +short SHA (CI on main)"
 	@echo "  make clean            flutter clean"
 	@echo "  make container-build  podman build slim Linux runtime image (omniscope:runtime)"
@@ -135,13 +134,12 @@ hooks:
 hooks-run:
 	pre-commit run --all-files
 
-agents-setup:
-	cd agents && python3 -m venv .venv && .venv/bin/pip install -e .
-
-# Refresh official Flutter + Dart Agent Skills into .agents/skills/ (coding assistants).
+# Refresh official Flutter + Dart + Genkit Agent Skills into .agents/skills/ (coding assistants).
+# Re-run whenever upstream skills change: https://genkit.dev/docs/dart/get-started/
 agent-skills:
 	npx skills add flutter/agent-plugins --skill '*' --agent universal --yes
 	npx skills add dart-lang/skills --skill '*' --agent universal --yes
+	npx skills add genkit-ai/skills --skill developing-genkit-dart --agent universal --yes
 
 bump-patch:
 	tool/bump_patch_version.sh

@@ -19,11 +19,18 @@ dependencies:
   path_provider: ^2.1.6
   # Runtime preserve/remove while main() loads config; assets from make icons.
   flutter_native_splash: ^2.4.8
+  genkit: ^1.0.2
+  genkit_google_genai: ^1.1.0
+  genkit_openai: ^1.0.2
+  genkit_anthropic: ^1.0.2
+  schemantic: ^1.0.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.4
+  schemantic_builder: ^1.0.0
+  build_runner: ^2.16.2
 
 # Master art: assets/brand/app_icon.png (+ adaptive foreground).
 # Regenerate: make icons → flutter_launcher_icons + flutter_native_splash:create
@@ -61,8 +68,8 @@ flutter:
   assets:
     - assets/brand/app_icon.png
     - assets/agents/llm_models.json
-    # Source of truth for available CrewAI / LangGraph roles (lives under agents/).
-    - agents/omniscope_agents/manifest.json
+    # Source of truth for available Genkit Dart agent roles.
+    - assets/agents/manifest.json
     # Local keys (gitignored). tool/flutter_checks.sh copies .env.example → .env if missing.
     - .env
     - .env.example

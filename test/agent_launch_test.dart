@@ -1,7 +1,5 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 import 'package:omniscope/core/brand_colors.dart';
 import 'package:omniscope/core/shell_navigation.dart';
 import 'package:omniscope/data/agents/agent_activity_repository.dart';
@@ -9,7 +7,8 @@ import 'package:omniscope/data/agents/agent_chat_repository.dart';
 import 'package:omniscope/data/agents/agent_launch.dart';
 import 'package:omniscope/data/agents/agent_role_catalog.dart';
 import 'package:omniscope/data/agents/agents_repository.dart';
-import 'package:omniscope/data/agents/llm_chat_client.dart';
+import 'package:omniscope/data/agents/genkit/genkit_agent_runner.dart';
+import 'support/fake_genkit_agent_runner.dart';
 import 'package:omniscope/data/agents/models.dart';
 import 'package:omniscope/data/agents/trade_proposal_repository.dart';
 import 'package:omniscope/data/crypto/crypto_exchange_registry.dart';
@@ -58,9 +57,7 @@ void main() {
       id: 'marketResearch',
       title: 'Market Research & Analysis',
       description: 'Research brief',
-      framework: AgentFramework.crewAi,
-      module: 'm',
-      packagePath: 'p',
+      framework: AgentFramework.genkit,
       workload: AgentWorkload.investigation,
       suggestedModels: {},
     ),
@@ -68,9 +65,7 @@ void main() {
       id: 'liveBalanceExplainer',
       title: 'Live Balance Explainer',
       description: 'Explain balances',
-      framework: AgentFramework.crewAi,
-      module: 'm',
-      packagePath: 'p',
+      framework: AgentFramework.genkit,
       workload: AgentWorkload.investigation,
       suggestedModels: {},
     ),
@@ -78,9 +73,7 @@ void main() {
       id: 'portfolioGuide',
       title: 'Portfolio & Allocation Guide',
       description: 'Allocation review',
-      framework: AgentFramework.crewAi,
-      module: 'm',
-      packagePath: 'p',
+      framework: AgentFramework.genkit,
       workload: AgentWorkload.investigation,
       suggestedModels: {},
     ),
@@ -88,9 +81,7 @@ void main() {
       id: 'paperPortfolioCoach',
       title: 'Practice Portfolio Coach',
       description: 'Practice coach',
-      framework: AgentFramework.crewAi,
-      module: 'm',
-      packagePath: 'p',
+      framework: AgentFramework.genkit,
       workload: AgentWorkload.investigation,
       suggestedModels: {},
     ),
@@ -98,44 +89,32 @@ void main() {
       id: 'intradayTrading',
       title: 'Intraday Execution & Risk Control',
       description: 'Trade check',
-      framework: AgentFramework.langGraph,
-      module: 'm',
-      packagePath: 'p',
-      workload: AgentWorkload.trading,
-      suggestedModels: {},
-    ),
-    const AgentRoleDefinition(
-      id: 'hedgeFundDesk',
-      title: 'Hedge Fund Desk',
-      description: 'Desk pipeline',
-      framework: AgentFramework.langGraph,
-      module: 'm',
-      packagePath: 'p',
+      framework: AgentFramework.genkit,
       workload: AgentWorkload.trading,
       suggestedModels: {},
     ),
   ];
 
   group('AgentLaunchResolver', () {
-    test('maps investigate to research + desk', () {
+    test('maps investigate to market research', () {
       final roles = AgentLaunchResolver.rolesForIntent(
         availableRoles: sampleRoles,
         intent: AgentLaunchIntent.investigate,
       );
       expect(
         roles.map((r) => r.id).toList(),
-        ['marketResearch', 'hedgeFundDesk'],
+        ['marketResearch'],
       );
     });
 
-    test('maps tradeCheck to trading + desk', () {
+    test('maps tradeCheck to intraday trading', () {
       final roles = AgentLaunchResolver.rolesForIntent(
         availableRoles: sampleRoles,
         intent: AgentLaunchIntent.tradeCheck,
       );
       expect(
         roles.map((r) => r.id).toList(),
-        ['intradayTrading', 'hedgeFundDesk'],
+        ['intradayTrading'],
       );
     });
 
@@ -210,16 +189,12 @@ void main() {
       marketData: marketData,
     );
 
-    var llmCalls = 0;
-    final llm = LlmChatClient(
-      httpClient: MockClient((request) async {
-        llmCalls++;
-        return http.Response(
-          '{"choices":[{"message":{"role":"assistant","content":"Brief"}}]}',
-          200,
-          headers: {'content-type': 'application/json'},
-        );
-      }),
+    var agentCalls = 0;
+    final agentRunner = fakeGenkitAgentRunner(
+      replyFor: (roleId, lastUser) {
+        agentCalls++;
+        return 'Brief';
+      },
     );
 
     await tester.binding.setSurfaceSize(const Size(390, 844));
@@ -243,7 +218,7 @@ void main() {
           ChangeNotifierProvider<EnvSecretsRepository>.value(
             value: EnvSecretsRepository(store: store, syncEnvFile: false),
           ),
-          Provider<LlmChatClient>.value(value: llm),
+          Provider<GenkitAgentRunner>.value(value: agentRunner),
           ChangeNotifierProvider<ShellNavigationController>(
             create: (_) => ShellNavigationController(),
           ),
@@ -278,6 +253,6 @@ void main() {
 
     expect(find.byType(AgentChatScreen), findsOneWidget);
     expect(find.textContaining('Investigate AAPL'), findsOneWidget);
-    expect(llmCalls, greaterThan(0));
+    expect(agentCalls, greaterThan(0));
   });
 }
