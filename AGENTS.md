@@ -467,10 +467,10 @@ make container-run      # needs DISPLAY + /tmp/.X11-unix
 
 ### Versioning
 
-- [`pubspec.yaml`](pubspec.yaml): `MAJOR.MINOR.PATCH+BUILD` — **BUILD is always numeric** (Android `versionCode` / iOS build).
-- [`AppInfo.version`](lib/core/app_info.dart) (Settings → About): `MAJOR.MINOR.PATCH+SHORTSHA` — same `X.Y.Z`, plus a 7-char commit suffix from `git rev-parse` (or `OMNISCOPE_VERSION_SHA` in CI).
-- **Patch**: `make bump-patch` / [`tool/bump_patch_version.sh`](tool/bump_patch_version.sh) increments patch (+ numeric build) and rewrites AppInfo with the short SHA. CI runs this on every push to `main` ([`.github/workflows/bump-patch-version.yml`](.github/workflows/bump-patch-version.yml)), skipped when that push already edited the pubspec `version:` line.
-- **Verify alignment**: `tool/bump_patch_version.sh --verify` (compares `X.Y.Z` only).
+- Single version everywhere: `MAJOR.MINOR.PATCH+BUILD` — **BUILD is always numeric** (Android `versionCode` / iOS build).
+- [`pubspec.yaml`](pubspec.yaml) is the source of truth; [`AppInfo.version`](lib/core/app_info.dart) (Settings sidebar footer) mirrors that exact string.
+- **Patch**: `make bump-patch` / [`tool/bump_patch_version.sh`](tool/bump_patch_version.sh) increments patch (+ numeric build) and rewrites both files. CI runs this on every push to `main` ([`.github/workflows/bump-patch-version.yml`](.github/workflows/bump-patch-version.yml)), skipped when that push already edited the pubspec `version:` line.
+- **Verify alignment**: `tool/bump_patch_version.sh --verify` (full string must match).
 - **Major / minor**: edit `pubspec.yaml`, then run the bump script (or let CI bump) so AppInfo stays aligned — do not hand-edit AppInfo alone.
 
 ### Git hooks (pre-commit)

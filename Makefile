@@ -40,7 +40,7 @@ help:
 	@echo "  make hooks            install pre-commit + pre-push hooks"
 	@echo "  make hooks-run        pre-commit run --all-files"
 	@echo "  make agent-skills     refresh Flutter/Dart/Genkit skills into .agents/skills/"
-	@echo "  make bump-patch       bump patch; AppInfo gets +short SHA (CI on main)"
+	@echo "  make bump-patch       bump patch in pubspec + AppInfo (CI on main)"
 	@echo "  make clean            flutter clean"
 	@echo "  make container-build  podman build slim Linux runtime image (omniscope:runtime)"
 	@echo "  make container-run    podman run omniscope:runtime (needs DISPLAY)"

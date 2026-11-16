@@ -46,7 +46,7 @@ Optional: enable branch protection required checks for CI jobs `check` and `buil
 After merge + auto patch bump on `main`:
 
 ```bash
-# Tag should match pubspec / AppInfo MAJOR.MINOR.PATCH (e.g. 1.0.1 → v1.0.1)
+# Tag uses MAJOR.MINOR.PATCH from the single pubspec/AppInfo version (e.g. 1.0.1+2 → v1.0.1)
 git checkout main && git pull
 VERSION="$(tool/bump_patch_version.sh --check | cut -d+ -f1)"
 git tag "v${VERSION}"
@@ -55,4 +55,4 @@ git push origin "v${VERSION}"
 
 Or tag explicitly: `git tag v1.0.1 && git push origin v1.0.1`. Release assets: `omniscope-linux.tar.gz`, `omniscope.apk`. The same tag also triggers the Container workflow → `ghcr.io/fabriziosta/omniscope:<version>`.
 
-Versioning rules (pubspec vs AppInfo, patch bump script): see [`AGENTS.md`](../AGENTS.md) **Commands → Versioning**.
+Versioning rules (one `MAJOR.MINOR.PATCH+BUILD` in pubspec and AppInfo, patch bump script): see [`AGENTS.md`](../AGENTS.md) **Commands → Versioning**.
