@@ -172,9 +172,9 @@ class _AgentsScreenState extends State<AgentsScreen> {
     setState(() {
       _clearLaunchParams();
       _selectedChatId = thread.chatId;
-      if (!_wide) {
-        _narrowSelected = thread.chatId;
-      }
+      // Always set narrow selection so the new chat opens even if MediaQuery
+      // width is reported as wide during this callback (matches launch path).
+      _narrowSelected = thread.chatId;
     });
   }
 

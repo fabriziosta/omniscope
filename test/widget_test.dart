@@ -39,6 +39,7 @@ import 'package:omniscope/features/agents/agent_schedule_coordinator.dart';
 import 'package:omniscope/widgets/nav_back_button.dart';
 import 'package:provider/provider.dart';
 
+import 'support/agent_test_harness.dart';
 import 'support/fake_live_venue.dart';
 import 'support/fake_market_data_client.dart';
 import 'support/memory_config.dart';
@@ -211,13 +212,15 @@ void main() {
       portfolio: portfolio,
       marketData: marketClient,
     );
-    final llmRuntime = LlmRuntimeSettings(store: config);
-    await llmRuntime.load();
-    final agentApp = AgentAppSettings(store: config);
-    await agentApp.load();
-    final envSecrets =
-        EnvSecretsRepository(store: config, syncEnvFile: false);
-    await envSecrets.load();
+    // Starter prompt chips only render when an LLM key is configured.
+    final seeded = await seedLlmStack(
+      config,
+      lightModelId: 'gpt-test',
+      heavyModelId: 'gpt-test',
+    );
+    final llmRuntime = seeded.llmRuntime;
+    final agentApp = seeded.appSettings;
+    final envSecrets = seeded.secrets;
     final agentSchedule = AgentScheduleCoordinator(
       agents: agents,
       chats: agentChats,
@@ -367,9 +370,13 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('New chat'), findsOneWidget);
+    await tester.tap(find.text('New chat'));
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
     expect(find.text('Run research'), findsOneWidget);
     expect(find.textContaining('LangGraph'), findsNothing);
-    final agentsCtx = tester.element(find.text('New chat'));
+    final agentsCtx = tester.element(find.text('Run research'));
     final roleTitles = agentsCtx
         .read<AgentsRepository>()
         .availableRoles
@@ -418,10 +425,8 @@ void main() {
     await tester.tap(find.text('Connections'));
     await tester.pumpAndSettle();
     expect(find.text('LLM API keys & models'), findsOneWidget);
-    expect(
-      find.textContaining('Add at least one provider key'),
-      findsOneWidget,
-    );
+    // Seeded OpenAI key from pumpApp — Connections should show configured state.
+    expect(find.textContaining('ChatGPT'), findsWidgets);
 
     await tester.tap(find.byType(NavBackButton));
     await tester.pumpAndSettle();

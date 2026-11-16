@@ -37,45 +37,68 @@ Future<({AgentChatRepository chats, ShellNavigationController shellNav})>
   required Size surfaceSize,
   ShellNavigationController? shellNav,
 }) async {
-  final store = await memoryConfig();
-  final agentRoles = await AgentRoleCatalog.load();
-  final agents = AgentsRepository(store: store, roleCatalog: agentRoles);
-  await agents.load(roleCatalog: agentRoles);
-  final seeded = await seedLlmStack(
-    store,
-    lightModelId: 'gpt-test',
-    heavyModelId: 'gpt-test',
-  );
-  final agentChats = AgentChatRepository(store: store);
-  await agentChats.load();
-  final proposals = TradeProposalRepository(store: store);
-  await proposals.load();
-  final activity = AgentActivityRepository(store: store);
-  await activity.load();
-  final investInterest = InvestInterestProposalRepository(store: store);
-  await investInterest.load();
-  final dataSources = DataSourceSettings(store: store);
-  await dataSources.load();
-  final portfolio = PortfolioRepository(store: store);
-  await portfolio.load();
-  final favorites = FavoritesRepository(store: store);
-  await favorites.load();
-  final mandate = MandateSettings(store: store);
-  await mandate.load();
+  // Real async I/O must run outside FakeAsync — a prior AgentsScreen can leave
+  // a ShadInput caret timer running, which would hang bare `await`s here.
+  final setup = await tester.runAsync(() async {
+    final store = await memoryConfig();
+    final agentRoles = await AgentRoleCatalog.load();
+    final agents = AgentsRepository(store: store, roleCatalog: agentRoles);
+    await agents.load(roleCatalog: agentRoles);
+    final seeded = await seedLlmStack(
+      store,
+      lightModelId: 'gpt-test',
+      heavyModelId: 'gpt-test',
+    );
+    final agentChats = AgentChatRepository(store: store);
+    await agentChats.load();
+    final proposals = TradeProposalRepository(store: store);
+    await proposals.load();
+    final activity = AgentActivityRepository(store: store);
+    await activity.load();
+    final investInterest = InvestInterestProposalRepository(store: store);
+    await investInterest.load();
+    final dataSources = DataSourceSettings(store: store);
+    await dataSources.load();
+    final portfolio = PortfolioRepository(store: store);
+    await portfolio.load();
+    final favorites = FavoritesRepository(store: store);
+    await favorites.load();
+    final mandate = MandateSettings(store: store);
+    await mandate.load();
+    return (
+      agents: agents,
+      seeded: seeded,
+      agentChats: agentChats,
+      proposals: proposals,
+      activity: activity,
+      investInterest: investInterest,
+      dataSources: dataSources,
+      portfolio: portfolio,
+      favorites: favorites,
+      mandate: mandate,
+    );
+  });
+  if (setup == null) {
+    throw StateError('agents sidebar test setup failed');
+  }
+
   final marketData = FakeMarketDataClient(emptyQuotes: true, emptyHistory: true);
   const cryptoRegistry = CryptoExchangeRegistry([]);
   const brokerRegistry = BrokerExchangeRegistry.empty;
   final tradeExecutor = RoutingTradeExecutor(
     cryptoRegistry: cryptoRegistry,
     brokerRegistry: brokerRegistry,
-    dataSources: dataSources,
-    portfolio: portfolio,
+    dataSources: setup.dataSources,
+    portfolio: setup.portfolio,
     marketData: marketData,
   );
   final nav = shellNav ?? ShellNavigationController();
 
   await tester.binding.setSurfaceSize(surfaceSize);
   addTearDown(() async {
+    // Drop the tree so caret / animation tickers do not leak into the next test.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
     await tester.binding.setSurfaceSize(null);
   });
 
@@ -86,25 +109,37 @@ Future<({AgentChatRepository chats, ShellNavigationController shellNav})>
         Provider<CryptoExchangeRegistry>.value(value: cryptoRegistry),
         Provider<BrokerExchangeRegistry>.value(value: brokerRegistry),
         Provider<TradeExecutor>.value(value: tradeExecutor),
-        ChangeNotifierProvider<DataSourceSettings>.value(value: dataSources),
-        ChangeNotifierProvider<PortfolioRepository>.value(value: portfolio),
-        ChangeNotifierProvider<FavoritesRepository>.value(value: favorites),
-        ChangeNotifierProvider<MandateSettings>.value(value: mandate),
-        ChangeNotifierProvider<AgentsRepository>.value(value: agents),
+        ChangeNotifierProvider<DataSourceSettings>.value(
+          value: setup.dataSources,
+        ),
+        ChangeNotifierProvider<PortfolioRepository>.value(
+          value: setup.portfolio,
+        ),
+        ChangeNotifierProvider<FavoritesRepository>.value(
+          value: setup.favorites,
+        ),
+        ChangeNotifierProvider<MandateSettings>.value(value: setup.mandate),
+        ChangeNotifierProvider<AgentsRepository>.value(value: setup.agents),
         ChangeNotifierProvider<LlmRuntimeSettings>.value(
-          value: seeded.llmRuntime,
+          value: setup.seeded.llmRuntime,
         ),
         ChangeNotifierProvider<AgentAppSettings>.value(
-          value: seeded.appSettings,
+          value: setup.seeded.appSettings,
         ),
-        ChangeNotifierProvider<AgentChatRepository>.value(value: agentChats),
-        ChangeNotifierProvider<TradeProposalRepository>.value(value: proposals),
-        ChangeNotifierProvider<AgentActivityRepository>.value(value: activity),
+        ChangeNotifierProvider<AgentChatRepository>.value(
+          value: setup.agentChats,
+        ),
+        ChangeNotifierProvider<TradeProposalRepository>.value(
+          value: setup.proposals,
+        ),
+        ChangeNotifierProvider<AgentActivityRepository>.value(
+          value: setup.activity,
+        ),
         ChangeNotifierProvider<InvestInterestProposalRepository>.value(
-          value: investInterest,
+          value: setup.investInterest,
         ),
         ChangeNotifierProvider<EnvSecretsRepository>.value(
-          value: seeded.secrets,
+          value: setup.seeded.secrets,
         ),
         Provider<GenkitAgentRunner>.value(value: fakeGenkitAgentRunner()),
         ChangeNotifierProvider<ShellNavigationController>.value(value: nav),
@@ -122,7 +157,7 @@ Future<({AgentChatRepository chats, ShellNavigationController shellNav})>
     ),
   );
   await tester.pump();
-  return (chats: agentChats, shellNav: nav);
+  return (chats: setup.agentChats, shellNav: nav);
 }
 
 void main() {
