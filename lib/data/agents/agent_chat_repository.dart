@@ -101,6 +101,26 @@ class AgentChatRepository extends ChangeNotifier {
     return next;
   }
 
+  /// Pins or unpins a chat. Does not bump [AgentChatThread.updatedAt].
+  Future<AgentChatThread> setPinned(String chatId, {required bool pinned}) async {
+    final existing = _state.byId(chatId);
+    if (existing == null) {
+      return _state.threadFor(chatId);
+    }
+    if (existing.pinned == pinned) return existing;
+    final next = existing.copyWith(pinned: pinned);
+    _state = _state.withThread(next);
+    await _persist();
+    notifyListeners();
+    return next;
+  }
+
+  Future<AgentChatThread> togglePinned(String chatId) async {
+    final existing = _state.byId(chatId);
+    if (existing == null) return _state.threadFor(chatId);
+    return setPinned(chatId, pinned: !existing.pinned);
+  }
+
   Future<AgentChatThread> append({
     required String chatId,
     required AgentChatMessage message,
@@ -127,6 +147,7 @@ class AgentChatRepository extends ChangeNotifier {
       title: title,
       messages: messages,
       updatedAt: DateTime.now().toUtc(),
+      pinned: existing.pinned,
       legacyRoleId: existing.legacyRoleId,
     );
     _state = _state.withThread(thread);

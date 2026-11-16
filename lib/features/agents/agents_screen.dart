@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../../core/formatting.dart';
 import '../../core/shell_navigation.dart';
 import '../../data/agents/agent_chat_repository.dart';
 import '../../data/agents/chat_models.dart';
@@ -228,6 +229,10 @@ class _AgentsScreenState extends State<AgentsScreen> {
     });
   }
 
+  Future<void> _togglePin(AgentChatThread thread) async {
+    await context.read<AgentChatRepository>().togglePinned(thread.chatId);
+  }
+
   Widget _buildSidebar({
     required List<AgentChatThread> threads,
     required bool ready,
@@ -267,6 +272,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
                       thread: thread,
                       selected: highlighted == thread.chatId,
                       onOpen: () => _selectChat(thread.chatId, wide: wide),
+                      onTogglePin: () => _togglePin(thread),
                       onRename: () => _renameChat(thread),
                       onDelete: () => _deleteChat(thread),
                     );
@@ -370,6 +376,7 @@ class _ChatNavTile extends StatelessWidget {
     required this.thread,
     required this.selected,
     required this.onOpen,
+    required this.onTogglePin,
     required this.onRename,
     required this.onDelete,
   });
@@ -377,6 +384,7 @@ class _ChatNavTile extends StatelessWidget {
   final AgentChatThread thread;
   final bool selected;
   final VoidCallback onOpen;
+  final Future<void> Function() onTogglePin;
   final Future<void> Function() onRename;
   final Future<void> Function() onDelete;
 
@@ -394,6 +402,14 @@ class _ChatNavTile extends StatelessWidget {
     final muted = selected
         ? theme.colorScheme.secondaryForeground.withValues(alpha: 0.8)
         : theme.colorScheme.mutedForeground;
+    final pinColor = thread.pinned
+        ? (selected
+            ? theme.colorScheme.secondaryForeground
+            : theme.colorScheme.primary)
+        : muted;
+    final updatedLabel = thread.updatedAt.millisecondsSinceEpoch == 0
+        ? null
+        : formatRelativeTime(thread.updatedAt);
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -424,6 +440,17 @@ class _ChatNavTile extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
+                      if (updatedLabel != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          updatedLabel,
+                          style: theme.textTheme.muted.copyWith(
+                            color: muted,
+                            fontSize: 11,
+                          ),
+                          maxLines: 1,
+                        ),
+                      ],
                       const SizedBox(height: 4),
                       Text(
                         short,
@@ -431,6 +458,23 @@ class _ChatNavTile extends StatelessWidget {
                         maxLines: 2,
                       ),
                     ],
+                  ),
+                ),
+                AppTooltip(
+                  message: thread.pinned ? 'Unpin' : 'Pin',
+                  child: ShadButton.ghost(
+                    size: ShadButtonSize.sm,
+                    width: 32,
+                    height: 32,
+                    padding: EdgeInsets.zero,
+                    onPressed: () async {
+                      await onTogglePin();
+                    },
+                    child: Icon(
+                      thread.pinned ? LucideIcons.pinOff : LucideIcons.pin,
+                      size: 14,
+                      color: pinColor,
+                    ),
                   ),
                 ),
                 AppTooltip(

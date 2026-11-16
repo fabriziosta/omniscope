@@ -109,6 +109,57 @@ void main() {
       expect(repo.threadFor(created.chatId).title, 'Renamed research');
     });
 
+    test('pinned chats stay on top and persist; append keeps pin', () async {
+      final store = await memoryConfig();
+      final repo = AgentChatRepository(store: store);
+      await repo.load();
+
+      final older = await repo.createChat(title: 'Older');
+      await Future<void>.delayed(const Duration(milliseconds: 2));
+      final newer = await repo.createChat(title: 'Newer');
+      expect(repo.threads.map((t) => t.chatId).toList(), [
+        newer.chatId,
+        older.chatId,
+      ]);
+
+      await repo.setPinned(older.chatId, pinned: true);
+      expect(repo.threads.map((t) => t.chatId).toList(), [
+        older.chatId,
+        newer.chatId,
+      ]);
+      expect(repo.threadFor(older.chatId).pinned, isTrue);
+
+      await repo.append(
+        chatId: older.chatId,
+        message: AgentChatMessage(
+          id: 'u1',
+          role: AgentChatRole.user,
+          content: 'Still pinned',
+          createdAt: DateTime.utc(2026, 3, 1),
+        ),
+      );
+      expect(repo.threadFor(older.chatId).pinned, isTrue);
+
+      final reloaded = AgentChatRepository(store: store);
+      await reloaded.load();
+      expect(reloaded.threads.first.chatId, older.chatId);
+      expect(reloaded.threadFor(older.chatId).pinned, isTrue);
+
+      await repo.togglePinned(older.chatId);
+      expect(repo.threadFor(older.chatId).pinned, isFalse);
+      // Append bumped older.updatedAt, so it still leads among unpinned.
+      expect(repo.threads.map((t) => t.chatId).toList(), [
+        older.chatId,
+        newer.chatId,
+      ]);
+
+      await repo.setPinned(newer.chatId, pinned: true);
+      expect(repo.threads.map((t) => t.chatId).toList(), [
+        newer.chatId,
+        older.chatId,
+      ]);
+    });
+
     test('findThread resolves by chatId or sourceMessageId', () async {
       final store = await memoryConfig();
       final repo = AgentChatRepository(store: store);

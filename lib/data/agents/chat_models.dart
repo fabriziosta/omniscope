@@ -118,6 +118,7 @@ class AgentChatThread {
     required this.title,
     required this.messages,
     required this.updatedAt,
+    this.pinned = false,
     this.legacyRoleId,
   });
 
@@ -125,6 +126,9 @@ class AgentChatThread {
   final String title;
   final List<AgentChatMessage> messages;
   final DateTime updatedAt;
+
+  /// When true, the Agents sidebar keeps this chat above unpinned ones.
+  final bool pinned;
 
   /// Present when migrated from a legacy per-role thread.
   final String? legacyRoleId;
@@ -154,6 +158,7 @@ class AgentChatThread {
     String? title,
     List<AgentChatMessage>? messages,
     DateTime? updatedAt,
+    bool? pinned,
     String? legacyRoleId,
     bool clearLegacyRoleId = false,
   }) {
@@ -162,6 +167,7 @@ class AgentChatThread {
       title: title ?? this.title,
       messages: messages ?? this.messages,
       updatedAt: updatedAt ?? this.updatedAt,
+      pinned: pinned ?? this.pinned,
       legacyRoleId:
           clearLegacyRoleId ? null : (legacyRoleId ?? this.legacyRoleId),
     );
@@ -172,6 +178,7 @@ class AgentChatThread {
         'title': title,
         'messages': messages.map((m) => m.toJson()).toList(),
         'updatedAt': updatedAt.toIso8601String(),
+        if (pinned) 'pinned': true,
         if (legacyRoleId != null) 'legacyRoleId': legacyRoleId,
         // Keep roleId for older readers during transition.
         if (legacyRoleId != null) 'roleId': legacyRoleId,
@@ -208,6 +215,7 @@ class AgentChatThread {
       messages: messages,
       updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
+      pinned: json['pinned'] == true,
       legacyRoleId: legacyRoleId,
     );
   }
@@ -245,9 +253,13 @@ class AgentChatsState {
         AgentChatThread.empty(chatId: chatId, title: 'New chat');
   }
 
+  /// Pinned chats first, then newest [AgentChatThread.updatedAt].
   List<AgentChatThread> get sortedByUpdated {
     final list = List<AgentChatThread>.from(threads);
-    list.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    list.sort((a, b) {
+      if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
+      return b.updatedAt.compareTo(a.updatedAt);
+    });
     return list;
   }
 
