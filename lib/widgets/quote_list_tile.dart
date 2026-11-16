@@ -135,7 +135,7 @@ class QuoteListTile extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           ?investigateButton,
-          if (investInterestButton != null) investInterestButton,
+          ?investInterestButton,
           if (favoriteButton != null) ...[
             favoriteButton,
             SizedBox(width: compact ? 4 : 8),

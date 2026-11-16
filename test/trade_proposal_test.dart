@@ -6,8 +6,6 @@ import 'package:omniscope/data/agents/agent_chat_repository.dart';
 import 'package:omniscope/data/agents/agent_role_catalog.dart';
 import 'package:omniscope/data/agents/agents_repository.dart';
 import 'support/agent_test_harness.dart';
-import 'support/fake_genkit_agent_runner.dart';
-import 'package:omniscope/data/agents/models.dart';
 import 'package:omniscope/data/agents/trade_proposal.dart';
 import 'package:omniscope/data/agents/trade_proposal_repository.dart';
 import 'package:omniscope/data/brokers/alpaca/alpaca_exchange_client.dart';
