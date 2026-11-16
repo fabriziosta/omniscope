@@ -12,42 +12,8 @@ concurrency:
 permissions:
   contents: read
 
+# Web release asset paused (genkit_middleware dart2js int64 literal).
 jobs:
-  build-web:
-    name: build-web
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
-      - name: Ensure .env
-        run: cp .env.example .env
-
-      - name: Pub get
-        run: flutter pub get
-
-      - name: Build web
-        run: flutter build web --release
-
-      - name: Package web
-        run: |
-          cd build
-          zip -r ../omniscope-web.zip web
-          cd ..
-
-      - name: Upload web artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: omniscope-web
-          path: omniscope-web.zip
-          if-no-files-found: error
-
   build-linux:
     name: build-linux
     runs-on: ubuntu-latest
@@ -135,17 +101,11 @@ jobs:
 
   publish:
     name: publish
-    needs: [build-web, build-linux, build-apk]
+    needs: [build-linux, build-apk]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download web
-        uses: actions/download-artifact@v4
-        with:
-          name: omniscope-web
-          path: dist
-
       - name: Download Linux
         uses: actions/download-artifact@v4
         with:
@@ -164,6 +124,5 @@ jobs:
           generate_release_notes: true
           draft: false
           files: |
-            dist/omniscope-web.zip
             dist/omniscope-linux.tar.gz
             dist/omniscope.apk

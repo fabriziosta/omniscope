@@ -34,12 +34,12 @@ Linux runners only (`.github/workflows/`):
 
 | Workflow | When | What |
 |----------|------|------|
-| **CI** ([`ci.yml`](../.github/workflows/ci.yml)) | PR + push to `main` | Gitleaks + `tool/flutter_checks.sh all` (analyze + test); `flutter build web` and `flutter build linux` as compile smoke (no artifact upload) |
-| **Release** ([`release.yml`](../.github/workflows/release.yml)) | Push tag `v*` only | Build web + Linux + APK and attach them to a GitHub Release |
+| **CI** ([`ci.yml`](../.github/workflows/ci.yml)) | PR + push to `main` | Gitleaks + `tool/flutter_checks.sh all` (analyze + test); `flutter build linux` as compile smoke (no artifact upload). Web smoke paused. |
+| **Release** ([`release.yml`](../.github/workflows/release.yml)) | Push tag `v*` only | Build Linux + APK and attach them to a GitHub Release (web asset paused) |
 | **Container** ([`container.yml`](../.github/workflows/container.yml)) | Push tag `v*` + manual | Build [`Containerfile`](../Containerfile) and push `ghcr.io/<owner>/omniscope` (`:latest`, semver tags) |
 | **Bump patch** ([`bump-patch-version.yml`](../.github/workflows/bump-patch-version.yml)) | Push to `main` | Auto-increments patch in `pubspec.yaml` / AppInfo (does **not** create tags) |
 
-Optional: enable branch protection required checks for CI jobs `check`, `build-web`, and `build-linux`.
+Optional: enable branch protection required checks for CI jobs `check` and `build-linux`.
 
 ## Cutting a release
 
@@ -53,6 +53,6 @@ git tag "v${VERSION}"
 git push origin "v${VERSION}"
 ```
 
-Or tag explicitly: `git tag v1.0.1 && git push origin v1.0.1`. Release assets: `omniscope-web.zip`, `omniscope-linux.tar.gz`, `omniscope.apk`. The same tag also triggers the Container workflow → `ghcr.io/fabriziosta/omniscope:<version>`.
+Or tag explicitly: `git tag v1.0.1 && git push origin v1.0.1`. Release assets: `omniscope-linux.tar.gz`, `omniscope.apk`. The same tag also triggers the Container workflow → `ghcr.io/fabriziosta/omniscope:<version>`.
 
 Versioning rules (pubspec vs AppInfo, patch bump script): see [`AGENTS.md`](../AGENTS.md) **Commands → Versioning**.

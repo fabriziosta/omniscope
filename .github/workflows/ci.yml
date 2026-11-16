@@ -1,4 +1,5 @@
 # PR / main quality gate + Linux compile smoke (no release uploads).
+# Web compile smoke is paused (genkit_middleware dart2js int64 literal).
 name: CI
 
 on:
@@ -44,28 +45,6 @@ jobs:
         run: |
           chmod +x tool/flutter_checks.sh
           tool/flutter_checks.sh all
-
-  build-web:
-    name: build-web
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-
-      - name: Ensure .env
-        run: cp .env.example .env
-
-      - name: Pub get
-        run: flutter pub get
-
-      - name: Build web
-        run: flutter build web --release
 
   build-linux:
     name: build-linux

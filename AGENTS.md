@@ -459,9 +459,9 @@ make container-run      # needs DISPLAY + /tmp/.X11-unix
 
 ### CI (GitHub Actions)
 
-- **PR / `main`:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — gitleaks + `tool/flutter_checks.sh all` (same gate as pre-push / `make check`), plus web and Linux desktop compile smoke on `ubuntu-latest`. Offline only — excludes `live_canary`.
+- **PR / `main`:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — gitleaks + `tool/flutter_checks.sh all` (same gate as pre-push / `make check`), plus Linux desktop compile smoke on `ubuntu-latest`. Web smoke paused. Offline only — excludes `live_canary`.
 - **Venue canary (scheduled):** [`.github/workflows/venue-canary.yml`](.github/workflows/venue-canary.yml) — daily + `workflow_dispatch`; live probes via Dart adapters; job may go red on outages without blocking merges. Optional repo secrets unlock portfolio probes.
-- **Tags `v*` only:** [`.github/workflows/release.yml`](.github/workflows/release.yml) — build web / Linux / APK and publish a GitHub Release (not on every main merge).
+- **Tags `v*` only:** [`.github/workflows/release.yml`](.github/workflows/release.yml) — build Linux / APK and publish a GitHub Release (web asset paused; not on every main merge).
 - **Container (GHCR):** [`.github/workflows/container.yml`](.github/workflows/container.yml) — on `v*` tags (and `workflow_dispatch`), build [`Containerfile`](Containerfile) and push `ghcr.io/<owner>/<repo>` with `GITHUB_TOKEN` (`packages: write`). OCI `org.opencontainers.image.source` links the package to the repo.
 - **Patch bump on `main`:** [`.github/workflows/bump-patch-version.yml`](.github/workflows/bump-patch-version.yml) — does not create tags. See [`docs/build-and-release.md`](docs/build-and-release.md) for the tag-and-release steps.
 
