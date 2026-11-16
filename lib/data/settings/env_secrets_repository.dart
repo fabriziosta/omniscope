@@ -125,6 +125,14 @@ class EnvSecretsRepository extends ChangeNotifier {
     await _setValues({name: apiKey.trim()});
   }
 
+  /// Clear every LLM provider API key (Settings → Data & privacy).
+  Future<void> clearAllLlmApiKeys() async {
+    await _setValues({
+      for (final provider in LlmProvider.values)
+        LlmApiKeyConfig.envNameFor(provider): '',
+    });
+  }
+
   /// Persist exchange credentials and sync to `.env` when possible.
   Future<void> setExchangeCredentials(
     String exchangeId,

@@ -4,8 +4,11 @@ import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../data/agents/agent_activity_repository.dart';
+import '../../data/agents/agent_app_settings.dart';
 import '../../data/agents/agent_chat_repository.dart';
 import '../../data/agents/agents_repository.dart';
+import '../../data/agents/invest_interest_proposal_repository.dart';
+import '../../data/agents/llm_runtime_settings.dart';
 import '../../data/agents/trade_proposal_repository.dart';
 import '../../data/notifications/app_notification_repository.dart';
 import '../../data/market/exchange_credentials.dart';
@@ -14,6 +17,7 @@ import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/display_settings.dart';
 import '../../data/settings/env_secrets_repository.dart';
 import '../../data/settings/favorites_repository.dart';
+import '../../data/settings/mandate_settings.dart';
 import '../../data/settings/theme_settings.dart';
 import '../../data/settings/user_config_reload.dart';
 import '../../data/settings/user_config_store.dart';
@@ -61,6 +65,12 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
       portfolio: context.read<PortfolioRepository>(),
       agents: context.read<AgentsRepository>(),
       chats: context.read<AgentChatRepository>(),
+      llmRuntime: context.read<LlmRuntimeSettings>(),
+      agentApp: context.read<AgentAppSettings>(),
+      mandate: context.read<MandateSettings>(),
+      investInterestProposals:
+          context.read<InvestInterestProposalRepository>(),
+      tradeProposals: context.read<TradeProposalRepository>(),
       venues: context.read<VenueCatalog>(),
     );
   }
@@ -195,54 +205,52 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
     );
   }
 
-  Future<void> _disconnectAgents() async {
-    final agents = context.read<AgentsRepository>();
-    final connected = agents.availableRoles
-        .where((role) => agents.forRoleId(role.id).connected)
-        .toList(growable: false);
-    if (connected.isEmpty) {
-      showAppToast(
-        context,
-        description: 'No agents are connected.',
-      );
-      return;
-    }
+  Future<void> _resetLlmAndAgentPrefs() async {
     final ok = await confirmDestructiveAction(
       context,
-      title: 'Disconnect all agents?',
+      title: 'Reset LLM and agent prefs?',
       description:
-          'Clears API keys for ${connected.length} connected '
-          '${connected.length == 1 ? 'role' : 'roles'} on this device. '
-          'Chat history is kept until you clear it.',
-      confirmLabel: 'Disconnect',
+          'Clears all LLM API keys, light/heavy model picks, Autopilot, '
+          'Schedule, and role overrides on this device. Chat history is kept '
+          'until you clear it. This cannot be undone.',
+      confirmLabel: 'Reset',
     );
     if (!ok || !mounted) return;
-    for (final role in connected) {
-      await agents.disconnect(role.id);
-    }
+    final secrets = context.read<EnvSecretsRepository>();
+    final llmRuntime = context.read<LlmRuntimeSettings>();
+    final agentApp = context.read<AgentAppSettings>();
+    final agents = context.read<AgentsRepository>();
+    await secrets.clearAllLlmApiKeys();
+    await llmRuntime.clearAll();
+    await agentApp.resetToDefaults();
+    await agents.clearAllConnections();
     if (!mounted) return;
     showAppToast(
       context,
-      title: 'Agents disconnected',
-      description: 'API keys were cleared for connected roles.',
+      title: 'LLM and agent prefs reset',
+      description:
+          'Provider keys and agent settings were cleared on this device.',
     );
   }
 
   Future<void> _clearTradeActivity() async {
     final ok = await confirmDestructiveAction(
       context,
-      title: 'Clear trade proposals and activity?',
+      title: 'Clear proposals and activity?',
       description:
-          'Removes saved agent trade proposals, the Activity tab timeline, and '
-          'shell notifications on this device. Chat history is kept. '
-          'This cannot be undone.',
+          'Removes saved agent trade and Invest interest proposals, the '
+          'Activity tab timeline, and shell notifications on this device. '
+          'Chat history is kept. This cannot be undone.',
       confirmLabel: 'Clear activity',
     );
     if (!ok || !mounted) return;
     final proposals = context.read<TradeProposalRepository>();
+    final investInterest =
+        context.read<InvestInterestProposalRepository>();
     final activity = context.read<AgentActivityRepository>();
     final notifications = context.read<AppNotificationRepository>();
     await proposals.clearAll();
+    await investInterest.clearAll();
     await activity.clearAll();
     await notifications.clearAll();
     if (!mounted) return;
@@ -250,7 +258,7 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
       context,
       title: 'Activity cleared',
       description:
-          'Trade proposals, agent activity, and notifications were removed.',
+          'Proposals, agent activity, and notifications were removed.',
     );
   }
 
@@ -275,6 +283,30 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
       context,
       title: 'Favorites cleared',
       description: 'Starred Markets symbols were removed.',
+    );
+  }
+
+  Future<void> _clearInvestInterest() async {
+    final favorites = context.read<FavoritesRepository>();
+    final count = favorites.investInterestSymbols.length;
+    final ok = await confirmDestructiveAction(
+      context,
+      title: 'Clear invest interest?',
+      description: count == 0
+          ? 'Removes every Invest interest symbol from the data file. '
+              'This cannot be undone.'
+          : 'Removes $count invest-interest '
+              '${count == 1 ? 'symbol' : 'symbols'} from the data file. '
+              'This cannot be undone.',
+      confirmLabel: 'Clear invest interest',
+    );
+    if (!ok || !mounted) return;
+    await favorites.clearInvestInterest();
+    if (!mounted) return;
+    showAppToast(
+      context,
+      title: 'Invest interest cleared',
+      description: 'Agent-facing invest-interest symbols were removed.',
     );
   }
 
@@ -408,6 +440,16 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
           ),
         ),
         const SizedBox(height: 16),
+        const SettingsSubsectionLabel('Invest interest'),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ShadButton.outline(
+            onPressed: _clearInvestInterest,
+            child: const Text('Clear invest interest'),
+          ),
+        ),
+        const SizedBox(height: 16),
         const SettingsSubsectionLabel('Agent chats'),
         const SizedBox(height: 8),
         Align(
@@ -428,13 +470,13 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
           ),
         ),
         const SizedBox(height: 16),
-        const SettingsSubsectionLabel('Agents'),
+        const SettingsSubsectionLabel('LLM & agents'),
         const SizedBox(height: 8),
         Align(
           alignment: Alignment.centerLeft,
           child: ShadButton.outline(
-            onPressed: _disconnectAgents,
-            child: const Text('Disconnect all agents'),
+            onPressed: _resetLlmAndAgentPrefs,
+            child: const Text('Reset LLM and agent prefs'),
           ),
         ),
         const SizedBox(height: 16),

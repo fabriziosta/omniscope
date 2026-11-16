@@ -2,10 +2,6 @@
 abstract final class AppCopy {
   static const tagline = 'My trusted learning and trading buddy';
 
-  static const aboutBody =
-      'Omniscope helps you learn markets with paper trading. '
-      'No accounts — your data stays on this device.';
-
   /// Bottom-nav hover / long-press hints (plain language, not just the label).
   static const tabTooltipMarkets =
       'Browse favorites, equities, and spot crypto by exchange';
@@ -45,6 +41,23 @@ abstract final class AppCopy {
   static const noMarketFavorites =
       'No favorites yet. Star a symbol from Indices, ETFs, Stocks, or '
       'any spot exchange list.';
+
+  static const noInvestInterest =
+      'No invest-interest symbols yet. Tap the target icon on a quote to '
+      'mark assets you want agents to focus on, or let a connected agent '
+      'propose a list for you to Confirm.';
+
+  static const investInterestManagedByAgent =
+      'Managed by agent — last update came from a confirmed proposal. '
+      'Manual edits clear this badge.';
+
+  static const mandateIntro =
+      'Set your investing policy once. Connected agents read this mandate '
+      'and may propose Invest interest changes for you to Confirm — they '
+      'never edit the list silently.';
+
+  static const mandateRiskRailsSaved =
+      'Agents will respect these caps on Confirm and Autopilot.';
 
   static const noMarketSourcesEnabled =
       'No market data sources enabled. Turn one on in Settings.';

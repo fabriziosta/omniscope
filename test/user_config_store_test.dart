@@ -60,6 +60,64 @@ void main() {
     expect(decoded['theme'], 'system');
   });
 
+  test('new config is seeded with all default slices', () async {
+    final store = await memoryConfig();
+    final doc = store.document;
+    expect(doc[UserConfigKeys.version], UserConfigKeys.currentVersion);
+    expect(doc[UserConfigKeys.theme], isA<Map>());
+    expect(doc[UserConfigKeys.display], isA<Map>());
+    expect(doc[UserConfigKeys.dataSources], isA<Map>());
+    expect(doc[UserConfigKeys.secrets], isA<Map>());
+    expect(doc[UserConfigKeys.agents], isA<Map>());
+    expect(doc[UserConfigKeys.llmRuntime], isA<Map>());
+    expect(doc[UserConfigKeys.agentApp], isA<Map>());
+    expect(doc[UserConfigKeys.agentChats], isA<Map>());
+    expect(doc[UserConfigKeys.tradeProposals], isA<Map>());
+    expect(doc[UserConfigKeys.investInterestProposals], isA<Map>());
+    expect(doc[UserConfigKeys.agentActivity], isA<Map>());
+    expect(doc[UserConfigKeys.notifications], isA<Map>());
+    expect(doc[UserConfigKeys.paperPortfolio], isA<Map>());
+    expect(doc[UserConfigKeys.favorites], isA<Map>());
+    expect(doc[UserConfigKeys.mandate], isA<Map>());
+
+    final display = doc[UserConfigKeys.display] as Map;
+    expect(display['listDensity'], 'comfortable');
+    expect(display['priceFormat'], 'full');
+    expect(display['defaultChartRange'], '1mo');
+
+    final mandate = doc[UserConfigKeys.mandate] as Map;
+    expect(mandate['goal'], 'learn');
+    expect(mandate['maxSymbolCount'], 20);
+  });
+
+  test('missing fields are backfilled without wiping user values', () async {
+    final store = await memoryConfig();
+    await store.importJson(jsonEncode({
+      'version': 1,
+      'theme': {'mode': 'dark'},
+      'display': {'listDensity': 'compact'},
+      'favorites': {
+        'symbols': ['AAPL'],
+      },
+    }));
+
+    final theme = store.getSlice(UserConfigKeys.theme) as Map;
+    expect(theme['mode'], 'dark');
+    expect(theme['palette'], isNotNull);
+
+    final display = store.getSlice(UserConfigKeys.display) as Map;
+    expect(display['listDensity'], 'compact');
+    expect(display['priceFormat'], 'full');
+    expect(display['defaultChartRange'], '1mo');
+
+    final favorites = store.getSlice(UserConfigKeys.favorites) as Map;
+    expect(favorites['symbols'], ['AAPL']);
+    expect(favorites['investInterest'], isA<List>());
+
+    expect(store.getSlice(UserConfigKeys.mandate), isA<Map>());
+    expect(store.getSlice(UserConfigKeys.agentApp), isA<Map>());
+  });
+
   test('memoryOnly store does not require filesystem', () async {
     final store = UserConfigStore(memoryOnly: true);
     SharedPreferences.setMockInitialValues({});

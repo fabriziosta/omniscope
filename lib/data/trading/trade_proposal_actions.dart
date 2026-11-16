@@ -1,36 +1,32 @@
 import '../agents/agent_activity.dart';
 import '../agents/agent_activity_repository.dart';
-import '../agents/agents_repository.dart';
-import '../agents/models.dart';
+import '../agents/agent_app_settings.dart';
 import '../agents/trade_proposal.dart';
 import '../agents/trade_proposal_repository.dart';
 import '../portfolio/portfolio_catalog.dart';
 import 'order_models.dart';
 import 'trade_executor.dart';
 
-/// Confirm / Dismiss / portfolio resolution shared by chat and Activity.
+/// Confirm / Dismiss / portfolio resolution for Agents chat approvals.
 class TradeProposalActions {
   TradeProposalActions({
-    required this._agents,
+    required this._appSettings,
     required this._proposals,
     required this._activity,
     required this._tradeExecutor,
   });
 
-  final AgentsRepository _agents;
+  final AgentAppSettings _appSettings;
   final TradeProposalRepository _proposals;
   final AgentActivityRepository _activity;
   final TradeExecutor _tradeExecutor;
 
   List<TradableVenue> get tradableVenues => _tradeExecutor.tradableVenues;
 
-  /// Connect default when set and still valid; otherwise null if the user
-  /// must pick on Confirm (multiple targets, no default).
-  String? preferredPortfolioId([AgentConnection? connection, String? roleId]) {
-    final conn = connection ??
-        (roleId != null ? _agents.forRoleId(roleId) : null);
-    if (conn == null) return null;
-    final preferred = conn.autopilotExchangeId?.trim();
+  /// Preferred portfolio when Autopilot default is set and still valid;
+  /// otherwise null if the user must pick on Confirm (multiple targets).
+  String? preferredPortfolioId() {
+    final preferred = _appSettings.autopilotExchangeId?.trim();
     if (preferred != null && preferred.isNotEmpty) {
       if (_tradeExecutor.venueForId(preferred) != null) return preferred;
     }
@@ -43,36 +39,24 @@ class TradeProposalActions {
   }
 
   /// True when Confirm needs a portfolio picker (no default + multiple targets).
-  bool needsPortfolioPicker(String roleId) =>
-      preferredPortfolioId(_agents.forRoleId(roleId), roleId) == null;
+  bool get needsPortfolioPicker => preferredPortfolioId() == null;
 
   /// Resolve a concrete portfolio id for Confirm / Autopilot.
   ///
-  /// Order: explicit [targetPortfolioId] → Connect default / single venue →
+  /// Order: explicit [targetPortfolioId] → global default / single venue →
   /// null when still ambiguous.
-  String? resolveConfirmPortfolioId({
-    required String roleId,
-    String? targetPortfolioId,
-    AgentConnection? connection,
-  }) {
+  String? resolveConfirmPortfolioId({String? targetPortfolioId}) {
     final explicit = targetPortfolioId?.trim();
     if (explicit != null && explicit.isNotEmpty) {
       if (_tradeExecutor.venueForId(explicit) != null) return explicit;
       return null;
     }
-    return preferredPortfolioId(
-      connection ?? _agents.forRoleId(roleId),
-      roleId,
-    );
+    return preferredPortfolioId();
   }
 
   /// Stamp id for a new proposal: preferred when known, else Practice hint.
-  String resolveTargetExchangeId(String roleId, [AgentConnection? connection]) {
-    return preferredPortfolioId(
-          connection ?? _agents.forRoleId(roleId),
-          roleId,
-        ) ??
-        PortfolioDescriptor.practiceId;
+  String resolveTargetExchangeId() {
+    return preferredPortfolioId() ?? PortfolioDescriptor.practiceId;
   }
 
   String portfolioDisplayName(String exchangeId) {
@@ -103,11 +87,8 @@ class TradeProposalActions {
       return 'Quantity must be greater than zero.';
     }
 
-    final connection = _agents.forRoleId(proposal.roleId);
     final portfolioId = resolveConfirmPortfolioId(
-      roleId: proposal.roleId,
       targetPortfolioId: targetPortfolioId,
-      connection: connection,
     );
     if (portfolioId == null) {
       return 'Choose a portfolio before confirming.';

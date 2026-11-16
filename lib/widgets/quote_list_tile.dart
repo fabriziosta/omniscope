@@ -24,6 +24,7 @@ class QuoteListTile extends StatelessWidget {
     this.density = ListDensity.comfortable,
     this.cryptoExchangeId,
     this.showFavorite = true,
+    this.showInvestInterest = true,
     this.showInvestigate = true,
   });
 
@@ -37,6 +38,9 @@ class QuoteListTile extends StatelessWidget {
 
   /// Hide the star (e.g. non-quote surfaces). Defaults to on.
   final bool showFavorite;
+
+  /// Hide the invest-interest target. Defaults to on for Markets quote rows.
+  final bool showInvestInterest;
 
   /// Sparkles control that deep-links into Investigate for this symbol.
   final bool showInvestigate;
@@ -61,6 +65,12 @@ class QuoteListTile extends StatelessWidget {
 
     final favoriteButton = showFavorite
         ? _FavoriteStarButton(
+            symbol: quote.symbol,
+            compact: compact,
+          )
+        : null;
+    final investInterestButton = showInvestInterest
+        ? _InvestInterestButton(
             symbol: quote.symbol,
             compact: compact,
           )
@@ -125,6 +135,7 @@ class QuoteListTile extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           ?investigateButton,
+          if (investInterestButton != null) investInterestButton,
           if (favoriteButton != null) ...[
             favoriteButton,
             SizedBox(width: compact ? 4 : 8),
@@ -179,6 +190,57 @@ class _FavoriteStarButton extends StatelessWidget {
                 favorited ? LucideIcons.star : LucideIcons.starOff,
                 size: compact ? 18 : 20,
                 color: favorited
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.mutedForeground,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InvestInterestButton extends StatelessWidget {
+  const _InvestInterestButton({
+    required this.symbol,
+    required this.compact,
+  });
+
+  final String symbol;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final marked = context.select<FavoritesRepository, bool>(
+      (favorites) => favorites.isInvestInterest(symbol),
+    );
+    final label = marked
+        ? 'Remove $symbol from invest interest'
+        : 'Add $symbol to invest interest';
+
+    return Semantics(
+      button: true,
+      label: label,
+      child: AppTooltip(
+        message: marked
+            ? 'Remove from invest interest'
+            : 'For agents — assets you want to invest in',
+        wrapDetector: true,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            context.read<FavoritesRepository>().toggleInvestInterest(symbol);
+          },
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: Center(
+              child: Icon(
+                LucideIcons.crosshair,
+                size: compact ? 18 : 20,
+                color: marked
                     ? theme.colorScheme.primary
                     : theme.colorScheme.mutedForeground,
               ),

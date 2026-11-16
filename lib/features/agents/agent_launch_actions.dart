@@ -1,48 +1,52 @@
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
-import '../../core/fade_page_route.dart';
 import '../../core/shell_navigation.dart';
+import '../../data/agents/agent_app_settings.dart';
+import '../../data/agents/agent_chat_repository.dart';
 import '../../data/agents/agent_launch.dart';
 import '../../data/agents/agents_repository.dart';
-import '../../data/agents/models.dart';
+import '../../data/agents/llm_model_router.dart';
+import '../../data/agents/llm_runtime_settings.dart';
+import '../../data/settings/env_secrets_repository.dart';
 import '../../widgets/app_toast.dart';
-import 'agent_chat_screen.dart';
 
-/// Shared navigation + picker for opening agent chat from any screen.
+/// Shared navigation for opening orchestrator chat from any screen.
 class AgentLaunchActions {
   AgentLaunchActions._();
 
-  /// Push chat for [role], optionally auto-running a symbol / venue turn.
+  /// Create/open a chat on the Agents tab (master–detail), optionally auto-run.
   static Future<void> openAgentChat(
     BuildContext context, {
-    required AgentRoleDefinition role,
+    String? chatId,
+    String? starterRoleId,
     String? initialSymbol,
     String? initialExchangeId,
     bool autoRun = false,
     String? side,
     double? quantity,
-  }) {
-    return pushFadePage<void>(
-      context,
-      AgentChatScreen(
-        role: role,
-        initialSymbol: initialSymbol,
-        initialExchangeId: initialExchangeId,
-        autoRun: autoRun,
-        initialSide: side,
-        initialQuantity: quantity,
-      ),
-    );
+  }) async {
+    final chats = context.read<AgentChatRepository>();
+    final id = chatId ??
+        (await chats.createChat(
+          title: initialSymbol?.trim().isNotEmpty == true
+              ? initialSymbol!.trim()
+              : null,
+        ))
+            .chatId;
+    if (!context.mounted) return;
+    context.read<ShellNavigationController>().goToAgentChat(
+          chatId: id,
+          starterRoleId: starterRoleId,
+          symbol: initialSymbol,
+          initialExchangeId: initialExchangeId,
+          autoRun: autoRun,
+          initialSide: side,
+          initialQuantity: quantity,
+        );
   }
 
-  /// Resolve applicable roles for [intent] and launch or show a picker.
-  ///
-  /// - One connected role → open chat (auto-run when [symbol] is set, or for
-  ///   portfolio-level intents).
-  /// - Several connected → dialog to choose.
-  /// - None connected → Agents tab + Connect dialog for the preferred role.
+  /// Resolve intent → starter role and open orchestrator chat.
   static Future<void> launch(
     BuildContext context, {
     required AgentLaunchIntent intent,
@@ -51,12 +55,35 @@ class AgentLaunchActions {
     String? side,
     double? quantity,
   }) async {
+    final secrets = context.read<EnvSecretsRepository>();
+    final runtime = context.read<LlmRuntimeSettings>();
+    if (!LlmModelRouter.hasAnyEndpoint(
+      runtime: runtime,
+      keys: secrets.llmKeys,
+    )) {
+      showAppToast(
+        context,
+        title: 'Add an LLM key',
+        description:
+            'Add a provider under Settings → Connections, then try again.',
+      );
+      context.read<ShellNavigationController>().goToSettings(
+            sectionId: 'connections',
+          );
+      return;
+    }
+
     final agents = context.read<AgentsRepository>();
+    final appSettings = context.read<AgentAppSettings>();
     final applicable = AgentLaunchResolver.rolesForIntent(
       availableRoles: agents.availableRoles,
       intent: intent,
     );
-    if (applicable.isEmpty) {
+    final enabled = [
+      for (final r in applicable)
+        if (appSettings.isRoleEnabled(r.id)) r,
+    ];
+    if (enabled.isEmpty) {
       showAppToast(
         context,
         description: 'No agent is available for this action yet.',
@@ -66,171 +93,20 @@ class AgentLaunchActions {
       return;
     }
 
-    final connected = AgentLaunchResolver.connectedAmong(
-      roles: applicable,
-      isConnected: (id) => agents.forRoleId(id).connected,
-    );
-
-    if (connected.isEmpty) {
-      final preferred = applicable.first;
-      showAppToast(
-        context,
-        title: 'Connect an agent',
-        description:
-            'Connect ${preferred.title} to use this action, then try again.',
-      );
-      context.read<ShellNavigationController>().goToAgents(
-            connectRoleId: preferred.id,
-          );
-      return;
-    }
-
+    final preferred = enabled.first;
     final sym = symbol?.trim();
     final shouldAutoRun = intent.isPortfolioLevel
         ? true
         : (sym != null && sym.isNotEmpty);
 
-    if (connected.length == 1) {
-      await openAgentChat(
-        context,
-        role: connected.first,
-        initialSymbol: sym,
-        initialExchangeId: exchangeId,
-        autoRun: shouldAutoRun,
-        side: side,
-        quantity: quantity,
-      );
-      return;
-    }
-
-    final chosen = await showShadDialog<AgentRoleDefinition>(
-      context: context,
-      builder: (context) => _AgentLaunchPickerDialog(
-        title: intent.pickerTitle,
-        symbol: (sym ?? '').toUpperCase(),
-        exchangeId: exchangeId?.trim(),
-        roles: connected,
-        portfolioLevel: intent.isPortfolioLevel,
-        intent: intent,
-      ),
-    );
-    if (chosen == null || !context.mounted) return;
     await openAgentChat(
       context,
-      role: chosen,
+      starterRoleId: preferred.id,
       initialSymbol: sym,
       initialExchangeId: exchangeId,
       autoRun: shouldAutoRun,
       side: side,
       quantity: quantity,
-    );
-  }
-}
-
-class _AgentLaunchPickerDialog extends StatelessWidget {
-  const _AgentLaunchPickerDialog({
-    required this.title,
-    required this.symbol,
-    required this.roles,
-    required this.intent,
-    this.exchangeId,
-    this.portfolioLevel = false,
-  });
-
-  final String title;
-  final String symbol;
-  final String? exchangeId;
-  final List<AgentRoleDefinition> roles;
-  final bool portfolioLevel;
-  final AgentLaunchIntent intent;
-
-  @override
-  Widget build(BuildContext context) {
-    final String description;
-    if (portfolioLevel) {
-      final focus = symbol.isNotEmpty ? ' (focus $symbol)' : '';
-      description = switch (intent) {
-        AgentLaunchIntent.explainLive =>
-          'Choose an agent to explain live balances$focus.',
-        AgentLaunchIntent.explainPortfolio =>
-          'Choose an agent to review allocation$focus.',
-        AgentLaunchIntent.paperReview =>
-          'Choose an agent to coach your practice portfolio$focus.',
-        _ => 'Choose an agent$focus.',
-      };
-    } else {
-      description =
-          'Choose an agent for $symbol. Chat opens with a Run for this symbol.';
-    }
-    return ShadDialog(
-      title: Text(title),
-      description: Text(description),
-      actions: [
-        ShadButton.outline(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-      ],
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (var i = 0; i < roles.length; i++) ...[
-              if (i > 0) const SizedBox(height: 8),
-              _AgentLaunchRoleTile(
-                role: roles[i],
-                onTap: () => Navigator.of(context).pop(roles[i]),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AgentLaunchRoleTile extends StatelessWidget {
-  const _AgentLaunchRoleTile({
-    required this.role,
-    required this.onTap,
-  });
-
-  final AgentRoleDefinition role;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 44),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: theme.colorScheme.border),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(role.title, style: theme.textTheme.large),
-                const SizedBox(height: 2),
-                Text(
-                  role.description,
-                  style: theme.textTheme.muted,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

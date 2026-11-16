@@ -17,7 +17,7 @@ before larger changes (UI kit, market data, agents, portfolio).
 
 ## Prerequisites
 
-- Flutter SDK (stable; see [README](README.md))
+- Flutter SDK (stable; see [docs/development.md](docs/development.md))
 - For desktop/mobile targets: the matching toolchain (`flutter doctor`)
 - Optional: `pre-commit` for local hooks
 
@@ -52,8 +52,8 @@ Copy [`.env.example`](.env.example) → `.env` for local LLM / exchange keys.
 
 1. Branch from `main` with a short, descriptive name.
 2. Run `make check` (same as the pre-push hook: analyze + test).
-3. Keep the diff focused; update README / AGENTS.md when behavior or
-   architecture changes.
+3. Keep the diff focused; update README / AGENTS.md / `docs/` when behavior,
+   architecture, or setup/release procedures change.
 4. Do not commit secrets, large binaries, or generated `build/` output.
 
 ## Pull requests

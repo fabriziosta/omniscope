@@ -106,6 +106,7 @@ class MasterDetailNavList extends StatelessWidget {
     super.key,
     required this.tiles,
     this.leading = const [],
+    this.footer,
   });
 
   /// Optional widgets above the tiles (e.g. a soft CTA card).
@@ -114,13 +115,18 @@ class MasterDetailNavList extends StatelessWidget {
   /// Destination rows — typically [MasterDetailNavTile]s.
   final List<Widget> tiles;
 
+  /// Optional content pinned under the scrollable tiles (e.g. app version).
+  final Widget? footer;
+
   static const tileGap = 6.0;
   static const listPadding = EdgeInsets.fromLTRB(12, 8, 12, 24);
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: listPadding,
+    final list = ListView(
+      padding: footer == null
+          ? listPadding
+          : const EdgeInsets.fromLTRB(12, 8, 12, 8),
       children: [
         for (final child in leading) ...[
           child,
@@ -130,6 +136,20 @@ class MasterDetailNavList extends StatelessWidget {
           if (i > 0) const SizedBox(height: tileGap),
           tiles[i],
         ],
+      ],
+    );
+
+    final footerWidget = footer;
+    if (footerWidget == null) return list;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: list),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+          child: footerWidget,
+        ),
       ],
     );
   }

@@ -2,15 +2,17 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscope/app.dart';
 import 'package:omniscope/core/app_error_controller.dart';
+import 'package:omniscope/core/app_info.dart';
 import 'package:omniscope/core/shell_navigation.dart';
 import 'package:omniscope/data/agents/agent_activity_repository.dart';
+import 'package:omniscope/data/agents/agent_app_settings.dart';
 import 'package:omniscope/data/agents/agent_chat_repository.dart';
 import 'package:omniscope/data/agents/agent_role_catalog.dart';
 import 'package:omniscope/data/agents/agents_repository.dart';
 import 'package:omniscope/data/agents/genkit/genkit_agent_runner.dart';
-import 'support/fake_genkit_agent_runner.dart';
+import 'package:omniscope/data/agents/invest_interest_proposal_repository.dart';
+import 'package:omniscope/data/agents/llm_runtime_settings.dart';
 import 'package:omniscope/data/agents/trade_proposal_repository.dart';
-import 'package:omniscope/data/notifications/app_notification_repository.dart';
 import 'package:omniscope/data/crypto/crypto_com/crypto_com_exchange_client.dart';
 import 'package:omniscope/data/crypto/crypto_exchange.dart';
 import 'package:omniscope/data/crypto/crypto_exchange_client.dart';
@@ -19,13 +21,16 @@ import 'package:omniscope/data/crypto/exchange_portfolio.dart';
 import 'package:omniscope/data/market/equity_data_source.dart';
 import 'package:omniscope/data/market/market_data_client.dart';
 import 'package:omniscope/data/market/models.dart';
+import 'package:omniscope/data/notifications/app_notification_repository.dart';
 import 'package:omniscope/data/portfolio/portfolio_repository.dart';
 import 'package:omniscope/data/settings/data_source_settings.dart';
 import 'package:omniscope/data/settings/display_settings.dart';
 import 'package:omniscope/data/settings/env_secrets_repository.dart';
 import 'package:omniscope/data/settings/favorites_repository.dart';
+import 'package:omniscope/data/settings/mandate_settings.dart';
 import 'package:omniscope/data/settings/theme_settings.dart';
 import 'package:omniscope/data/settings/user_config_store.dart';
+import 'support/fake_genkit_agent_runner.dart';
 import 'package:omniscope/data/trading/broker_exchange_registry.dart';
 import 'package:omniscope/data/trading/order_models.dart';
 import 'package:omniscope/data/trading/trade_executor.dart';
@@ -164,6 +169,8 @@ void main() {
     await dataSourceSettings.load();
     final favorites = FavoritesRepository(store: config);
     await favorites.load();
+    final mandate = MandateSettings(store: config);
+    await mandate.load();
     final agentRoles = await AgentRoleCatalog.load();
     final agents = AgentsRepository(store: config, roleCatalog: agentRoles);
     await agents.load(roleCatalog: agentRoles);
@@ -171,6 +178,9 @@ void main() {
     await agentChats.load();
     final tradeProposals = TradeProposalRepository(store: config);
     await tradeProposals.load();
+    final investInterestProposals =
+        InvestInterestProposalRepository(store: config);
+    await investInterestProposals.load();
     final agentActivity = AgentActivityRepository(store: config);
     await agentActivity.load();
     final appNotifications = AppNotificationRepository(store: config);
@@ -201,6 +211,13 @@ void main() {
       portfolio: portfolio,
       marketData: marketClient,
     );
+    final llmRuntime = LlmRuntimeSettings(store: config);
+    await llmRuntime.load();
+    final agentApp = AgentAppSettings(store: config);
+    await agentApp.load();
+    final envSecrets =
+        EnvSecretsRepository(store: config, syncEnvFile: false);
+    await envSecrets.load();
     final agentSchedule = AgentScheduleCoordinator(
       agents: agents,
       chats: agentChats,
@@ -213,13 +230,13 @@ void main() {
       cryptoRegistry: cryptoRegistry,
       dataSources: dataSourceSettings,
       portfolio: portfolio,
+      favorites: favorites,
+      secrets: envSecrets,
+      llmRuntime: llmRuntime,
+      appSettings: agentApp,
     );
     final navigatorKey = GlobalKey<NavigatorState>();
     final appErrors = AppErrorController(navigatorKey: navigatorKey);
-
-    final envSecrets =
-        EnvSecretsRepository(store: config, syncEnvFile: false);
-    await envSecrets.load();
 
     await tester.pumpWidget(
       MultiProvider(
@@ -238,11 +255,17 @@ void main() {
           Provider<TradeExecutor>.value(value: tradeExecutor),
           ChangeNotifierProvider<EnvSecretsRepository>.value(value: envSecrets),
           ChangeNotifierProvider<FavoritesRepository>.value(value: favorites),
+          ChangeNotifierProvider<MandateSettings>.value(value: mandate),
           ChangeNotifierProvider<PortfolioRepository>.value(value: portfolio),
           ChangeNotifierProvider<AgentsRepository>.value(value: agents),
+          ChangeNotifierProvider<LlmRuntimeSettings>.value(value: llmRuntime),
+          ChangeNotifierProvider<AgentAppSettings>.value(value: agentApp),
           ChangeNotifierProvider<AgentChatRepository>.value(value: agentChats),
           ChangeNotifierProvider<TradeProposalRepository>.value(
             value: tradeProposals,
+          ),
+          ChangeNotifierProvider<InvestInterestProposalRepository>.value(
+            value: investInterestProposals,
           ),
           ChangeNotifierProvider<AgentActivityRepository>.value(
             value: agentActivity,
@@ -284,12 +307,13 @@ void main() {
     expect(find.text('Agents'), findsWidgets);
     expect(find.text('Settings'), findsWidgets);
     expect(find.text('Favorites'), findsOneWidget);
+    expect(find.text('Invest interest'), findsOneWidget);
     expect(find.text('Indices'), findsOneWidget);
     expect(find.text('ETFs'), findsOneWidget);
     expect(find.text('Stocks'), findsOneWidget);
     expect(find.text('Crypto.com'), findsOneWidget);
     expect(find.text('Spot pairs'), findsOneWidget);
-    expect(find.text('0 symbols'), findsOneWidget);
+    expect(find.text('0 symbols'), findsNWidgets(2));
     expect(
       find.text('${watchlistSymbolsForKind(MarketAssetKind.indices).length} symbols'),
       findsOneWidget,
@@ -337,14 +361,15 @@ void main() {
     await tester.tap(find.text('Activity').last);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.textContaining('Confirm pending'), findsOneWidget);
+    expect(find.textContaining('Archive of agent discoveries'), findsOneWidget);
 
     await tester.tap(find.text('Agents').last);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('Market Research & Analysis'), findsOneWidget);
+    expect(find.text('New chat'), findsOneWidget);
+    expect(find.text('Run research'), findsOneWidget);
     expect(find.textContaining('LangGraph'), findsNothing);
-    final agentsCtx = tester.element(find.text('Market Research & Analysis'));
+    final agentsCtx = tester.element(find.text('New chat'));
     final roleTitles = agentsCtx
         .read<AgentsRepository>()
         .availableRoles
@@ -352,23 +377,13 @@ void main() {
         .toList();
     expect(roleTitles, contains('Intraday Execution & Risk Control'));
     expect(roleTitles, isNot(contains('Hedge Fund Desk')));
-    // Lower roles may sit below the phone viewport — scroll the Roles list.
-    final rolesScrollable = find.byWidgetPredicate(
-      (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
-    );
-    await tester.scrollUntilVisible(
-      find.text('Intraday Execution & Risk Control'),
-      300,
-      scrollable: rolesScrollable.last,
-    );
-    await tester.pump();
-    expect(find.text('Intraday Execution & Risk Control'), findsOneWidget);
+    expect(find.text('Run trade check'), findsOneWidget);
 
     await tester.tap(find.text('Settings').last);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     // Narrow: section list first (sidebar anchors).
-    expect(find.text('About'), findsWidgets);
+    expect(find.text('v${AppInfo.version}'), findsOneWidget);
     expect(find.text('Appearance'), findsOneWidget);
     expect(find.text('Data sources'), findsOneWidget);
     expect(find.text('Connections'), findsOneWidget);
@@ -402,8 +417,11 @@ void main() {
     await tester.ensureVisible(find.text('Connections'));
     await tester.tap(find.text('Connections'));
     await tester.pumpAndSettle();
-    expect(find.text('LLM API keys'), findsOneWidget);
-    expect(find.text('Nothing connected yet.'), findsOneWidget);
+    expect(find.text('LLM API keys & models'), findsOneWidget);
+    expect(
+      find.textContaining('Add at least one provider key'),
+      findsOneWidget,
+    );
 
     await tester.tap(find.byType(NavBackButton));
     await tester.pumpAndSettle();

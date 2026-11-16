@@ -6,12 +6,16 @@ abstract final class UserConfigKeys {
   static const dataSources = 'dataSources';
   static const secrets = 'secrets';
   static const agents = 'agents';
+  static const llmRuntime = 'llmRuntime';
+  static const agentApp = 'agentApp';
   static const agentChats = 'agentChats';
   static const tradeProposals = 'tradeProposals';
   static const agentActivity = 'agentActivity';
   static const notifications = 'notifications';
   static const paperPortfolio = 'paperPortfolio';
   static const favorites = 'favorites';
+  static const mandate = 'mandate';
+  static const investInterestProposals = 'investInterestProposals';
 
   /// Tiny prefs bootstrap: optional absolute path override (desktop).
   static const pathOverridePrefsKey = 'omniscope.config_path.v1';

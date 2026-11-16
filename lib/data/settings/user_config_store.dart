@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/user_config_file.dart';
+import 'user_config_defaults.dart';
 import 'user_config_keys.dart';
 
 /// Single JSON document for secrets, favorites, and all app customizations.
@@ -19,7 +20,7 @@ class UserConfigStore extends ChangeNotifier {
   })  : _prefsOverride = prefs,
         _document = initialDocument != null
             ? _deepCopyMap(initialDocument)
-            : _emptyDocument();
+            : UserConfigDefaults.document();
 
   final SharedPreferences? _prefsOverride;
 
@@ -99,24 +100,31 @@ class UserConfigStore extends ChangeNotifier {
       loaded = _tryParseDocument(prefs.getString(UserConfigKeys.webBlobPrefsKey));
     }
 
+    var shouldPersist = false;
     if (loaded == null || loaded.isEmpty) {
-      _document = _emptyDocument();
-      final migrated = await _migrateLegacy(prefs);
-      if (migrated) {
-        await _persistImmediate();
-        await _clearLegacy(prefs);
-      }
+      _document = <String, dynamic>{};
     } else {
       _document = loaded;
       if (_document[UserConfigKeys.version] is! int) {
         _document[UserConfigKeys.version] = UserConfigKeys.currentVersion;
+        shouldPersist = true;
       }
-      // Absorb any leftover legacy keys once, then drop them.
-      final migrated = await _migrateLegacy(prefs);
-      if (migrated) {
-        await _persistImmediate();
-        await _clearLegacy(prefs);
-      }
+    }
+
+    // Absorb any leftover legacy keys once, then drop them — before
+    // defaults so migrated slices are not treated as "already present".
+    final migrated = await _migrateLegacy(prefs);
+    if (migrated) {
+      shouldPersist = true;
+      await _clearLegacy(prefs);
+    }
+
+    if (UserConfigDefaults.mergeInto(_document)) {
+      shouldPersist = true;
+    }
+
+    if (shouldPersist) {
+      await _persistImmediate();
     }
 
     _ready = true;
@@ -153,6 +161,7 @@ class UserConfigStore extends ChangeNotifier {
     if (_document[UserConfigKeys.version] is! int) {
       _document[UserConfigKeys.version] = UserConfigKeys.currentVersion;
     }
+    UserConfigDefaults.mergeInto(_document);
     await _persistImmediate();
     notifyListeners();
   }
@@ -266,10 +275,6 @@ class UserConfigStore extends ChangeNotifier {
       await prefs.remove(key);
     }
   }
-
-  static Map<String, dynamic> _emptyDocument() => {
-        UserConfigKeys.version: UserConfigKeys.currentVersion,
-      };
 
   static Map<String, dynamic>? _tryParseDocument(String? raw) {
     if (raw == null || raw.trim().isEmpty) return null;

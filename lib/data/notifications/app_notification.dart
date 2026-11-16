@@ -47,6 +47,7 @@ class AppNotification {
     required this.body,
     this.symbol,
     this.proposalId,
+    this.chatId,
     this.read = false,
     this.status = AppNotificationStatus.active,
   });
@@ -59,6 +60,7 @@ class AppNotification {
   final String body;
   final String? symbol;
   final String? proposalId;
+  final String? chatId;
   final bool read;
   final AppNotificationStatus status;
 
@@ -73,10 +75,12 @@ class AppNotification {
     String? body,
     String? symbol,
     String? proposalId,
+    String? chatId,
     bool? read,
     AppNotificationStatus? status,
     bool clearSymbol = false,
     bool clearProposalId = false,
+    bool clearChatId = false,
   }) {
     return AppNotification(
       id: id ?? this.id,
@@ -87,6 +91,7 @@ class AppNotification {
       body: body ?? this.body,
       symbol: clearSymbol ? null : (symbol ?? this.symbol),
       proposalId: clearProposalId ? null : (proposalId ?? this.proposalId),
+      chatId: clearChatId ? null : (chatId ?? this.chatId),
       read: read ?? this.read,
       status: status ?? this.status,
     );
@@ -101,6 +106,7 @@ class AppNotification {
         'body': body,
         if (symbol != null) 'symbol': symbol,
         if (proposalId != null) 'proposalId': proposalId,
+        if (chatId != null) 'chatId': chatId,
         'read': read,
         'status': status.name,
       };
@@ -116,6 +122,7 @@ class AppNotification {
       body: json['body'] as String? ?? '',
       symbol: json['symbol'] as String?,
       proposalId: json['proposalId'] as String?,
+      chatId: json['chatId'] as String?,
       read: json['read'] as bool? ?? false,
       status: AppNotificationStatusX.parse(json['status'] as String?),
     );

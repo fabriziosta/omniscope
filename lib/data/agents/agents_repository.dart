@@ -5,6 +5,10 @@ import '../settings/user_config_store.dart';
 import 'agent_role_catalog.dart';
 import 'models.dart';
 
+/// Role catalog holder + legacy connection slice (migration / wipe only).
+///
+/// Product credentials live in [EnvSecretsRepository] / [LlmRuntimeSettings];
+/// Autopilot / Schedule / role enable live in [AgentAppSettings].
 class AgentsRepository extends ChangeNotifier {
   AgentsRepository({
     this.store,
@@ -72,98 +76,9 @@ class AgentsRepository extends ChangeNotifier {
     await store?.setSlice(UserConfigKeys.agents, _state.toJson());
   }
 
-  /// Persist credentials and mark the role connected.
-  Future<String?> connect({
-    required String roleId,
-    required LlmProvider llmProvider,
-    required String apiKey,
-    required String modelId,
-    String? baseUrl,
-    bool autopilotEnabled = false,
-    String? autopilotExchangeId,
-    double? autopilotMaxNotional,
-    int autopilotMaxOpenProposals = 3,
-    bool scheduleEnabled = false,
-    AgentScheduleInterval scheduleInterval = AgentScheduleInterval.hour1,
-    List<String> scheduleSymbols = const [],
-  }) async {
-    if (_roleCatalog != null && _roleCatalog!.byId(roleId) == null) {
-      return 'Unknown agent role.';
-    }
-    final key = apiKey.trim();
-    final model = modelId.trim();
-    if (roleId.isEmpty) return 'Role is required.';
-    if (key.isEmpty) return 'API key is required.';
-    if (model.isEmpty) return 'Model is required.';
-    if (llmProvider == LlmProvider.custom) {
-      final url = baseUrl?.trim() ?? '';
-      if (url.isEmpty) return 'Base URL is required for Custom.';
-    }
-
-    final symbols = normalizeScheduleSymbols(scheduleSymbols);
-    if (scheduleEnabled && symbols.isEmpty) {
-      return 'Schedule needs at least one symbol.';
-    }
-
-    final existing = _state.forRoleId(roleId);
-    final connection = AgentConnection(
-      roleId: roleId,
-      llmProvider: llmProvider,
-      apiKey: key,
-      modelId: model,
-      baseUrl: llmProvider == LlmProvider.custom ? baseUrl?.trim() : null,
-      connected: true,
-      autopilotEnabled: autopilotEnabled,
-      autopilotExchangeId: autopilotExchangeId?.trim().isEmpty == true
-          ? null
-          : autopilotExchangeId?.trim(),
-      autopilotMaxNotional: autopilotMaxNotional,
-      autopilotMaxOpenProposals: autopilotMaxOpenProposals < 1
-          ? 1
-          : autopilotMaxOpenProposals,
-      scheduleEnabled: scheduleEnabled,
-      scheduleInterval: scheduleInterval,
-      scheduleSymbols: symbols,
-      // Keep last-run stamp across Edit so reconnect does not immediately re-fire.
-      scheduleLastRunAt: existing.scheduleLastRunAt,
-    );
-    _state = _state.withConnection(connection);
-    await _persist();
-    notifyListeners();
-    return null;
-  }
-
-  /// Record when a scheduled batch started for [roleId].
-  Future<void> updateScheduleLastRunAt(String roleId, DateTime at) async {
-    final existing = _state.forRoleId(roleId);
-    _state = _state.withConnection(
-      existing.copyWith(scheduleLastRunAt: at.toUtc()),
-    );
-    await _persist();
-    notifyListeners();
-  }
-
-  /// Disconnect and clear the stored API key (turns Autopilot / Schedule off).
-  Future<void> disconnect(String roleId) async {
-    final existing = _state.forRoleId(roleId);
-    _state = _state.withConnection(
-      AgentConnection(
-        roleId: roleId,
-        llmProvider: existing.llmProvider,
-        apiKey: '',
-        modelId: existing.modelId,
-        baseUrl: existing.baseUrl,
-        connected: false,
-        autopilotEnabled: false,
-        autopilotExchangeId: existing.autopilotExchangeId,
-        autopilotMaxNotional: existing.autopilotMaxNotional,
-        autopilotMaxOpenProposals: existing.autopilotMaxOpenProposals,
-        scheduleEnabled: false,
-        scheduleInterval: existing.scheduleInterval,
-        scheduleSymbols: existing.scheduleSymbols,
-        scheduleLastRunAt: existing.scheduleLastRunAt,
-      ),
-    );
+  /// Wipe the legacy per-role connections slice.
+  Future<void> clearAllConnections() async {
+    _state = AgentsState.forRoles(_roleIds);
     await _persist();
     notifyListeners();
   }

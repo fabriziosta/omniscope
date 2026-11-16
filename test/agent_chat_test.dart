@@ -1,31 +1,13 @@
-import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:omniscope/core/brand_colors.dart';
-import 'package:omniscope/core/shell_navigation.dart';
-import 'package:omniscope/data/agents/agent_activity_repository.dart';
 import 'package:omniscope/data/agents/agent_chat_repository.dart';
-import 'package:omniscope/data/agents/agent_role_catalog.dart';
 import 'package:omniscope/data/agents/agent_role_prompts.dart';
-import 'package:omniscope/data/agents/agents_repository.dart';
 import 'package:omniscope/data/agents/chat_models.dart';
-import 'package:omniscope/data/agents/genkit/genkit_agent_runner.dart';
-import 'support/fake_genkit_agent_runner.dart';
+import 'package:omniscope/data/agents/llm_model_router.dart';
 import 'package:omniscope/data/agents/market_context_builder.dart';
 import 'package:omniscope/data/agents/models.dart';
-import 'package:omniscope/data/agents/trade_proposal_repository.dart';
-import 'package:omniscope/data/crypto/crypto_exchange_registry.dart';
-import 'package:omniscope/data/market/market_data_client.dart';
 import 'package:omniscope/data/market/models.dart';
-import 'package:omniscope/data/portfolio/portfolio_repository.dart';
-import 'package:omniscope/data/settings/data_source_settings.dart';
-import 'package:omniscope/data/settings/env_secrets_repository.dart';
-import 'package:omniscope/data/trading/broker_exchange_registry.dart';
-import 'package:omniscope/data/trading/trade_executor.dart';
-import 'package:omniscope/features/agents/agents_screen.dart';
-import 'package:omniscope/widgets/in_tab_back.dart';
-import 'package:provider/provider.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
+import 'support/fake_genkit_agent_runner.dart';
 import 'support/fake_market_data_client.dart';
 import 'support/memory_config.dart';
 
@@ -55,15 +37,16 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('AgentChatRepository', () {
-    test('persists one thread per role and trims overflow', () async {
+    test('persists chatId threads and trims overflow', () async {
       final store = await memoryConfig();
       final repo = AgentChatRepository(store: store);
       await repo.load();
 
-      expect(repo.threadFor('marketResearch').isEmpty, isTrue);
+      final created = await repo.createChat(title: 'Research');
+      expect(repo.threadFor(created.chatId).isEmpty, isTrue);
 
       await repo.append(
-        roleId: 'marketResearch',
+        chatId: created.chatId,
         message: AgentChatMessage(
           id: 'u1',
           role: AgentChatRole.user,
@@ -73,7 +56,7 @@ void main() {
         ),
       );
       await repo.append(
-        roleId: 'marketResearch',
+        chatId: created.chatId,
         message: AgentChatMessage(
           id: 'a1',
           role: AgentChatRole.assistant,
@@ -84,14 +67,14 @@ void main() {
 
       final reloaded = AgentChatRepository(store: store);
       await reloaded.load();
-      final thread = reloaded.threadFor('marketResearch');
+      final thread = reloaded.threadFor(created.chatId);
       expect(thread.messages, hasLength(2));
       expect(thread.messages.first.content, 'Investigate AAPL');
       expect(thread.messages.last.role, AgentChatRole.assistant);
 
       for (var i = 0; i < AgentChatRepository.maxMessagesPerThread + 5; i++) {
         await repo.append(
-          roleId: 'marketResearch',
+          chatId: created.chatId,
           message: AgentChatMessage(
             id: 'x$i',
             role: AgentChatRole.user,
@@ -101,21 +84,83 @@ void main() {
         );
       }
       expect(
-        repo.threadFor('marketResearch').messages,
+        repo.threadFor(created.chatId).messages,
         hasLength(AgentChatRepository.maxMessagesPerThread),
       );
 
-      await repo.clearThread('marketResearch');
-      expect(repo.threadFor('marketResearch').isEmpty, isTrue);
+      await repo.clearThread(created.chatId);
+      expect(repo.threadFor(created.chatId).isEmpty, isTrue);
     });
 
-    test('clearAllThreads wipes every role thread', () async {
+    test('renameChat updates title and persists', () async {
       final store = await memoryConfig();
       final repo = AgentChatRepository(store: store);
       await repo.load();
 
+      final created = await repo.createChat(title: 'Draft');
+      await repo.renameChat(created.chatId, '  Renamed research  ');
+      expect(repo.threadFor(created.chatId).title, 'Renamed research');
+
+      final reloaded = AgentChatRepository(store: store);
+      await reloaded.load();
+      expect(reloaded.threadFor(created.chatId).title, 'Renamed research');
+
+      await repo.renameChat(created.chatId, '   ');
+      expect(repo.threadFor(created.chatId).title, 'Renamed research');
+    });
+
+    test('findThread resolves by chatId or sourceMessageId', () async {
+      final store = await memoryConfig();
+      final repo = AgentChatRepository(store: store);
+      await repo.load();
+
+      final created = await repo.createChat(title: 'Ops');
       await repo.append(
-        roleId: 'marketResearch',
+        chatId: created.chatId,
+        message: AgentChatMessage(
+          id: 'msg_assist',
+          role: AgentChatRole.assistant,
+          content: 'Proposal ready',
+          createdAt: DateTime.utc(2026, 1, 1),
+          proposalId: 'tp_1',
+        ),
+      );
+
+      expect(
+        repo.findThread(chatId: created.chatId)?.chatId,
+        created.chatId,
+      );
+      expect(
+        repo.findThread(sourceMessageId: 'msg_assist')?.chatId,
+        created.chatId,
+      );
+      expect(repo.findThread(chatId: 'missing'), isNull);
+      expect(repo.findThread(sourceMessageId: 'missing'), isNull);
+      expect(
+        repo.threadHasPendingProposal(
+          created.chatId,
+          isPending: (id) => id == 'tp_1',
+        ),
+        isTrue,
+      );
+      expect(
+        repo.threadHasPendingProposal(
+          created.chatId,
+          isPending: (_) => false,
+        ),
+        isFalse,
+      );
+    });
+
+    test('clearAllThreads wipes every chat', () async {
+      final store = await memoryConfig();
+      final repo = AgentChatRepository(store: store);
+      await repo.load();
+
+      final a = await repo.createChat(title: 'A');
+      final b = await repo.createChat(title: 'B');
+      await repo.append(
+        chatId: a.chatId,
         message: AgentChatMessage(
           id: 'u1',
           role: AgentChatRole.user,
@@ -124,7 +169,7 @@ void main() {
         ),
       );
       await repo.append(
-        roleId: 'trading',
+        chatId: b.chatId,
         message: AgentChatMessage(
           id: 'u2',
           role: AgentChatRole.user,
@@ -132,17 +177,51 @@ void main() {
           createdAt: DateTime.utc(2026, 1, 1),
         ),
       );
-      expect(repo.threadFor('marketResearch').isEmpty, isFalse);
-      expect(repo.threadFor('trading').isEmpty, isFalse);
+      expect(repo.threadFor(a.chatId).isEmpty, isFalse);
+      expect(repo.threadFor(b.chatId).isEmpty, isFalse);
 
       await repo.clearAllThreads();
-      expect(repo.threadFor('marketResearch').isEmpty, isTrue);
-      expect(repo.threadFor('trading').isEmpty, isTrue);
+      expect(repo.threads, isEmpty);
 
       final again = AgentChatRepository(store: store);
       await again.load();
-      expect(again.threadFor('marketResearch').isEmpty, isTrue);
-      expect(again.threadFor('trading').isEmpty, isTrue);
+      expect(again.threads, isEmpty);
+    });
+  });
+
+  group('AgentChatThread.plainTextExchange', () {
+    test('formats user and assistant turns for clipboard', () {
+      final thread = AgentChatThread(
+        chatId: 'c1',
+        title: 'AAPL',
+        updatedAt: DateTime.utc(2026, 1, 1),
+        messages: [
+          AgentChatMessage(
+            id: 'u1',
+            role: AgentChatRole.user,
+            content: '  Investigate AAPL  ',
+            createdAt: DateTime.utc(2026, 1, 1),
+          ),
+          AgentChatMessage(
+            id: 's1',
+            role: AgentChatRole.system,
+            content: 'hidden',
+            createdAt: DateTime.utc(2026, 1, 1, 0, 1),
+          ),
+          AgentChatMessage(
+            id: 'a1',
+            role: AgentChatRole.assistant,
+            content: 'Brief on AAPL',
+            createdAt: DateTime.utc(2026, 1, 1, 0, 2),
+          ),
+        ],
+      );
+
+      expect(
+        thread.plainTextExchange,
+        'You [2026-01-01T00:00:00.000Z]:\nInvestigate AAPL\n\n'
+        'Agent [2026-01-01T00:02:00.000Z]:\nBrief on AAPL',
+      );
     });
   });
 
@@ -245,15 +324,13 @@ void main() {
     test('turn override returns canned assistant text', () async {
       final client = fakeGenkitAgentRunner(reply: 'Hello research');
 
-      final text = await client.complete(
-        connection: const AgentConnection(
-          roleId: 'marketResearch',
-          llmProvider: LlmProvider.openAi,
+      final turn = await client.complete(
+        endpoint: const LlmResolvedEndpoint(
+          provider: LlmProvider.openAi,
           apiKey: 'sk-test',
           modelId: 'gpt-6-luna',
-          connected: true,
+          weight: ModelWeight.light,
         ),
-        roleId: 'marketResearch',
         messages: [
           AgentChatMessage(
             id: '1',
@@ -263,94 +340,36 @@ void main() {
           ),
         ],
       );
-      expect(text, 'Hello research');
+      expect(turn.reply, 'Hello research');
+      expect(turn.delegatedTradeJson, isNull);
     });
   });
 
-  testWidgets('connected agent card opens chat screen', (tester) async {
-    final store = await memoryConfig();
-    final agentRoles = await AgentRoleCatalog.load();
-    final agents = AgentsRepository(store: store, roleCatalog: agentRoles);
-    await agents.load(roleCatalog: agentRoles);
-    await agents.connect(
-      roleId: 'marketResearch',
-      llmProvider: LlmProvider.openAi,
-      apiKey: 'sk-test',
-      modelId: 'gpt-6-luna',
-    );
-    final agentChats = AgentChatRepository(store: store);
-    await agentChats.load();
-    final proposals = TradeProposalRepository(store: store);
-    await proposals.load();
-    final activity = AgentActivityRepository(store: store);
-    await activity.load();
-    final dataSources = DataSourceSettings(store: store);
-    await dataSources.load();
-    final portfolio = PortfolioRepository(store: store);
-    await portfolio.load();
-    const cryptoRegistry = CryptoExchangeRegistry([]);
-    const brokerRegistry = BrokerExchangeRegistry.empty;
-    final marketData = _agentMarketData();
-    final tradeExecutor = RoutingTradeExecutor(
-      cryptoRegistry: cryptoRegistry,
-      brokerRegistry: brokerRegistry,
-      dataSources: dataSources,
-      portfolio: portfolio,
-      marketData: marketData,
-    );
+  group('AgentChatMessage generation meta', () {
+    test('formats duration and joins model · time', () {
+      expect(AgentChatMessage.formatGenerationDuration(842), '842ms');
+      expect(AgentChatMessage.formatGenerationDuration(1200), '1.2s');
+      expect(AgentChatMessage.formatGenerationDuration(10500), '11s');
+      expect(AgentChatMessage.formatGenerationDuration(65000), '1m 5s');
 
-    await tester.binding.setSurfaceSize(const Size(390, 844));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          Provider<MarketDataClient>.value(value: marketData),
-          Provider<CryptoExchangeRegistry>.value(value: cryptoRegistry),
-          Provider<BrokerExchangeRegistry>.value(value: brokerRegistry),
-          Provider<TradeExecutor>.value(value: tradeExecutor),
-          ChangeNotifierProvider<DataSourceSettings>.value(value: dataSources),
-          ChangeNotifierProvider<PortfolioRepository>.value(value: portfolio),
-          ChangeNotifierProvider<AgentsRepository>.value(value: agents),
-          ChangeNotifierProvider<AgentChatRepository>.value(value: agentChats),
-          ChangeNotifierProvider<TradeProposalRepository>.value(
-            value: proposals,
-          ),
-          ChangeNotifierProvider<AgentActivityRepository>.value(value: activity),
-          Provider<GenkitAgentRunner>.value(
-            value: fakeGenkitAgentRunner(),
-          ),
-          ChangeNotifierProvider<EnvSecretsRepository>.value(
-            value: EnvSecretsRepository(store: store, syncEnvFile: false),
-          ),
-          ChangeNotifierProvider<ShellNavigationController>(
-            create: (_) => ShellNavigationController(),
-          ),
-        ],
-        child: ShadApp(
-          home: InTabBackScope(
-            registry: InTabBackRegistry(),
-            child: const ShellTabIndex(
-              index: 3,
-              child: AgentsScreen(),
-            ),
-          ),
-          theme: ShadThemeData(
-            brightness: Brightness.light,
-            colorScheme: BrandColors.lightScheme(),
-          ),
-        ),
-      ),
-    );
-    await tester.pump();
-
-    expect(find.text('Open chat'), findsOneWidget);
-    await tester.tap(find.text('Open chat'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-
-    expect(find.text('Send'), findsOneWidget);
-    expect(find.text('Run research'), findsOneWidget);
-    expect(find.textContaining('Messages stay on this device'), findsOneWidget);
+      final labeled = AgentChatMessage(
+        id: 'a1',
+        role: AgentChatRole.assistant,
+        content: 'Hello',
+        createdAt: DateTime.utc(2026, 1, 1),
+        modelId: 'gemini-2.0-flash',
+        generationMs: 1200,
+      );
+      expect(labeled.generationMetaLabel, 'gemini-2.0-flash · 1.2s');
+      expect(
+        AgentChatMessage(
+          id: 'a2',
+          role: AgentChatRole.assistant,
+          content: 'Hi',
+          createdAt: DateTime.utc(2026, 1, 1),
+        ).generationMetaLabel,
+        isNull,
+      );
+    });
   });
 }

@@ -9,6 +9,10 @@ enum AgentActivityKind {
   orderFailed,
   runBlockedNoExchange,
   scheduledRun,
+  investInterestProposed,
+  investInterestConfirmed,
+  investInterestDismissed,
+  investInterestFailed,
 }
 
 extension AgentActivityKindX on AgentActivityKind {
@@ -22,6 +26,10 @@ extension AgentActivityKindX on AgentActivityKind {
         AgentActivityKind.orderFailed => 'Order failed',
         AgentActivityKind.runBlockedNoExchange => 'Blocked',
         AgentActivityKind.scheduledRun => 'Scheduled',
+        AgentActivityKind.investInterestProposed => 'Invest interest',
+        AgentActivityKind.investInterestConfirmed => 'Invest interest applied',
+        AgentActivityKind.investInterestDismissed => 'Invest interest refused',
+        AgentActivityKind.investInterestFailed => 'Invest interest failed',
       };
 
   static AgentActivityKind parse(String? raw) {

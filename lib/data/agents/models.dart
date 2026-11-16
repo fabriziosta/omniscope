@@ -41,6 +41,52 @@ enum ModelWeight {
   heavy,
 }
 
+/// How agents phrase answers (Settings → Agents). Delivery only — not policy.
+enum AgentAnswerMood {
+  plain,
+  concise,
+  coaching,
+  formal,
+}
+
+extension AgentAnswerMoodX on AgentAnswerMood {
+  String get label => switch (this) {
+        AgentAnswerMood.plain => 'Plain',
+        AgentAnswerMood.concise => 'Concise',
+        AgentAnswerMood.coaching => 'Coaching',
+        AgentAnswerMood.formal => 'Formal',
+      };
+
+  String get description => switch (this) {
+        AgentAnswerMood.plain => 'Clear and non-intimidating (default)',
+        AgentAnswerMood.concise => 'Shorter, denser answers',
+        AgentAnswerMood.coaching => 'Encouraging tutor voice',
+        AgentAnswerMood.formal => 'More professional, still plain English',
+      };
+
+  /// Instruction fragment injected into Genkit system prompts.
+  String get systemInstruction => switch (this) {
+        AgentAnswerMood.plain =>
+          'Answer mood: keep language plain and non-intimidating.',
+        AgentAnswerMood.concise =>
+          'Answer mood: be concise and dense; prefer short sections and '
+              'fewer filler words while staying clear.',
+        AgentAnswerMood.coaching =>
+          'Answer mood: use an encouraging tutor voice; reassure beginners '
+              'and explain why steps matter without being patronizing.',
+        AgentAnswerMood.formal =>
+          'Answer mood: use a more professional tone while staying in plain '
+              'English; avoid slang and casual asides.',
+      };
+
+  static AgentAnswerMood parse(String? raw) {
+    return AgentAnswerMood.values.firstWhere(
+      (e) => e.name == raw,
+      orElse: () => AgentAnswerMood.plain,
+    );
+  }
+}
+
 /// How often a connected agent should Run while Omniscope is open.
 enum AgentScheduleInterval {
   minutes15,
@@ -188,6 +234,7 @@ class AgentConnection {
     this.scheduleEnabled = false,
     this.scheduleInterval = AgentScheduleInterval.hour1,
     this.scheduleSymbols = const [],
+    this.scheduleUseInvestInterest = false,
     this.scheduleLastRunAt,
   });
 
@@ -211,13 +258,18 @@ class AgentConnection {
   /// Cap concurrent pending proposals before Autopilot skips.
   final int autopilotMaxOpenProposals;
 
-  /// When true, the in-app scheduler Runs [scheduleSymbols] on [scheduleInterval]
+  /// When true, the in-app scheduler Runs symbols on [scheduleInterval]
   /// while Omniscope is open (foreground only).
   final bool scheduleEnabled;
 
   final AgentScheduleInterval scheduleInterval;
 
   final List<String> scheduleSymbols;
+
+  /// When true, scheduled batches use Markets → Invest interest instead of
+  /// [scheduleSymbols]. Legacy connection field; product Schedule lives under
+  /// Settings → Agents (defaults true for invest-interest).
+  final bool scheduleUseInvestInterest;
 
   /// UTC timestamp of the last scheduled batch start (persisted across relaunch).
   final DateTime? scheduleLastRunAt;
@@ -227,8 +279,12 @@ class AgentConnection {
       apiKey.trim().isNotEmpty && modelId.trim().isNotEmpty;
 
   /// Whether a scheduled batch should start at [now] (UTC-aware).
+  ///
+  /// When [scheduleUseInvestInterest] is true, symbol emptiness is checked by
+  /// the scheduler against the live invest-interest list.
   bool isScheduleDue(DateTime now) {
-    if (!scheduleEnabled || !connected || scheduleSymbols.isEmpty) {
+    if (!scheduleEnabled || !connected) return false;
+    if (!scheduleUseInvestInterest && scheduleSymbols.isEmpty) {
       return false;
     }
     final last = scheduleLastRunAt;
@@ -254,6 +310,7 @@ class AgentConnection {
     bool? scheduleEnabled,
     AgentScheduleInterval? scheduleInterval,
     List<String>? scheduleSymbols,
+    bool? scheduleUseInvestInterest,
     DateTime? scheduleLastRunAt,
     bool clearScheduleLastRunAt = false,
   }) {
@@ -276,6 +333,8 @@ class AgentConnection {
       scheduleEnabled: scheduleEnabled ?? this.scheduleEnabled,
       scheduleInterval: scheduleInterval ?? this.scheduleInterval,
       scheduleSymbols: scheduleSymbols ?? this.scheduleSymbols,
+      scheduleUseInvestInterest:
+          scheduleUseInvestInterest ?? this.scheduleUseInvestInterest,
       scheduleLastRunAt: clearScheduleLastRunAt
           ? null
           : (scheduleLastRunAt ?? this.scheduleLastRunAt),
@@ -300,6 +359,7 @@ class AgentConnection {
         'scheduleEnabled': scheduleEnabled,
         'scheduleInterval': scheduleInterval.name,
         'scheduleSymbols': scheduleSymbols,
+        'scheduleUseInvestInterest': scheduleUseInvestInterest,
         if (scheduleLastRunAt != null)
           'scheduleLastRunAt': scheduleLastRunAt!.toUtc().toIso8601String(),
       };
@@ -328,6 +388,8 @@ class AgentConnection {
       scheduleInterval:
           AgentScheduleIntervalX.parse(json['scheduleInterval'] as String?),
       scheduleSymbols: symbols,
+      scheduleUseInvestInterest:
+          json['scheduleUseInvestInterest'] as bool? ?? false,
       scheduleLastRunAt:
           lastRaw == null ? null : DateTime.tryParse(lastRaw)?.toUtc(),
     );

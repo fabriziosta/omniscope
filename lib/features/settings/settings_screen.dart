@@ -2,60 +2,75 @@ import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import '../../core/app_copy.dart';
+import '../../core/app_info.dart';
 import '../../core/shell_navigation.dart';
 import '../../widgets/in_tab_back.dart';
 import '../../widgets/master_detail_shell.dart';
 import '../../widgets/tab_page_header.dart';
-import 'about_section.dart';
+import 'agents_advanced_section.dart';
 import 'appearance_section.dart';
 import 'connections_section.dart';
 import 'data_privacy_section.dart';
 import 'data_sources_section.dart';
+import 'mandate_section.dart';
 import 'portfolios_section.dart';
 
 /// Sidebar destinations for Settings. Only one body is mounted at a time.
 enum SettingsNavSection {
   appearance,
+  mandate,
   dataSources,
   portfolios,
   connections,
+  agents,
   dataAndPrivacy,
-  about,
 }
 
 extension SettingsNavSectionX on SettingsNavSection {
   String get title => switch (this) {
-        SettingsNavSection.about => 'About',
         SettingsNavSection.appearance => 'Appearance',
+        SettingsNavSection.mandate => 'Mandate',
         SettingsNavSection.dataSources => 'Data sources',
         SettingsNavSection.portfolios => 'Portfolios',
         SettingsNavSection.connections => 'Connections',
+        SettingsNavSection.agents => 'Agents',
         SettingsNavSection.dataAndPrivacy => 'Data & privacy',
       };
 
   String get subtitle => switch (this) {
-        SettingsNavSection.about => AppCopy.tagline,
         SettingsNavSection.appearance =>
           'Brightness, color set, lists, numbers, charts',
+        SettingsNavSection.mandate =>
+          'Goal, universe, and risk rails for agents',
         SettingsNavSection.dataSources =>
           'Market providers, crypto venues, credentials',
         SettingsNavSection.portfolios =>
           'Practice cash and live connections',
         SettingsNavSection.connections =>
-          'LLM keys, agents, and exchange credentials',
+          'LLM keys, models, and exchange credentials',
+        SettingsNavSection.agents =>
+          'Answer mood, specialties, Autopilot, and schedule',
         SettingsNavSection.dataAndPrivacy =>
           'Config path, backup, and clear local data',
       };
 
   IconData get icon => switch (this) {
-        SettingsNavSection.about => LucideIcons.info,
         SettingsNavSection.appearance => LucideIcons.palette,
+        SettingsNavSection.mandate => LucideIcons.crosshair,
         SettingsNavSection.dataSources => LucideIcons.database,
         SettingsNavSection.portfolios => LucideIcons.wallet,
         SettingsNavSection.connections => LucideIcons.plug,
+        SettingsNavSection.agents => LucideIcons.sparkles,
         SettingsNavSection.dataAndPrivacy => LucideIcons.shield,
       };
+
+  static SettingsNavSection? tryParse(String? id) {
+    if (id == null || id.isEmpty) return null;
+    for (final s in SettingsNavSection.values) {
+      if (s.name == id) return s;
+    }
+    return null;
+  }
 }
 
 class SettingsScreen extends StatefulWidget {
@@ -140,8 +155,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _bodyFor(SettingsNavSection section, {required bool wide}) {
     return switch (section) {
-      SettingsNavSection.about => const AboutSectionBody(),
       SettingsNavSection.appearance => const AppearanceSectionBody(),
+      SettingsNavSection.mandate => const MandateSectionBody(),
       SettingsNavSection.dataSources => const DataSourcesSectionBody(),
       SettingsNavSection.portfolios => PortfoliosSectionBody(
           onOpenDataSources: () => _select(
@@ -150,12 +165,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
       SettingsNavSection.connections => const ConnectionsSectionBody(),
+      SettingsNavSection.agents => const AgentsAdvancedSectionBody(),
       SettingsNavSection.dataAndPrivacy => const DataPrivacySectionBody(),
     };
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+
     return InTabBackEffect(
       onBack: _narrowSelected != null ? _backToNavList : null,
       child: Column(
@@ -183,6 +201,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         onTap: () => _select(section, wide: wide),
                       ),
                   ],
+                  footer: Text(
+                    'v${AppInfo.version}',
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.small.copyWith(
+                      color: theme.colorScheme.mutedForeground,
+                    ),
+                  ),
                 );
               },
               contentBuilder: (context, section, {required showBack, onBack}) {

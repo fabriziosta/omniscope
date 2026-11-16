@@ -4,6 +4,7 @@ import 'package:omniscope/data/agents/agents_repository.dart';
 import 'package:omniscope/data/agents/llm_api_key_config.dart';
 import 'package:omniscope/data/agents/llm_model_catalog.dart';
 import 'package:omniscope/data/agents/models.dart';
+import 'package:omniscope/data/settings/user_config_keys.dart';
 
 import 'support/memory_config.dart';
 
@@ -132,7 +133,7 @@ UNKNOWN_KEY=nope
   });
 
   group('AgentsRepository', () {
-    test('lists roles from catalog and connects/disconnects', () async {
+    test('lists roles from catalog and clears legacy connections', () async {
       final store = await memoryConfig();
       final roles = AgentRoleCatalog.parse(_manifestFixture);
       final repo = AgentsRepository(store: store, roleCatalog: roles);
@@ -142,50 +143,24 @@ UNKNOWN_KEY=nope
       expect(repo.forRoleId('marketResearch').connected, isFalse);
       expect(repo.forRoleId('marketResearch').isConfigured, isFalse);
 
-      final err = await repo.connect(
-        roleId: 'marketResearch',
-        llmProvider: LlmProvider.openAi,
-        apiKey: 'sk-test',
-        modelId: 'gpt-6-luna',
-      );
-      expect(err, isNull);
+      await store.setSlice(UserConfigKeys.agents, {
+        'connections': [
+          {
+            'roleId': 'marketResearch',
+            'llmProvider': 'openAi',
+            'apiKey': 'sk-legacy',
+            'modelId': 'gpt-legacy',
+            'connected': true,
+          },
+        ],
+      });
+      await repo.load(roleCatalog: roles);
       expect(repo.forRoleId('marketResearch').connected, isTrue);
-      expect(repo.forRoleId('marketResearch').isConfigured, isTrue);
+      expect(repo.forRoleId('marketResearch').apiKey, 'sk-legacy');
 
-      await repo.disconnect('marketResearch');
+      await repo.clearAllConnections();
       expect(repo.forRoleId('marketResearch').connected, isFalse);
       expect(repo.forRoleId('marketResearch').apiKey, isEmpty);
-      expect(repo.forRoleId('marketResearch').isConfigured, isFalse);
-    });
-
-    test('requires base url for custom provider', () async {
-      final store = await memoryConfig();
-      final roles = AgentRoleCatalog.parse(_manifestFixture);
-      final repo = AgentsRepository(store: store, roleCatalog: roles);
-      await repo.load(roleCatalog: roles);
-
-      final err = await repo.connect(
-        roleId: 'intradayTrading',
-        llmProvider: LlmProvider.custom,
-        apiKey: 'key',
-        modelId: 'local-model',
-      );
-      expect(err, contains('Base URL'));
-    });
-
-    test('rejects unknown role ids', () async {
-      final store = await memoryConfig();
-      final roles = AgentRoleCatalog.parse(_manifestFixture);
-      final repo = AgentsRepository(store: store, roleCatalog: roles);
-      await repo.load(roleCatalog: roles);
-
-      final err = await repo.connect(
-        roleId: 'unknownRole',
-        llmProvider: LlmProvider.openAi,
-        apiKey: 'key',
-        modelId: 'gpt-6-luna',
-      );
-      expect(err, contains('Unknown'));
     });
   });
 }

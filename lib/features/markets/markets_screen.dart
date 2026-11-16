@@ -15,6 +15,7 @@ import '../../widgets/master_detail_shell.dart';
 import '../../widgets/tab_page_header.dart';
 import '../crypto/crypto_exchange_pairs_body.dart';
 import 'market_favorites_body.dart';
+import 'market_invest_interest_body.dart';
 import 'market_kind_body.dart';
 
 /// Sidebar destinations for Markets (Favorites, equity kinds, crypto venues).
@@ -37,6 +38,19 @@ final class MarketsFavoritesDestination extends MarketsDestination {
 
   @override
   IconData get icon => LucideIcons.star;
+}
+
+final class MarketsInvestInterestDestination extends MarketsDestination {
+  const MarketsInvestInterestDestination();
+
+  @override
+  String get id => 'investInterest';
+
+  @override
+  String get title => 'Invest interest';
+
+  @override
+  IconData get icon => LucideIcons.crosshair;
 }
 
 final class MarketsKindDestination extends MarketsDestination {
@@ -117,6 +131,7 @@ class _MarketsScreenState extends State<MarketsScreen> {
   }) {
     return [
       const MarketsFavoritesDestination(),
+      const MarketsInvestInterestDestination(),
       if (hasEquities) ...[
         for (final kind in marketTabKinds) MarketsKindDestination(kind),
       ],
@@ -132,6 +147,10 @@ class _MarketsScreenState extends State<MarketsScreen> {
     return switch (item) {
       MarketsFavoritesDestination() => () {
           final count = favorites.symbols.length;
+          return count == 1 ? '1 symbol' : '$count symbols';
+        }(),
+      MarketsInvestInterestDestination() => () {
+          final count = favorites.investInterestSymbols.length;
           return count == 1 ? '1 symbol' : '$count symbols';
         }(),
       MarketsKindDestination(:final kind) => () {
@@ -180,8 +199,8 @@ class _MarketsScreenState extends State<MarketsScreen> {
             const TabPageHeader(
               title: 'Markets',
               subtitle:
-                  'Browse by type or exchange. One Favorites list for '
-                  'everything you star.',
+                  'Browse by type or exchange. Star Favorites for yourself; '
+                  'mark Invest interest for agents.',
             ),
           Expanded(
             child: !hasSources || selected == null
@@ -210,6 +229,13 @@ class _MarketsScreenState extends State<MarketsScreen> {
                         case MarketsFavoritesDestination():
                           return MarketFavoritesPane(
                             key: const ValueKey('markets-favorites'),
+                            showBack: showBack,
+                            onBack: onBack,
+                            backLabel: 'Markets',
+                          );
+                        case MarketsInvestInterestDestination():
+                          return MarketInvestInterestPane(
+                            key: const ValueKey('markets-invest-interest'),
                             showBack: showBack,
                             onBack: onBack,
                             backLabel: 'Markets',

@@ -3,12 +3,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscope/core/brand_colors.dart';
 import 'package:omniscope/core/shell_navigation.dart';
 import 'package:omniscope/data/agents/agent_activity_repository.dart';
+import 'package:omniscope/data/agents/agent_app_settings.dart';
 import 'package:omniscope/data/agents/agent_chat_repository.dart';
 import 'package:omniscope/data/agents/agent_launch.dart';
 import 'package:omniscope/data/agents/agent_role_catalog.dart';
 import 'package:omniscope/data/agents/agents_repository.dart';
 import 'package:omniscope/data/agents/genkit/genkit_agent_runner.dart';
-import 'support/fake_genkit_agent_runner.dart';
+import 'package:omniscope/data/agents/invest_interest_proposal_repository.dart';
+import 'package:omniscope/data/agents/llm_runtime_settings.dart';
 import 'package:omniscope/data/agents/models.dart';
 import 'package:omniscope/data/agents/trade_proposal_repository.dart';
 import 'package:omniscope/data/crypto/crypto_exchange_registry.dart';
@@ -17,13 +19,18 @@ import 'package:omniscope/data/market/models.dart';
 import 'package:omniscope/data/portfolio/portfolio_repository.dart';
 import 'package:omniscope/data/settings/data_source_settings.dart';
 import 'package:omniscope/data/settings/env_secrets_repository.dart';
+import 'package:omniscope/data/settings/favorites_repository.dart';
+import 'package:omniscope/data/settings/mandate_settings.dart';
 import 'package:omniscope/data/trading/broker_exchange_registry.dart';
 import 'package:omniscope/data/trading/trade_executor.dart';
 import 'package:omniscope/features/agents/agent_chat_screen.dart';
+import 'package:omniscope/features/agents/agents_screen.dart';
 import 'package:omniscope/widgets/agent_launch_button.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import 'support/agent_test_harness.dart';
+import 'support/fake_genkit_agent_runner.dart';
 import 'support/fake_market_data_client.dart';
 import 'support/memory_config.dart';
 
@@ -146,38 +153,38 @@ void main() {
       expect(AgentLaunchIntent.paperReview.ctaLabel, 'Practice coach');
     });
 
-    test('filters to connected roles only', () {
-      final connected = AgentLaunchResolver.connectedAmong(
-        roles: sampleRoles,
-        isConnected: (id) => id == 'marketResearch',
-      );
-      expect(connected, hasLength(1));
-      expect(connected.first.id, 'marketResearch');
-    });
   });
 
-  testWidgets('Investigate opens chat and auto-runs for one connected agent',
+  testWidgets('Investigate opens chat and auto-runs with LLM key configured',
       (tester) async {
     final store = await memoryConfig();
     final agentRoles = await AgentRoleCatalog.load();
     final agents = AgentsRepository(store: store, roleCatalog: agentRoles);
     await agents.load(roleCatalog: agentRoles);
-    await agents.connect(
-      roleId: 'marketResearch',
-      llmProvider: LlmProvider.openAi,
-      apiKey: 'sk-test',
-      modelId: 'gpt-6-luna',
+    final seeded = await seedLlmStack(
+      store,
+      lightModelId: 'gpt-test',
+      heavyModelId: 'gpt-test',
     );
+    final llmRuntime = seeded.llmRuntime;
+    final agentApp = seeded.appSettings;
+    final secrets = seeded.secrets;
     final agentChats = AgentChatRepository(store: store);
     await agentChats.load();
     final proposals = TradeProposalRepository(store: store);
     await proposals.load();
     final activity = AgentActivityRepository(store: store);
     await activity.load();
+    final investInterest = InvestInterestProposalRepository(store: store);
+    await investInterest.load();
     final dataSources = DataSourceSettings(store: store);
     await dataSources.load();
     final portfolio = PortfolioRepository(store: store);
     await portfolio.load();
+    final favorites = FavoritesRepository(store: store);
+    await favorites.load();
+    final mandate = MandateSettings(store: store);
+    await mandate.load();
     const cryptoRegistry = CryptoExchangeRegistry([]);
     const brokerRegistry = BrokerExchangeRegistry.empty;
     final marketData = _agentMarketData();
@@ -191,7 +198,7 @@ void main() {
 
     var agentCalls = 0;
     final agentRunner = fakeGenkitAgentRunner(
-      replyFor: (roleId, lastUser) {
+      replyFor: (lastUser) {
         agentCalls++;
         return 'Brief';
       },
@@ -209,15 +216,20 @@ void main() {
           Provider<TradeExecutor>.value(value: tradeExecutor),
           ChangeNotifierProvider<DataSourceSettings>.value(value: dataSources),
           ChangeNotifierProvider<PortfolioRepository>.value(value: portfolio),
+          ChangeNotifierProvider<FavoritesRepository>.value(value: favorites),
+          ChangeNotifierProvider<MandateSettings>.value(value: mandate),
           ChangeNotifierProvider<AgentsRepository>.value(value: agents),
+          ChangeNotifierProvider<LlmRuntimeSettings>.value(value: llmRuntime),
+          ChangeNotifierProvider<AgentAppSettings>.value(value: agentApp),
           ChangeNotifierProvider<AgentChatRepository>.value(value: agentChats),
           ChangeNotifierProvider<TradeProposalRepository>.value(
             value: proposals,
           ),
           ChangeNotifierProvider<AgentActivityRepository>.value(value: activity),
-          ChangeNotifierProvider<EnvSecretsRepository>.value(
-            value: EnvSecretsRepository(store: store, syncEnvFile: false),
+          ChangeNotifierProvider<InvestInterestProposalRepository>.value(
+            value: investInterest,
           ),
+          ChangeNotifierProvider<EnvSecretsRepository>.value(value: secrets),
           Provider<GenkitAgentRunner>.value(value: agentRunner),
           ChangeNotifierProvider<ShellNavigationController>(
             create: (_) => ShellNavigationController(),
@@ -228,11 +240,17 @@ void main() {
             builder: (context) {
               return ColoredBox(
                 color: BrandColors.lightScheme().background,
-                child: Center(
-                  child: AgentLaunchButton(
-                    symbol: 'AAPL',
-                    intent: AgentLaunchIntent.investigate,
-                  ),
+                child: Column(
+                  children: [
+                    const Expanded(child: AgentsScreen()),
+                    Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: AgentLaunchButton(
+                        symbol: 'AAPL',
+                        intent: AgentLaunchIntent.investigate,
+                      ),
+                    ),
+                  ],
                 ),
               );
             },
@@ -248,8 +266,10 @@ void main() {
 
     await tester.tap(find.text('Investigate'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.pump(const Duration(milliseconds: 100));
+    // createChat + shell pending open + auto-run
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
 
     expect(find.byType(AgentChatScreen), findsOneWidget);
     expect(find.textContaining('Investigate AAPL'), findsOneWidget);

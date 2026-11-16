@@ -2,8 +2,9 @@
 # Builder stage is discarded; final image has GTK/EGL runtime libs + the release bundle only.
 #
 # When Linux OS packages (builder or runtime), Flutter install channel/flags, or the
-# Linux bundle path change, update this file in the same change. Keep README Fedora
-# build list + CI apt-get list consistent with the builder stage.
+# Linux bundle path change, update this file in the same change. Keep
+# docs/development.md Fedora build list + CI apt-get list consistent with the
+# builder stage (see also docs/container.md).
 
 # -----------------------------------------------------------------------------
 # Builder

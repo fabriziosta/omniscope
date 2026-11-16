@@ -12,6 +12,7 @@ import '../../widgets/app_tooltip.dart';
 import '../../widgets/in_tab_back.dart';
 import '../../widgets/master_detail_shell.dart';
 import '../../widgets/notification_inbox.dart';
+import '../../data/agents/invest_interest_proposal_repository.dart';
 import '../../data/agents/trade_proposal_repository.dart';
 import '../activity/activity_screen.dart';
 import '../agents/agent_schedule_coordinator.dart';
@@ -119,7 +120,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     final theme = ShadTheme.of(context);
     final index = context.watch<ShellNavigationController>().tabIndex;
     final pendingCount =
-        context.watch<TradeProposalRepository>().pendingActionableCount;
+        context.watch<TradeProposalRepository>().pendingActionableCount +
+            context
+                .watch<InvestInterestProposalRepository>()
+                .pendingActionableCount;
     final wide = MediaQuery.sizeOf(context).width >=
         MasterDetailShell.wideBreakpointDefault;
 
@@ -177,7 +181,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                             icon: entry.$4,
                             selected: index == entry.$1,
                             badgeCount: entry.$1 ==
-                                    ShellNavigationController.activityTabIndex
+                                    ShellNavigationController.agentsTabIndex
                                 ? pendingCount
                                 : 0,
                             onPressed: () => _onTabPressed(entry.$1),

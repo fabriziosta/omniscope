@@ -7,10 +7,14 @@ import 'core/app_error_controller.dart';
 import 'core/app_error_handling.dart';
 import 'core/shell_navigation.dart';
 import 'data/agents/agent_activity_repository.dart';
+import 'data/agents/agent_app_settings.dart';
 import 'data/agents/agent_chat_repository.dart';
 import 'data/agents/agent_role_catalog.dart';
 import 'data/agents/agents_repository.dart';
 import 'data/agents/genkit/genkit_agent_runner.dart';
+import 'data/agents/invest_interest_proposal_repository.dart';
+import 'data/agents/llm_model_catalog.dart';
+import 'data/agents/llm_runtime_settings.dart';
 import 'data/agents/trade_proposal_repository.dart';
 import 'data/crypto/crypto_exchange_registry.dart';
 import 'data/market/caching_market_data_client.dart';
@@ -25,6 +29,7 @@ import 'data/settings/data_source_settings.dart';
 import 'data/settings/display_settings.dart';
 import 'data/settings/env_secrets_repository.dart';
 import 'data/settings/favorites_repository.dart';
+import 'data/settings/mandate_settings.dart';
 import 'data/settings/theme_settings.dart';
 import 'data/settings/user_config_store.dart';
 import 'data/trading/broker_exchange_registry.dart';
@@ -58,15 +63,34 @@ Future<void> main() async {
   final favorites = FavoritesRepository(store: config);
   await favorites.load();
 
+  final mandate = MandateSettings(store: config);
+  await mandate.load();
+
   final agentRoles = await AgentRoleCatalog.load();
   final agents = AgentsRepository(store: config, roleCatalog: agentRoles);
   await agents.load(roleCatalog: agentRoles);
+
+  final llmModels = await LlmModelCatalog.load();
+  final llmRuntime = LlmRuntimeSettings(store: config);
+  await llmRuntime.load();
+  await llmRuntime.migrateFromConnections(
+    connections: agents.connections,
+    catalog: llmModels,
+  );
+
+  final agentApp = AgentAppSettings(store: config);
+  await agentApp.load();
+  await agentApp.migrateFromConnections(agents.connections);
 
   final agentChats = AgentChatRepository(store: config);
   await agentChats.load();
 
   final tradeProposals = TradeProposalRepository(store: config);
   await tradeProposals.load();
+
+  final investInterestProposals =
+      InvestInterestProposalRepository(store: config);
+  await investInterestProposals.load();
 
   final agentActivity = AgentActivityRepository(store: config);
   await agentActivity.load();
@@ -129,6 +153,12 @@ Future<void> main() async {
     cryptoRegistry: cryptoRegistry,
     dataSources: dataSourceSettings,
     portfolio: portfolio,
+    favorites: favorites,
+    secrets: envSecrets,
+    llmRuntime: llmRuntime,
+    appSettings: agentApp,
+    mandate: mandate,
+    investInterestProposals: investInterestProposals,
   );
 
   FlutterNativeSplash.remove();
@@ -144,11 +174,17 @@ Future<void> main() async {
         Provider<TradeExecutor>.value(value: tradeExecutor),
         ChangeNotifierProvider<EnvSecretsRepository>.value(value: envSecrets),
         ChangeNotifierProvider<FavoritesRepository>.value(value: favorites),
+        ChangeNotifierProvider<MandateSettings>.value(value: mandate),
         ChangeNotifierProvider<PortfolioRepository>.value(value: portfolio),
         ChangeNotifierProvider<AgentsRepository>.value(value: agents),
+        ChangeNotifierProvider<LlmRuntimeSettings>.value(value: llmRuntime),
+        ChangeNotifierProvider<AgentAppSettings>.value(value: agentApp),
         ChangeNotifierProvider<AgentChatRepository>.value(value: agentChats),
         ChangeNotifierProvider<TradeProposalRepository>.value(
           value: tradeProposals,
+        ),
+        ChangeNotifierProvider<InvestInterestProposalRepository>.value(
+          value: investInterestProposals,
         ),
         ChangeNotifierProvider<AgentActivityRepository>.value(
           value: agentActivity,

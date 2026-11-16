@@ -57,6 +57,54 @@ void main() {
     expect(again.symbols, ['MSFT', 'SPY', 'AAPL']);
   });
 
+  test('toggles invest interest independently of favorites', () async {
+    final store = await memoryConfig();
+    final repo = FavoritesRepository(store: store);
+    await repo.load();
+
+    await repo.toggleFavorite('AAPL');
+    await repo.toggleInvestInterest('MSFT');
+    await repo.toggleInvestInterest('BTC_USD');
+    expect(repo.symbols, ['AAPL']);
+    expect(repo.investInterestSymbols, ['MSFT', 'BTC_USD']);
+    expect(repo.isInvestInterest('MSFT'), isTrue);
+    expect(repo.isFavorite('MSFT'), isFalse);
+
+    await repo.toggleInvestInterest('MSFT');
+    expect(repo.investInterestSymbols, ['BTC_USD']);
+
+    await repo.clearAll();
+    expect(repo.symbols, isEmpty);
+    expect(repo.investInterestSymbols, ['BTC_USD']);
+
+    await repo.clearInvestInterest();
+    expect(repo.investInterestSymbols, isEmpty);
+
+    final again = FavoritesRepository(store: store);
+    await again.load();
+    expect(again.symbols, isEmpty);
+    expect(again.investInterestSymbols, isEmpty);
+
+    final slice = store.getSlice(UserConfigKeys.favorites) as Map;
+    expect(slice['symbols'], isEmpty);
+    expect(slice['investInterest'], isEmpty);
+  });
+
+  test('reorderInvestInterest persists', () async {
+    final store = await memoryConfig();
+    final repo = FavoritesRepository(store: store);
+    await repo.load();
+    await repo.toggleInvestInterest('AAPL');
+    await repo.toggleInvestInterest('MSFT');
+    await repo.toggleInvestInterest('SPY');
+    await repo.reorderInvestInterest(0, 2);
+    expect(repo.investInterestSymbols, ['MSFT', 'SPY', 'AAPL']);
+
+    final again = FavoritesRepository(store: store);
+    await again.load();
+    expect(again.investInterestSymbols, ['MSFT', 'SPY', 'AAPL']);
+  });
+
   test('migrates legacy markets/crypto slice', () async {
     final store = await memoryConfig();
     await store.setSlice(UserConfigKeys.favorites, {
@@ -70,11 +118,25 @@ void main() {
     final repo = FavoritesRepository(store: store);
     await repo.load();
     expect(repo.symbols, ['AAPL', 'SPY', 'BTC_USD', 'ETH_USD', 'SOL_USD']);
+    expect(repo.investInterestSymbols, isEmpty);
 
     await repo.toggleFavorite('MSFT');
     final slice = store.getSlice(UserConfigKeys.favorites) as Map;
     expect(slice['symbols'], ['AAPL', 'SPY', 'BTC_USD', 'ETH_USD', 'SOL_USD', 'MSFT']);
+    expect(slice['investInterest'], isEmpty);
     expect(slice.containsKey('markets'), isFalse);
     expect(slice.containsKey('crypto'), isFalse);
+  });
+
+  test('loads investInterest when present alongside symbols', () async {
+    final store = await memoryConfig();
+    await store.setSlice(UserConfigKeys.favorites, {
+      'symbols': ['AAPL'],
+      'investInterest': ['MSFT', 'BTC_USD', 'MSFT'],
+    });
+    final repo = FavoritesRepository(store: store);
+    await repo.load();
+    expect(repo.symbols, ['AAPL']);
+    expect(repo.investInterestSymbols, ['MSFT', 'BTC_USD']);
   });
 }

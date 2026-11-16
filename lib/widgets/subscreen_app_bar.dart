@@ -3,7 +3,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'nav_back_button.dart';
 
-/// Back | centered title | optional trailing action for pushed subscreens.
+/// Back | centered title | optional trailing action for pushed / embedded screens.
 class SubscreenAppBar extends StatelessWidget {
   const SubscreenAppBar({
     super.key,
@@ -11,6 +11,7 @@ class SubscreenAppBar extends StatelessWidget {
     this.trailing,
     this.onBack,
     this.backLabel = 'Back',
+    this.showBack = true,
     this.endPadding = 12,
   });
 
@@ -19,6 +20,9 @@ class SubscreenAppBar extends StatelessWidget {
   final VoidCallback? onBack;
   final String backLabel;
 
+  /// When false, omit Back (wide master–detail embedding).
+  final bool showBack;
+
   /// Right padding when [trailing] is present (Refresh / Clear).
   final double endPadding;
 
@@ -26,13 +30,16 @@ class SubscreenAppBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
     return Padding(
-      padding: EdgeInsets.fromLTRB(8, 8, endPadding, 0),
+      padding: EdgeInsets.fromLTRB(showBack ? 8 : 16, 8, endPadding, 0),
       child: Row(
         children: [
-          NavBackButton(
-            label: backLabel,
-            onPressed: onBack ?? () => Navigator.of(context).pop(),
-          ),
+          if (showBack)
+            NavBackButton(
+              label: backLabel,
+              onPressed: onBack ?? () => Navigator.of(context).pop(),
+            )
+          else
+            const SizedBox(width: 64),
           Expanded(
             child: Text(
               title,

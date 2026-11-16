@@ -5,8 +5,8 @@ import 'models.dart';
 
 /// API keys per [LlmProvider] from env secrets (`.env` + prefs).
 ///
-/// Used to preload the Agents connect dialog. Connecting also writes the key
-/// back through EnvSecretsRepository (prefs + best-effort `.env`).
+/// Settings → Connections reads/writes keys through [EnvSecretsRepository]
+/// (prefs + best-effort `.env`).
 class LlmApiKeyConfig {
   LlmApiKeyConfig(this._keysByProvider);
 

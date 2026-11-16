@@ -3,6 +3,9 @@ import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../core/shell_navigation.dart';
+import '../data/agents/agent_chat_repository.dart';
+import '../data/agents/invest_interest_proposal_repository.dart';
+import '../data/agents/trade_proposal_repository.dart';
 import '../data/notifications/app_notification.dart';
 import '../data/notifications/app_notification_repository.dart';
 import 'app_tooltip.dart';
@@ -94,8 +97,8 @@ class _NotificationInboxDialog extends StatelessWidget {
       description: Text(
         active.isEmpty
             ? 'Scheduled agent runs show up here so you can open '
-                'Activity or chat to confirm or review.'
-            : 'Open a pending suggestion on Activity, or chat for the rest.',
+                'the chat to confirm or review.'
+            : 'Open a chat to confirm pending suggestions or review a run.',
         style: theme.textTheme.muted,
       ),
       actions: [
@@ -217,16 +220,13 @@ class _NotificationRow extends StatelessWidget {
                   await repo.markRead(item.id);
                   if (!context.mounted) return;
                   Navigator.of(context).pop();
-                  final proposalId = item.proposalId?.trim();
-                  if (proposalId != null && proposalId.isNotEmpty) {
-                    shellNav.goToActivity(proposalId: proposalId);
-                  } else {
-                    shellNav.goToAgentChat(
-                      roleId: item.roleId,
-                      symbol: item.symbol,
-                      notificationId: item.id,
-                    );
-                  }
+                  final chatId = _resolveNotificationChatId(context, item);
+                  shellNav.goToAgentChat(
+                    chatId: chatId,
+                    roleId: item.roleId,
+                    symbol: item.symbol,
+                    notificationId: item.id,
+                  );
                 },
                 child: const Text('Open'),
               ),
@@ -242,4 +242,38 @@ String _formatClock(DateTime local) {
   final h = local.hour.toString().padLeft(2, '0');
   final m = local.minute.toString().padLeft(2, '0');
   return '$h:$m';
+}
+
+String? _resolveNotificationChatId(BuildContext context, AppNotification item) {
+  final direct = item.chatId?.trim();
+  if (direct != null && direct.isNotEmpty) return direct;
+
+  final proposalId = item.proposalId?.trim();
+  String? chatId;
+  String? sourceMessageId;
+  if (proposalId != null && proposalId.isNotEmpty) {
+    try {
+      final trade = context.read<TradeProposalRepository>().byId(proposalId);
+      chatId = trade?.chatId;
+      sourceMessageId = trade?.sourceMessageId;
+    } catch (_) {}
+    if (chatId == null || chatId.isEmpty) {
+      try {
+        final invest =
+            context.read<InvestInterestProposalRepository>().byId(proposalId);
+        chatId = invest?.chatId;
+        sourceMessageId ??= invest?.sourceMessageId;
+      } catch (_) {}
+    }
+  }
+
+  try {
+    final thread = context.read<AgentChatRepository>().findThread(
+          chatId: chatId,
+          sourceMessageId: sourceMessageId,
+        );
+    return thread?.chatId ?? chatId;
+  } catch (_) {
+    return chatId;
+  }
 }

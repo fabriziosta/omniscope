@@ -4,11 +4,12 @@ import 'package:flutter/foundation.dart';
 
 import '../../data/agents/agent_activity.dart';
 import '../../data/agents/agent_activity_repository.dart';
+import '../../data/agents/agent_app_settings.dart';
 import '../../data/agents/agent_chat_repository.dart';
 import '../../data/agents/agents_repository.dart';
 import '../../data/agents/genkit/genkit_agent_runner.dart';
-import '../../data/agents/models.dart';
-import '../../data/agents/trade_proposal.dart';
+import '../../data/agents/invest_interest_proposal_repository.dart';
+import '../../data/agents/llm_runtime_settings.dart';
 import '../../data/agents/trade_proposal_repository.dart';
 import '../../data/crypto/crypto_exchange_registry.dart';
 import '../../data/market/market_data_client.dart';
@@ -16,15 +17,13 @@ import '../../data/notifications/app_notification.dart';
 import '../../data/notifications/app_notification_repository.dart';
 import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/data_source_settings.dart';
+import '../../data/settings/env_secrets_repository.dart';
+import '../../data/settings/favorites_repository.dart';
+import '../../data/settings/mandate_settings.dart';
 import '../../data/trading/trade_executor.dart';
 import 'agent_chat_controller.dart';
 
-/// Foreground-only scheduler: while Omniscope is open and resumed, polls
-/// connected agents with [AgentConnection.scheduleEnabled] and Runs their
-/// symbols via the same [AgentChatController.sendRun] path as chat.
-///
-/// Each completed (or failed) Run also enqueues a shell attention notification
-/// so the user can open chat to Confirm or review Autopilot results.
+/// Foreground-only scheduler: Runs invest-interest / symbols via orchestrator.
 class AgentScheduleCoordinator extends ChangeNotifier {
   AgentScheduleCoordinator({
     required this._agents,
@@ -38,6 +37,12 @@ class AgentScheduleCoordinator extends ChangeNotifier {
     required this._cryptoRegistry,
     required this._dataSources,
     required this._portfolio,
+    required this._favorites,
+    required this._secrets,
+    required this._llmRuntime,
+    required this._appSettings,
+    this._mandate,
+    this._investInterestProposals,
     this.pollInterval = const Duration(seconds: 60),
   });
 
@@ -52,19 +57,23 @@ class AgentScheduleCoordinator extends ChangeNotifier {
   final CryptoExchangeRegistry _cryptoRegistry;
   final DataSourceSettings _dataSources;
   final PortfolioRepository _portfolio;
+  final FavoritesRepository _favorites;
+  final EnvSecretsRepository _secrets;
+  final LlmRuntimeSettings _llmRuntime;
+  final AgentAppSettings _appSettings;
+  final MandateSettings? _mandate;
+  final InvestInterestProposalRepository? _investInterestProposals;
 
-  /// How often to check due schedules (not the user-facing Run interval).
   final Duration pollInterval;
 
   Timer? _timer;
   var _resumed = false;
   var _disposed = false;
-  final _inFlight = <String>{};
+  var _inFlight = false;
 
   bool get isResumed => _resumed;
   bool get isPolling => _timer != null;
 
-  /// Start (or resume) the poll loop. Safe to call repeatedly.
   void resume() {
     if (_disposed) return;
     _resumed = true;
@@ -72,14 +81,12 @@ class AgentScheduleCoordinator extends ChangeNotifier {
     unawaited(tick());
   }
 
-  /// Pause ticks while the app is backgrounded / tab hidden.
   void pause() {
     _resumed = false;
     _timer?.cancel();
     _timer = null;
   }
 
-  /// Test helper: mark resumed without starting the timer or catch-up tick.
   @visibleForTesting
   void debugMarkResumed() {
     if (_disposed) return;
@@ -93,37 +100,26 @@ class AgentScheduleCoordinator extends ChangeNotifier {
     super.dispose();
   }
 
-  /// One poll: run every due connection that is not already in flight.
-  ///
-  /// Exposed for tests; production uses the periodic timer + [resume].
   Future<void> tick({DateTime? now}) async {
-    if (_disposed || !_resumed) return;
+    if (_disposed || !_resumed || _inFlight) return;
     final at = now ?? DateTime.now().toUtc();
-    final due = [
-      for (final c in _agents.connections)
-        if (c.isScheduleDue(at) && !_inFlight.contains(c.roleId)) c,
-    ];
-    for (final connection in due) {
-      await _runBatch(connection, at);
-      if (_disposed || !_resumed) return;
-    }
+    if (!_appSettings.isScheduleDue(at)) return;
+    await _runBatch(at);
   }
 
-  Future<void> _runBatch(AgentConnection connection, DateTime at) async {
-    final roleId = connection.roleId;
-    final role = _agents.roleCatalog?.byId(roleId);
-    if (role == null) return;
-
-    final symbols = List<String>.from(connection.scheduleSymbols);
+  Future<void> _runBatch(DateTime at) async {
+    final symbols = _appSettings.scheduleUseInvestInterest
+        ? List<String>.from(_favorites.investInterestSymbols)
+        : List<String>.from(_appSettings.scheduleSymbols);
     if (symbols.isEmpty) return;
 
-    _inFlight.add(roleId);
+    _inFlight = true;
     try {
-      // Stamp first so a crash mid-batch does not immediately re-fire.
-      await _agents.updateScheduleLastRunAt(roleId, at);
+      await _appSettings.updateScheduleLastRunAt(at);
 
+      final chat = await _chats.createChat(title: 'Scheduled run');
       final controller = AgentChatController(
-        role: role,
+        chatId: chat.chatId,
         agents: _agents,
         chats: _chats,
         marketData: _marketData,
@@ -134,121 +130,72 @@ class AgentScheduleCoordinator extends ChangeNotifier {
         cryptoRegistry: _cryptoRegistry,
         dataSources: _dataSources,
         portfolio: _portfolio,
+        secrets: _secrets,
+        llmRuntime: _llmRuntime,
+        appSettings: _appSettings,
+        favorites: _favorites,
+        mandate: _mandate,
+        investInterestProposals: _investInterestProposals,
       );
 
       for (final symbol in symbols) {
         if (_disposed || !_resumed) break;
-        // Re-check connection still wants scheduling.
-        final latest = _agents.forRoleId(roleId);
-        if (!latest.connected || !latest.scheduleEnabled) break;
+        if (!_appSettings.scheduleEnabled) break;
 
         await _activity.add(
           AgentActivityEvent(
             id: AgentActivityEvent.newId(),
             kind: AgentActivityKind.scheduledRun,
-            roleId: roleId,
+            roleId: 'orchestrator',
             createdAt: DateTime.now().toUtc(),
             symbol: symbol,
             summary: 'Scheduled run · $symbol',
           ),
         );
 
-        final result = await controller.sendRun(symbol: symbol);
+        final result = await controller.sendRun(
+          symbol: symbol,
+          roleId: 'marketResearch',
+        );
         if (result is AgentChatSendFailed) {
           await _activity.add(
             AgentActivityEvent(
               id: AgentActivityEvent.newId(),
               kind: AgentActivityKind.scheduledRun,
-              roleId: roleId,
+              roleId: 'orchestrator',
               createdAt: DateTime.now().toUtc(),
               symbol: symbol,
               summary: 'Scheduled run failed · $symbol · ${result.message}',
             ),
           );
         }
-        // Blocked / ok: sendRun already logged activity for exchange gates.
 
-        await _enqueueNotification(
-          roleTitle: role.title,
-          roleId: roleId,
-          symbol: symbol,
-          result: result,
+        final okResult = result is AgentChatSendOk ? result : null;
+        final ok = okResult != null;
+        final proposalId =
+            okResult?.proposal?.id ?? okResult?.investInterestProposal?.id;
+        await _notifications.enqueue(
+          AppNotification(
+            id: AppNotification.newId(),
+            kind: proposalId != null
+                ? AppNotificationKind.scheduledProposalPending
+                : (ok
+                    ? AppNotificationKind.scheduledRunCompleted
+                    : AppNotificationKind.scheduledRunFailed),
+            roleId: 'orchestrator',
+            createdAt: DateTime.now().toUtc(),
+            title: 'Scheduled agent run',
+            body: ok
+                ? 'Finished $symbol — open the chat to review.'
+                : 'Run for $symbol needs attention.',
+            symbol: symbol,
+            proposalId: proposalId,
+            chatId: chat.chatId,
+          ),
         );
       }
-
-      controller.dispose();
     } finally {
-      _inFlight.remove(roleId);
+      _inFlight = false;
     }
-  }
-
-  Future<void> _enqueueNotification({
-    required String roleTitle,
-    required String roleId,
-    required String symbol,
-    required AgentChatSendResult result,
-  }) async {
-    final AppNotificationKind kind;
-    final String title;
-    final String body;
-    String? proposalId;
-
-    switch (result) {
-      case AgentChatSendFailed(:final message):
-        kind = AppNotificationKind.scheduledRunFailed;
-        title = 'Scheduled run failed';
-        body = '$roleTitle · $symbol · $message';
-      case AgentChatSendBlockedNoExchange():
-        kind = AppNotificationKind.scheduledRunFailed;
-        title = 'Scheduled run blocked';
-        body = '$roleTitle · $symbol · connect a tradable portfolio in Settings';
-      case AgentChatSendOk(:final proposal):
-        if (proposal == null) {
-          kind = AppNotificationKind.scheduledRunCompleted;
-          title = 'Scheduled run finished';
-          body = '$roleTitle · $symbol';
-        } else {
-          proposalId = proposal.id;
-          final autopilotStatuses = {
-            TradeProposalStatus.executed,
-            TradeProposalStatus.failed,
-            TradeProposalStatus.skipped,
-          };
-          if (proposal.autopilot ||
-              autopilotStatuses.contains(proposal.status)) {
-            kind = AppNotificationKind.scheduledAutopilotDone;
-            title = switch (proposal.status) {
-              TradeProposalStatus.executed => 'Autopilot placed an order',
-              TradeProposalStatus.failed => 'Autopilot order failed',
-              TradeProposalStatus.skipped => 'Autopilot skipped a proposal',
-              _ => 'Autopilot ran',
-            };
-            body =
-                '$roleTitle · ${proposal.side.label} ${proposal.quantity} $symbol';
-          } else if (proposal.status == TradeProposalStatus.pending) {
-            kind = AppNotificationKind.scheduledProposalPending;
-            title = 'Confirm a scheduled suggestion';
-            body =
-                '$roleTitle · ${proposal.side.label} ${proposal.quantity} $symbol';
-          } else {
-            kind = AppNotificationKind.scheduledRunCompleted;
-            title = 'Scheduled run finished';
-            body = '$roleTitle · $symbol';
-          }
-        }
-    }
-
-    await _notifications.enqueue(
-      AppNotification(
-        id: AppNotification.newId(),
-        kind: kind,
-        roleId: roleId,
-        createdAt: DateTime.now().toUtc(),
-        title: title,
-        body: body,
-        symbol: symbol,
-        proposalId: proposalId,
-      ),
-    );
   }
 }

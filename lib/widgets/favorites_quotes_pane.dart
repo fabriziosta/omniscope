@@ -31,6 +31,8 @@ class FavoritesQuotesPane extends StatelessWidget {
     this.onBack,
     this.backLabel = 'Back',
     this.blockedMessage,
+    this.title = 'Favorites',
+    this.errorTitle = 'Could not load Favorites',
   });
 
   final List<String> symbols;
@@ -44,6 +46,9 @@ class FavoritesQuotesPane extends StatelessWidget {
   /// When non-null (e.g. no data sources enabled), shown instead of the list.
   final String? blockedMessage;
 
+  final String title;
+  final String errorTitle;
+
   @override
   Widget build(BuildContext context) {
     final membershipKey = ([...symbols]..sort()).join('|');
@@ -52,9 +57,11 @@ class FavoritesQuotesPane extends StatelessWidget {
       create: (context) => QuotesListController(
         client: context.read<MarketDataClient>(),
         symbols: symbols,
-        errorTitle: 'Could not load Favorites',
+        errorTitle: errorTitle,
       )..refresh(),
       child: _FavoritesQuotesPaneView(
+        title: title,
+        errorTitle: errorTitle,
         symbols: symbols,
         subtitle: subtitle,
         emptyMessage: emptyMessage,
@@ -70,6 +77,8 @@ class FavoritesQuotesPane extends StatelessWidget {
 
 class _FavoritesQuotesPaneView extends StatelessWidget {
   const _FavoritesQuotesPaneView({
+    required this.title,
+    required this.errorTitle,
     required this.symbols,
     required this.subtitle,
     required this.emptyMessage,
@@ -80,6 +89,8 @@ class _FavoritesQuotesPaneView extends StatelessWidget {
     this.blockedMessage,
   });
 
+  final String title;
+  final String errorTitle;
   final List<String> symbols;
   final String subtitle;
   final String emptyMessage;
@@ -101,7 +112,7 @@ class _FavoritesQuotesPaneView extends StatelessWidget {
     final blocked = blockedMessage;
 
     return MasterDetailContentPane(
-      title: 'Favorites',
+      title: title,
       subtitle: subtitle,
       showBack: showBack,
       onBack: onBack,
@@ -120,7 +131,7 @@ class _FavoritesQuotesPaneView extends StatelessWidget {
           : symbols.isEmpty
               ? AppEmptyView(emptyMessage)
               : QuotesAsyncBody(
-                  errorTitle: 'Could not load Favorites',
+                  errorTitle: errorTitle,
                   builder: (context, quotes) {
                     if (quotes.isEmpty) {
                       return const AppEmptyView(AppCopy.noQuotes);

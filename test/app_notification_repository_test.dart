@@ -101,6 +101,8 @@ void main() {
           title: 'Failed',
           body: 'oops',
           symbol: 'MSFT',
+          chatId: 'c_sched_1',
+          proposalId: 'tp_9',
         ),
       );
 
@@ -112,6 +114,8 @@ void main() {
         reloaded.active.first.kind,
         AppNotificationKind.scheduledRunFailed,
       );
+      expect(reloaded.active.first.chatId, 'c_sched_1');
+      expect(reloaded.active.first.proposalId, 'tp_9');
     });
   });
 }

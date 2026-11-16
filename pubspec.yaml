@@ -24,6 +24,8 @@ dependencies:
   genkit_openai: ^1.0.2
   genkit_anthropic: ^1.0.2
   schemantic: ^1.0.0
+  genkit_middleware: ^1.0.2
+  gpt_markdown: ^1.4.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

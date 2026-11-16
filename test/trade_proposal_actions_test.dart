@@ -1,9 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscope/data/agents/agent_activity.dart';
 import 'package:omniscope/data/agents/agent_activity_repository.dart';
-import 'package:omniscope/data/agents/agent_role_catalog.dart';
-import 'package:omniscope/data/agents/agents_repository.dart';
-import 'package:omniscope/data/agents/models.dart';
+import 'package:omniscope/data/agents/agent_app_settings.dart';
 import 'package:omniscope/data/agents/trade_proposal.dart';
 import 'package:omniscope/data/agents/trade_proposal_repository.dart';
 import 'package:omniscope/data/crypto/crypto_exchange_registry.dart';
@@ -28,15 +26,8 @@ void main() {
         PortfolioRepository portfolio,
       })> harness() async {
     final store = await memoryConfig();
-    final roles = await AgentRoleCatalog.load();
-    final agents = AgentsRepository(store: store, roleCatalog: roles);
-    await agents.load(roleCatalog: roles);
-    await agents.connect(
-      roleId: 'intradayTrading',
-      llmProvider: LlmProvider.openAi,
-      apiKey: 'sk',
-      modelId: 'gpt',
-    );
+    final appSettings = AgentAppSettings(store: store);
+    await appSettings.load();
     final proposals = TradeProposalRepository(store: store);
     await proposals.load();
     final activity = AgentActivityRepository(store: store);
@@ -54,7 +45,7 @@ void main() {
       marketData: market,
     );
     final actions = TradeProposalActions(
-      agents: agents,
+      appSettings: appSettings,
       proposals: proposals,
       activity: activity,
       tradeExecutor: executor,

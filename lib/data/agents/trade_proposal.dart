@@ -42,7 +42,7 @@ extension TradeProposalStatusX on TradeProposalStatus {
 
 /// Canonical LLM JSON keys for trade proposals (snake_case).
 ///
-/// Keep keys stable for Genkit trading agents and Activity Confirm parsing.
+/// Keep keys stable for Genkit trading agents and chat Confirm parsing.
 abstract final class TradeProposalLlmSchema {
   static const List<String> canonicalLlmKeys = [
     'ticker',
@@ -96,6 +96,7 @@ class TradeProposal {
     required this.riskApproved,
     required this.status,
     required this.createdAt,
+    this.chatId,
     this.sourceMessageId,
     this.executionError,
     this.orderId,
@@ -112,6 +113,7 @@ class TradeProposal {
   final bool riskApproved;
   final TradeProposalStatus status;
   final DateTime createdAt;
+  final String? chatId;
   final String? sourceMessageId;
   final String? executionError;
   final String? orderId;
@@ -134,6 +136,7 @@ class TradeProposal {
     bool? riskApproved,
     TradeProposalStatus? status,
     DateTime? createdAt,
+    String? chatId,
     String? sourceMessageId,
     String? executionError,
     String? orderId,
@@ -152,6 +155,7 @@ class TradeProposal {
       riskApproved: riskApproved ?? this.riskApproved,
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
+      chatId: chatId ?? this.chatId,
       sourceMessageId: sourceMessageId ?? this.sourceMessageId,
       executionError: clearExecutionError
           ? null
@@ -172,6 +176,7 @@ class TradeProposal {
         'riskApproved': riskApproved,
         'status': status.name,
         'createdAt': createdAt.toIso8601String(),
+        if (chatId != null) 'chatId': chatId,
         if (sourceMessageId != null) 'sourceMessageId': sourceMessageId,
         if (executionError != null) 'executionError': executionError,
         if (orderId != null) 'orderId': orderId,
@@ -197,6 +202,7 @@ class TradeProposal {
       status: TradeProposalStatusX.parse(json['status'] as String?),
       createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
+      chatId: json['chatId'] as String?,
       sourceMessageId: json['sourceMessageId'] as String?,
       executionError: json['executionError'] as String?,
       orderId: json['orderId'] as String?,
@@ -211,6 +217,7 @@ class TradeProposal {
     Map<String, dynamic> json, {
     required String roleId,
     required String exchangeId,
+    String? chatId,
     String? sourceMessageId,
     String? fallbackSymbol,
   }) {
@@ -241,6 +248,7 @@ class TradeProposal {
       riskApproved: risk,
       status: TradeProposalStatus.pending,
       createdAt: DateTime.now().toUtc(),
+      chatId: chatId,
       sourceMessageId: sourceMessageId,
     );
   }

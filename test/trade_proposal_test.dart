@@ -5,6 +5,7 @@ import 'package:omniscope/data/agents/agent_activity_repository.dart';
 import 'package:omniscope/data/agents/agent_chat_repository.dart';
 import 'package:omniscope/data/agents/agent_role_catalog.dart';
 import 'package:omniscope/data/agents/agents_repository.dart';
+import 'support/agent_test_harness.dart';
 import 'support/fake_genkit_agent_runner.dart';
 import 'package:omniscope/data/agents/models.dart';
 import 'package:omniscope/data/agents/trade_proposal.dart';
@@ -42,12 +43,17 @@ Desk note: buy a little.
         map!,
         roleId: 'intradayTrading',
         exchangeId: 'crypto_com',
+        chatId: 'c_trade_1',
+        sourceMessageId: 'msg_1',
       );
       expect(proposal.symbol, 'BTC_USD');
       expect(proposal.side, TradeProposalSide.buy);
       expect(proposal.quantity, 0.01);
       expect(proposal.riskApproved, isTrue);
       expect(proposal.isActionable, isTrue);
+      expect(proposal.chatId, 'c_trade_1');
+      expect(proposal.sourceMessageId, 'msg_1');
+      expect(TradeProposal.fromJson(proposal.toJson()).chatId, 'c_trade_1');
     });
 
     test('hold is not actionable', () {
@@ -212,12 +218,6 @@ Desk note: buy a little.
       final roles = await AgentRoleCatalog.load();
       final agents = AgentsRepository(store: store, roleCatalog: roles);
       await agents.load(roleCatalog: roles);
-      await agents.connect(
-        roleId: 'intradayTrading',
-        llmProvider: LlmProvider.openAi,
-        apiKey: 'sk',
-        modelId: 'gpt',
-      );
       final chats = AgentChatRepository(store: store);
       await chats.load();
       final proposals = TradeProposalRepository(store: store);
@@ -230,25 +230,26 @@ Desk note: buy a little.
       await portfolio.load();
       final market = FakeMarketDataClient();
 
-      final controller = AgentChatController(
-        role: roles.byId('intradayTrading')!,
+      final tradeExecutor = RoutingTradeExecutor(
+        cryptoRegistry: const CryptoExchangeRegistry([]),
+        brokerRegistry: BrokerExchangeRegistry.empty,
+        dataSources: dataSources,
+        portfolio: portfolio,
+        marketData: market,
+      );
+      final harness = await buildAgentChatController(
+        store: store,
         agents: agents,
         chats: chats,
         marketData: market,
-        agentRunner: fakeGenkitAgentRunner(),
-        tradeExecutor: RoutingTradeExecutor(
-          cryptoRegistry: const CryptoExchangeRegistry([]),
-          brokerRegistry: BrokerExchangeRegistry.empty,
-          dataSources: dataSources,
-          portfolio: portfolio,
-          marketData: market,
-        ),
+        tradeExecutor: tradeExecutor,
         proposals: proposals,
         activity: activity,
         cryptoRegistry: const CryptoExchangeRegistry([]),
         dataSources: dataSources,
         portfolio: portfolio,
       );
+      final controller = harness.controller;
 
       expect(controller.preferredPortfolioId(), PortfolioDescriptor.practiceId);
       // OpenAI-compatible mock body is not a full chat completion; expect
@@ -262,12 +263,6 @@ Desk note: buy a little.
       final roles = await AgentRoleCatalog.load();
       final agents = AgentsRepository(store: store, roleCatalog: roles);
       await agents.load(roleCatalog: roles);
-      await agents.connect(
-        roleId: 'intradayTrading',
-        llmProvider: LlmProvider.openAi,
-        apiKey: 'sk',
-        modelId: 'gpt',
-      );
       final chats = AgentChatRepository(store: store);
       await chats.load();
       final proposals = TradeProposalRepository(store: store);
@@ -288,12 +283,11 @@ Desk note: buy a little.
         marketData: market,
       );
 
-      final controller = AgentChatController(
-        role: roles.byId('intradayTrading')!,
+      final harness = await buildAgentChatController(
+        store: store,
         agents: agents,
         chats: chats,
         marketData: market,
-        agentRunner: fakeGenkitAgentRunner(),
         tradeExecutor: executor,
         proposals: proposals,
         activity: activity,
@@ -301,6 +295,7 @@ Desk note: buy a little.
         dataSources: dataSources,
         portfolio: portfolio,
       );
+      final controller = harness.controller;
 
       final proposal = TradeProposal(
         id: 'tp_paper',
@@ -332,13 +327,6 @@ Desk note: buy a little.
       final roles = await AgentRoleCatalog.load();
       final agents = AgentsRepository(store: store, roleCatalog: roles);
       await agents.load(roleCatalog: roles);
-      await agents.connect(
-        roleId: 'intradayTrading',
-        llmProvider: LlmProvider.openAi,
-        apiKey: 'sk',
-        modelId: 'gpt',
-        // No default portfolio.
-      );
       final chats = AgentChatRepository(store: store);
       await chats.load();
       final proposals = TradeProposalRepository(store: store);
@@ -379,12 +367,11 @@ Desk note: buy a little.
         marketData: market,
       );
 
-      final controller = AgentChatController(
-        role: roles.byId('intradayTrading')!,
+      final harness = await buildAgentChatController(
+        store: store,
         agents: agents,
         chats: chats,
         marketData: market,
-        agentRunner: fakeGenkitAgentRunner(),
         tradeExecutor: executor,
         proposals: proposals,
         activity: activity,
@@ -392,6 +379,7 @@ Desk note: buy a little.
         dataSources: dataSources,
         portfolio: portfolio,
       );
+      final controller = harness.controller;
 
       expect(controller.needsPortfolioPicker, isTrue);
       expect(controller.preferredPortfolioId(), isNull);
@@ -429,13 +417,6 @@ Desk note: buy a little.
       final roles = await AgentRoleCatalog.load();
       final agents = AgentsRepository(store: store, roleCatalog: roles);
       await agents.load(roleCatalog: roles);
-      await agents.connect(
-        roleId: 'intradayTrading',
-        llmProvider: LlmProvider.openAi,
-        apiKey: 'sk',
-        modelId: 'gpt',
-        autopilotExchangeId: 'crypto_com',
-      );
       final chats = AgentChatRepository(store: store);
       await chats.load();
       final proposals = TradeProposalRepository(store: store);
@@ -474,12 +455,11 @@ Desk note: buy a little.
         marketData: market,
       );
 
-      final controller = AgentChatController(
-        role: roles.byId('intradayTrading')!,
+      final harness = await buildAgentChatController(
+        store: store,
         agents: agents,
         chats: chats,
         marketData: market,
-        agentRunner: fakeGenkitAgentRunner(),
         tradeExecutor: executor,
         proposals: proposals,
         activity: activity,
@@ -487,6 +467,11 @@ Desk note: buy a little.
         dataSources: dataSources,
         portfolio: portfolio,
       );
+      await harness.appSettings.setAutopilot(
+        enabled: false,
+        exchangeId: 'crypto_com',
+      );
+      final controller = harness.controller;
 
       expect(controller.preferredPortfolioId(), 'crypto_com');
       expect(controller.needsPortfolioPicker, isFalse);

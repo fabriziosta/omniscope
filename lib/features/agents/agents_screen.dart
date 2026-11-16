@@ -2,36 +2,47 @@ import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import '../../core/brand_colors.dart';
-import '../../core/fade_page_route.dart';
 import '../../core/shell_navigation.dart';
-import '../../data/agents/agent_robustness.dart';
-import '../../data/agents/agents_repository.dart';
-import '../../data/agents/llm_api_key_config.dart';
-import '../../data/agents/llm_model_catalog.dart';
-import '../../data/agents/models.dart';
-import '../../data/settings/data_source_settings.dart';
+import '../../data/agents/agent_chat_repository.dart';
+import '../../data/agents/chat_models.dart';
+import '../../data/agents/llm_model_router.dart';
+import '../../data/agents/llm_runtime_settings.dart';
 import '../../data/settings/env_secrets_repository.dart';
-import '../../data/settings/settings_listen_keys.dart';
-import '../../data/trading/trade_executor.dart';
 import '../../widgets/app_empty_view.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/app_tooltip.dart';
+import '../../widgets/in_tab_back.dart';
+import '../../widgets/master_detail_shell.dart';
 import '../../widgets/tab_page_header.dart';
 import 'agent_chat_screen.dart';
-import 'agent_launch_actions.dart';
 
+/// Agents tab: chat history sidebar + embedded orchestrator chat.
 class AgentsScreen extends StatefulWidget {
   const AgentsScreen({super.key});
+
+  static const wideBreakpoint = MasterDetailShell.wideBreakpointDefault;
 
   @override
   State<AgentsScreen> createState() => _AgentsScreenState();
 }
 
 class _AgentsScreenState extends State<AgentsScreen> {
-  LlmModelCatalog? _models;
+  /// Wide layout selection when threads exist.
+  String? _selectedChatId;
+
+  /// Narrow: null = history list only.
+  String? _narrowSelected;
+
+  /// One-shot launch params applied when opening from [goToAgentChat].
+  String? _launchSymbol;
+  String? _launchExchangeId;
+  var _launchAutoRun = false;
+  String? _launchSide;
+  double? _launchQuantity;
+  String? _launchStarterRoleId;
+  var _launchGeneration = 0;
+
   ShellNavigationController? _shellNav;
-  var _openingPendingConnect = false;
   var _openingPendingChat = false;
 
   @override
@@ -44,7 +55,6 @@ class _AgentsScreenState extends State<AgentsScreen> {
       _shellNav!.addListener(_onShellNavChanged);
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _maybeOpenPendingConnect();
       _maybeOpenPendingChat();
     });
   }
@@ -56,33 +66,56 @@ class _AgentsScreenState extends State<AgentsScreen> {
   }
 
   void _onShellNavChanged() {
-    _maybeOpenPendingConnect();
     _maybeOpenPendingChat();
   }
 
-  Future<void> _maybeOpenPendingConnect() async {
-    if (!mounted || _openingPendingConnect) return;
-    final shellNav = _shellNav;
-    if (shellNav == null) return;
-    if (shellNav.tabIndex != ShellNavigationController.agentsTabIndex) return;
-    final roleId = shellNav.takePendingAgentConnectRoleId();
-    if (roleId == null || roleId.isEmpty) return;
+  bool get _wide =>
+      MediaQuery.sizeOf(context).width >= AgentsScreen.wideBreakpoint;
 
-    AgentRoleDefinition? role;
-    for (final r in context.read<AgentsRepository>().availableRoles) {
-      if (r.id == roleId) {
-        role = r;
-        break;
+  void _clearLaunchParams() {
+    _launchSymbol = null;
+    _launchExchangeId = null;
+    _launchAutoRun = false;
+    _launchSide = null;
+    _launchQuantity = null;
+    _launchStarterRoleId = null;
+  }
+
+  void _applyLaunchParams(PendingAgentChatOpen pending) {
+    _launchSymbol = pending.symbol;
+    _launchExchangeId = pending.initialExchangeId;
+    _launchAutoRun = pending.autoRun ||
+        pending.starterRoleId != null ||
+        (pending.symbol != null && pending.symbol!.isNotEmpty);
+    _launchSide = pending.initialSide;
+    _launchQuantity = pending.initialQuantity;
+    _launchStarterRoleId = pending.starterRoleId;
+    _launchGeneration++;
+  }
+
+  void _selectChat(
+    String chatId, {
+    required bool wide,
+    bool fromLaunch = false,
+  }) {
+    setState(() {
+      if (!fromLaunch) {
+        _clearLaunchParams();
       }
-    }
-    if (role == null) return;
+      _selectedChatId = chatId;
+      // Always set narrow selection for launches so the chat is visible even
+      // if MediaQuery width is reported as wide during the shell callback.
+      if (!wide || fromLaunch) {
+        _narrowSelected = chatId;
+      }
+    });
+  }
 
-    _openingPendingConnect = true;
-    try {
-      await _openConnect(role);
-    } finally {
-      _openingPendingConnect = false;
-    }
+  void _backToNavList() {
+    setState(() {
+      _narrowSelected = null;
+      _clearLaunchParams();
+    });
   }
 
   Future<void> _maybeOpenPendingChat() async {
@@ -93,806 +126,349 @@ class _AgentsScreenState extends State<AgentsScreen> {
     final pending = shellNav.takePendingAgentChatOpen();
     if (pending == null) return;
 
-    AgentRoleDefinition? role;
-    for (final r in context.read<AgentsRepository>().availableRoles) {
-      if (r.id == pending.roleId) {
-        role = r;
-        break;
-      }
-    }
-    if (role == null) {
-      showAppToast(
-        context,
-        description: 'That agent is no longer available.',
-        destructive: true,
-      );
-      return;
-    }
-
     _openingPendingChat = true;
     try {
-      await AgentLaunchActions.openAgentChat(
-        context,
-        role: role,
-        initialSymbol: pending.symbol,
-        autoRun: false,
-      );
+      final chats = context.read<AgentChatRepository>();
+      final chatId = pending.chatId ??
+          (await chats.createChat(
+            title: pending.symbol?.isNotEmpty == true ? pending.symbol : null,
+          ))
+              .chatId;
+      if (!mounted) return;
+      _applyLaunchParams(pending);
+      _selectChat(chatId, wide: _wide, fromLaunch: true);
     } finally {
       _openingPendingChat = false;
     }
   }
 
-  Future<LlmModelCatalog?> _ensureModels() async {
-    if (_models != null) return _models;
-    try {
-      final models = await LlmModelCatalog.load();
-      if (!mounted) return null;
-      setState(() => _models = models);
-      return models;
-    } catch (_) {
-      if (!mounted) return null;
-      showAppToast(
-        context,
-        description: 'Could not load model list. Try again.',
-        destructive: true,
-      );
-      return null;
+  Future<bool> _ensureLlmReady() async {
+    final secrets = context.read<EnvSecretsRepository>();
+    final runtime = context.read<LlmRuntimeSettings>();
+    if (LlmModelRouter.hasAnyEndpoint(
+      runtime: runtime,
+      keys: secrets.llmKeys,
+    )) {
+      return true;
     }
-  }
-
-  Future<void> _openConnect(AgentRoleDefinition role) async {
-    final models = await _ensureModels();
-    if (models == null || !mounted) return;
-
-    final existing = context.read<AgentsRepository>().forRoleId(role.id);
-    final apiKeys = context.read<EnvSecretsRepository>().llmKeys;
-    final venues = context.read<TradeExecutor>().tradableVenues;
-    final result = await showShadDialog<_ConnectResult>(
-      context: context,
-      builder: (context) => _ConnectAgentDialog(
-        role: role,
-        catalog: models,
-        apiKeys: apiKeys,
-        initial: existing,
-        tradableExchangeIds: [
-          for (final v in venues) (v.id, v.displayName),
-        ],
-      ),
+    showAppToast(
+      context,
+      title: 'Add an LLM key',
+      description: 'Settings → Connections first, then start a chat.',
+      destructive: true,
     );
-    if (result == null || !mounted) return;
-
-    final error = await context.read<AgentsRepository>().connect(
-          roleId: role.id,
-          llmProvider: result.provider,
-          apiKey: result.apiKey,
-          modelId: result.modelId,
-          baseUrl: result.baseUrl,
-          autopilotEnabled: result.autopilotEnabled,
-          autopilotExchangeId: result.autopilotExchangeId,
-          autopilotMaxNotional: result.autopilotMaxNotional,
-          autopilotMaxOpenProposals: result.autopilotMaxOpenProposals,
-          scheduleEnabled: result.scheduleEnabled,
-          scheduleInterval: result.scheduleInterval,
-          scheduleSymbols: result.scheduleSymbols,
+    context.read<ShellNavigationController>().goToSettings(
+          sectionId: 'connections',
         );
+    return false;
+  }
+
+  Future<void> _newChat() async {
+    if (!await _ensureLlmReady()) return;
     if (!mounted) return;
-    if (error != null) {
-      showAppToast(context, description: error, destructive: true);
-      return;
-    }
-    await context.read<EnvSecretsRepository>().setLlmApiKey(
-          result.provider,
-          result.apiKey,
-        );
+    final chats = context.read<AgentChatRepository>();
+    final thread = await chats.createChat();
     if (!mounted) return;
-    showAppToast(context, description: '${role.title} connected');
-  }
-
-  Future<void> _disconnect(AgentRoleDefinition role) async {
-    await context.read<AgentsRepository>().disconnect(role.id);
-    if (!mounted) return;
-    showAppToast(context, description: '${role.title} disconnected');
-  }
-
-  void _openChat(AgentRoleDefinition role) {
-    pushFadePage(context, AgentChatScreen(role: role));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final agents = context.watch<AgentsRepository>();
-    final roles = agents.availableRoles;
-    context.select<EnvSecretsRepository, String>(exchangeCredsFingerprint);
-    context.select<DataSourceSettings, String>(dataSourceFingerprint);
-    final canTrade = context.read<TradeExecutor>().canTrade;
-    final theme = ShadTheme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const TabPageHeader(
-          title: 'Agents',
-          subtitle:
-              'Connect helpers and open chat. Confirm suggestions on the '
-              'Activity tab into Practice or live portfolios.',
-          subtitleSpacing: 6,
-        ),
-        if (canTrade &&
-            context.read<TradeExecutor>().liveVenues.isEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: theme.colorScheme.secondary,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: theme.colorScheme.border),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'No live exchange connected yet — trading agents '
-                      'default to Practice (paper). Add credentials under '
-                      'Settings → Data sources for live Confirm / Autopilot.',
-                      style: theme.textTheme.small.copyWith(
-                        color: theme.colorScheme.secondaryForeground,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      height: 44,
-                      child: ShadButton(
-                        onPressed: () {
-                          context
-                              .read<ShellNavigationController>()
-                              .goToSettings(sectionId: 'dataSources');
-                        },
-                        child: const Text('Open Data sources'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        Expanded(
-          child: roles.isEmpty
-              ? const AppEmptyView(
-                  'No agent roles found. Add a role package under '
-                  'lib/data/agents/genkit/ and list it in assets/agents/manifest.json.',
-                )
-              : ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-                  children: [
-                    for (final role in roles) ...[
-                      _AgentCard(
-                        role: role,
-                        connection: agents.forRoleId(role.id),
-                        catalog: _models,
-                        onConnect: () => _openConnect(role),
-                        onDisconnect: () => _disconnect(role),
-                        onOpenChat: () => _openChat(role),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                  ],
-                ),
-        ),
-      ],
-    );
-  }
-}
-
-class _AgentCard extends StatelessWidget {
-  const _AgentCard({
-    required this.role,
-    required this.connection,
-    required this.catalog,
-    required this.onConnect,
-    required this.onDisconnect,
-    required this.onOpenChat,
-  });
-
-  final AgentRoleDefinition role;
-  final AgentConnection connection;
-  final LlmModelCatalog? catalog;
-  final VoidCallback onConnect;
-  final VoidCallback onDisconnect;
-  final VoidCallback onOpenChat;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    final modelLabel = connection.connected
-        ? (catalog?.labelFor(connection.llmProvider, connection.modelId) ??
-            connection.modelId)
-        : null;
-    final suggested = role.suggestedModelId(LlmProvider.openAi);
-    final suggestedLabel = suggested == null
-        ? null
-        : (catalog?.labelFor(LlmProvider.openAi, suggested) ?? suggested);
-
-    final robustness = AgentRobustness.score(role);
-
-    return ShadCard(
-      title: Row(
-        children: [
-          if (!connection.connected) ...[
-            _AgentConfigStatusDot(configured: connection.isConfigured),
-            const SizedBox(width: 8),
-          ],
-          Expanded(child: Text(role.title)),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: AppTooltip(
-                message: AgentRobustness.tooltipMessage,
-                wrapDetector: true,
-                child: ShadBadge.secondary(
-                  child: Text('Robustness $robustness'),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-      description: Text(
-        '${role.workload.label}  ·  ${role.description}',
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 12),
-          Text(
-            connection.connected
-                ? 'Connected · ${connection.llmProvider.label}'
-                    '${modelLabel != null && modelLabel.isNotEmpty ? ' · $modelLabel' : ''}'
-                    '${connection.autopilotEnabled ? ' · Autopilot on' : ''}'
-                    '${connection.scheduleEnabled ? ' · Schedule · ${connection.scheduleInterval.shortLabel}' : ''}'
-                : 'Not connected'
-                    '${suggestedLabel != null ? ' · Suggested: $suggestedLabel' : ''}',
-            style: theme.textTheme.small.copyWith(
-              color: connection.connected
-                  ? theme.colorScheme.foreground
-                  : theme.colorScheme.mutedForeground,
-            ),
-          ),
-          if (!connection.connected && role.suggestionNote != null) ...[
-            const SizedBox(height: 6),
-            Text(role.suggestionNote!, style: theme.textTheme.muted),
-          ],
-          const SizedBox(height: 12),
-          if (connection.connected) ...[
-            ShadButton(
-              onPressed: onOpenChat,
-              child: const Text('Open chat'),
-            ),
-            const SizedBox(height: 8),
-            ShadButton.outline(
-              onPressed: onConnect,
-              child: const Text('Edit'),
-            ),
-            const SizedBox(height: 8),
-            ShadButton.outline(
-              onPressed: onDisconnect,
-              child: const Text('Disconnect'),
-            ),
-          ] else
-            ShadButton(
-              onPressed: onConnect,
-              child: const Text('Connect'),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AgentConfigStatusDot extends StatelessWidget {
-  const _AgentConfigStatusDot({required this.configured});
-
-  final bool configured;
-
-  @override
-  Widget build(BuildContext context) {
-    final color =
-        configured ? BrandColors.gainOf(context) : BrandColors.lossOf(context);
-    final message = configured
-        ? 'Model and API key are assigned.'
-        : "This agent isn't using a model and doesn't have an API key "
-            'assigned yet.';
-
-    return AppTooltip(
-      message: message,
-      wrapDetector: true,
-      child: SizedBox(
-        width: 28,
-        height: 28,
-        child: Center(
-          child: Container(
-            width: 10,
-            height: 10,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ConnectResult {
-  const _ConnectResult({
-    required this.provider,
-    required this.apiKey,
-    required this.modelId,
-    this.baseUrl,
-    this.autopilotEnabled = false,
-    this.autopilotExchangeId,
-    this.autopilotMaxNotional,
-    this.autopilotMaxOpenProposals = 3,
-    this.scheduleEnabled = false,
-    this.scheduleInterval = AgentScheduleInterval.hour1,
-    this.scheduleSymbols = const [],
-  });
-
-  final LlmProvider provider;
-  final String apiKey;
-  final String modelId;
-  final String? baseUrl;
-  final bool autopilotEnabled;
-  final String? autopilotExchangeId;
-  final double? autopilotMaxNotional;
-  final int autopilotMaxOpenProposals;
-  final bool scheduleEnabled;
-  final AgentScheduleInterval scheduleInterval;
-  final List<String> scheduleSymbols;
-}
-
-class _ConnectAgentDialog extends StatefulWidget {
-  const _ConnectAgentDialog({
-    required this.role,
-    required this.catalog,
-    required this.apiKeys,
-    required this.initial,
-    required this.tradableExchangeIds,
-  });
-
-  final AgentRoleDefinition role;
-  final LlmModelCatalog catalog;
-  final LlmApiKeyConfig apiKeys;
-  final AgentConnection initial;
-  final List<(String id, String name)> tradableExchangeIds;
-
-  @override
-  State<_ConnectAgentDialog> createState() => _ConnectAgentDialogState();
-}
-
-class _ConnectAgentDialogState extends State<_ConnectAgentDialog> {
-  late LlmProvider _provider;
-  late String? _modelId;
-  late final TextEditingController _apiKeyController;
-  late final TextEditingController _customModelController;
-  late final TextEditingController _baseUrlController;
-  late final TextEditingController _maxNotionalController;
-  late final TextEditingController _scheduleSymbolsController;
-  late bool _autopilotEnabled;
-  String? _autopilotExchangeId;
-  late int _maxOpen;
-  late bool _scheduleEnabled;
-  late AgentScheduleInterval _scheduleInterval;
-
-  String? _preloadedKey;
-
-  @override
-  void initState() {
-    super.initState();
-    _provider = widget.initial.llmProvider;
-    final initialKey = widget.initial.apiKey.isNotEmpty
-        ? widget.initial.apiKey
-        : (widget.apiKeys.keyFor(_provider) ?? '');
-    if (widget.initial.apiKey.isEmpty && initialKey.isNotEmpty) {
-      _preloadedKey = initialKey;
-    }
-    _apiKeyController = TextEditingController(text: initialKey);
-    _customModelController = TextEditingController(
-      text: widget.initial.llmProvider == LlmProvider.custom
-          ? widget.initial.modelId
-          : '',
-    );
-    _baseUrlController = TextEditingController(
-      text: widget.initial.baseUrl ?? '',
-    );
-    _modelId = _resolveModelId(_provider, widget.initial.modelId);
-    _autopilotEnabled = widget.initial.autopilotEnabled;
-    _autopilotExchangeId = widget.initial.autopilotExchangeId;
-    _maxOpen = widget.initial.autopilotMaxOpenProposals;
-    _maxNotionalController = TextEditingController(
-      text: widget.initial.autopilotMaxNotional?.toString() ?? '',
-    );
-    _scheduleEnabled = widget.initial.scheduleEnabled;
-    _scheduleInterval = widget.initial.scheduleInterval;
-    _scheduleSymbolsController = TextEditingController(
-      text: widget.initial.scheduleSymbols.join(', '),
-    );
-    if (_autopilotExchangeId != null &&
-        !widget.tradableExchangeIds.any((e) => e.$1 == _autopilotExchangeId)) {
-      _autopilotExchangeId = null;
-    }
-    // Only auto-pick when a single target exists (Practice alone).
-    if (_autopilotExchangeId == null &&
-        widget.tradableExchangeIds.length == 1) {
-      _autopilotExchangeId = widget.tradableExchangeIds.first.$1;
-    }
-  }
-
-  static const _nonePortfolio = '__none__';
-
-  @override
-  void dispose() {
-    _apiKeyController.dispose();
-    _customModelController.dispose();
-    _baseUrlController.dispose();
-    _maxNotionalController.dispose();
-    _scheduleSymbolsController.dispose();
-    super.dispose();
-  }
-
-  String? _resolveModelId(LlmProvider provider, String? preferred) {
-    if (provider == LlmProvider.custom) return null;
-    final roleSuggested = widget.role.suggestedModelId(provider);
-    return widget.catalog.suggestedModelId(
-      provider,
-      preferredId: (preferred != null && preferred.isNotEmpty)
-          ? preferred
-          : roleSuggested,
-      preferredWeight: widget.role.workload.preferredModelWeight,
-    );
-  }
-
-  void _applyPreloadedKey(LlmProvider provider) {
-    final next = widget.apiKeys.keyFor(provider) ?? '';
-    final current = _apiKeyController.text;
-    final canReplace =
-        current.isEmpty || (_preloadedKey != null && current == _preloadedKey);
-    if (canReplace) {
-      _apiKeyController.text = next;
-      _preloadedKey = next.isEmpty ? null : next;
-    }
-  }
-
-  void _onProviderChanged(LlmProvider? value) {
-    if (value == null) return;
     setState(() {
-      _provider = value;
-      _modelId = _resolveModelId(value, null);
-      _applyPreloadedKey(value);
+      _clearLaunchParams();
+      _selectedChatId = thread.chatId;
+      if (!_wide) {
+        _narrowSelected = thread.chatId;
+      }
     });
   }
 
-  void _submit() {
-    final modelId = _provider == LlmProvider.custom
-        ? _customModelController.text.trim()
-        : (_modelId ?? '');
-    final notionalRaw = _maxNotionalController.text.trim();
-    final notional =
-        notionalRaw.isEmpty ? null : double.tryParse(notionalRaw);
-    if (_autopilotEnabled &&
-        (_autopilotExchangeId == null || _autopilotExchangeId!.isEmpty) &&
-        widget.tradableExchangeIds.length != 1) {
-      showAppToast(
-        context,
-        description:
-            'Autopilot needs a default portfolio. Pick one, or turn Autopilot off.',
-        destructive: true,
-      );
-      return;
-    }
-    final symbols =
-        normalizeScheduleSymbols([_scheduleSymbolsController.text]);
-    if (_scheduleEnabled && symbols.isEmpty) {
-      showAppToast(
-        context,
-        description: 'Schedule needs at least one symbol.',
-        destructive: true,
-      );
-      return;
-    }
-    final defaultId = _autopilotExchangeId ??
-        (widget.tradableExchangeIds.length == 1
-            ? widget.tradableExchangeIds.first.$1
-            : null);
-    Navigator.of(context).pop(
-      _ConnectResult(
-        provider: _provider,
-        apiKey: _apiKeyController.text,
-        modelId: modelId,
-        baseUrl: _provider == LlmProvider.custom
-            ? _baseUrlController.text.trim()
-            : null,
-        autopilotEnabled: _autopilotEnabled,
-        autopilotExchangeId: defaultId,
-        autopilotMaxNotional: notional,
-        autopilotMaxOpenProposals: _maxOpen,
-        scheduleEnabled: _scheduleEnabled,
-        scheduleInterval: _scheduleInterval,
-        scheduleSymbols: symbols,
+  Future<void> _renameChat(AgentChatThread thread) async {
+    final controller = TextEditingController(text: thread.title);
+    final next = await showShadDialog<String>(
+      context: context,
+      builder: (context) => ShadDialog(
+        title: const Text('Rename chat'),
+        actions: [
+          ShadButton.outline(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ShadButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: ShadInput(
+            controller: controller,
+            placeholder: const Text('Chat name'),
+            onSubmitted: (value) => Navigator.of(context).pop(value),
+          ),
+        ),
       ),
+    );
+    final trimmed = next?.trim();
+    controller.dispose();
+    if (trimmed == null || trimmed.isEmpty || !mounted) return;
+    if (trimmed == thread.title) return;
+    await context.read<AgentChatRepository>().renameChat(thread.chatId, trimmed);
+  }
+
+  Future<void> _deleteChat(AgentChatThread thread) async {
+    final chats = context.read<AgentChatRepository>();
+    final id = thread.chatId;
+    await chats.deleteChat(id);
+    if (!mounted) return;
+    setState(() {
+      if (_selectedChatId == id) {
+        final next = chats.threads.isEmpty ? null : chats.threads.first.chatId;
+        _selectedChatId = next;
+        _clearLaunchParams();
+      }
+      if (_narrowSelected == id) {
+        _narrowSelected = null;
+      }
+    });
+  }
+
+  Widget _buildSidebar({
+    required List<AgentChatThread> threads,
+    required bool ready,
+    required String? highlighted,
+    required bool wide,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: ShadButton(
+              size: ShadButtonSize.sm,
+              onPressed: () => _newChat(),
+              child: const Text('New chat'),
+            ),
+          ),
+        ),
+        Expanded(
+          child: threads.isEmpty
+              ? AppEmptyView(
+                  ready
+                      ? 'No chats yet — tap New chat to start.'
+                      : 'Settings → Connections → add a provider key '
+                          'and pick light/heavy models.',
+                )
+              : ListView.separated(
+                  padding: MasterDetailNavList.listPadding,
+                  itemCount: threads.length,
+                  separatorBuilder: (_, _) =>
+                      const SizedBox(height: MasterDetailNavList.tileGap),
+                  itemBuilder: (context, index) {
+                    final thread = threads[index];
+                    return _ChatNavTile(
+                      thread: thread,
+                      selected: highlighted == thread.chatId,
+                      onOpen: () => _selectChat(thread.chatId, wide: wide),
+                      onRename: () => _renameChat(thread),
+                      onDelete: () => _deleteChat(thread),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final models = widget.catalog.modelsFor(_provider);
-    final suggestedId = widget.role.suggestedModelId(_provider);
-    final suggestedLabel = suggestedId == null
-        ? null
-        : widget.catalog.labelFor(_provider, suggestedId);
-    final isTradingRole = widget.role.workload == AgentWorkload.trading;
+    final chats = context.watch<AgentChatRepository>();
+    final secrets = context.watch<EnvSecretsRepository>();
+    final runtime = context.watch<LlmRuntimeSettings>();
+    final ready = LlmModelRouter.hasAnyEndpoint(
+      runtime: runtime,
+      keys: secrets.llmKeys,
+    );
+    final threads = chats.threads;
 
-    return ShadDialog(
-      title: Text(
-        widget.initial.connected
-            ? 'Edit ${widget.role.title}'
-            : 'Connect ${widget.role.title}',
-      ),
-      description: Text(
-        [
-          ?widget.role.suggestionNote,
-          if (suggestedLabel != null) 'Suggested: $suggestedLabel.',
-          'Choose a model and paste your API key'
-              '${widget.apiKeys.keyFor(_provider) != null ? ' (suggested from .env)' : ''}.',
-          'Connecting saves the key on this device and to .env when possible.',
-        ].join(' '),
-      ),
-      actions: [
-        ShadButton.outline(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        ShadButton(
-          onPressed: _submit,
-          child: Text(widget.initial.connected ? 'Save' : 'Connect'),
-        ),
-      ],
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420, maxHeight: 560),
-        child: SingleChildScrollView(
+    // Wide: keep a concrete selection when threads exist.
+    final selectedId = () {
+      if (_selectedChatId != null &&
+          threads.any((t) => t.chatId == _selectedChatId)) {
+        return _selectedChatId!;
+      }
+      return threads.isEmpty ? null : threads.first.chatId;
+    }();
+
+    final narrowId = _narrowSelected != null &&
+            threads.any((t) => t.chatId == _narrowSelected)
+        ? _narrowSelected
+        : null;
+
+    return InTabBackEffect(
+      onBack: narrowId != null ? _backToNavList : null,
+      child: ColoredBox(
+        color: theme.colorScheme.background,
+        child: SafeArea(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Provider', style: theme.textTheme.small),
-              const SizedBox(height: 6),
-              ShadSelect<LlmProvider>(
-                minWidth: double.infinity,
-                initialValue: _provider,
-                placeholder: const Text('Select provider'),
-                options: [
-                  for (final p in LlmProvider.values)
-                    ShadOption(value: p, child: Text(p.label)),
-                ],
-                selectedOptionBuilder: (context, value) => Text(value.label),
-                onChanged: _onProviderChanged,
-              ),
-              const SizedBox(height: 14),
-              if (_provider == LlmProvider.custom) ...[
-                Text('Model id', style: theme.textTheme.small),
-                const SizedBox(height: 6),
-                ShadInput(
-                  controller: _customModelController,
-                  placeholder: const Text('e.g. my-model'),
+              if (narrowId == null)
+                const TabPageHeader(
+                  title: 'Agents',
+                  subtitle:
+                      'Chats use your LLM keys. Specialists run in the background.',
                 ),
-                const SizedBox(height: 14),
-                Text('Base URL', style: theme.textTheme.small),
-                const SizedBox(height: 6),
-                ShadInput(
-                  controller: _baseUrlController,
-                  placeholder: const Text('https://api.example.com/v1'),
-                ),
-              ] else ...[
-                Text('Model', style: theme.textTheme.small),
-                const SizedBox(height: 6),
-                ShadSelect<String>(
-                  key: ValueKey('${_provider}_${widget.role.id}'),
-                  minWidth: double.infinity,
-                  initialValue: _modelId,
-                  placeholder: const Text('Select model'),
-                  options: [
-                    for (final m in models)
-                      ShadOption(
-                        value: m.id,
-                        child: Text(
-                          m.id == suggestedId
-                              ? '${m.label} (suggested)'
-                              : m.label,
-                        ),
+              Expanded(
+                child: selectedId == null
+                    ? _buildSidebar(
+                        threads: threads,
+                        ready: ready,
+                        highlighted: null,
+                        wide: _wide,
+                      )
+                    : MasterDetailShell<String>(
+                        selected: selectedId,
+                        narrowSelected: narrowId,
+                        onNarrowBack: _backToNavList,
+                        sidebarBuilder: (context, highlighted, {required wide}) {
+                          return _buildSidebar(
+                            threads: threads,
+                            ready: ready,
+                            highlighted: highlighted,
+                            wide: wide,
+                          );
+                        },
+                        contentBuilder:
+                            (context, chatId, {required showBack, onBack}) {
+                          return KeyedSubtree(
+                            key: ValueKey('$chatId-$_launchGeneration'),
+                            child: AgentChatScreen(
+                              chatId: chatId,
+                              showBack: showBack,
+                              onBack: onBack,
+                              backLabel: 'Agents',
+                              initialSymbol: _launchSymbol,
+                              initialExchangeId: _launchExchangeId,
+                              autoRun: _launchAutoRun,
+                              initialSide: _launchSide,
+                              initialQuantity: _launchQuantity,
+                              starterRoleId: _launchStarterRoleId,
+                            ),
+                          );
+                        },
                       ),
-                  ],
-                  selectedOptionBuilder: (context, value) {
-                    final label = widget.catalog.labelFor(_provider, value);
-                    final base = label ?? value;
-                    return Text(
-                      value == suggestedId ? '$base (suggested)' : base,
-                    );
-                  },
-                  onChanged: (value) {
-                    if (value == null) return;
-                    setState(() => _modelId = value);
-                  },
-                ),
-              ],
-              const SizedBox(height: 14),
-              Text('API key', style: theme.textTheme.small),
-              const SizedBox(height: 6),
-              ShadInput(
-                controller: _apiKeyController,
-                obscureText: true,
-                placeholder: const Text('Paste API key'),
               ),
-              if (isTradingRole) ...[
-                const SizedBox(height: 18),
-                Text('Default portfolio', style: theme.textTheme.small),
-                const SizedBox(height: 6),
-                Text(
-                  'Optional. When set, Confirm and Autopilot use this portfolio. '
-                  'When none, Confirm asks each time.',
-                  style: theme.textTheme.muted,
-                ),
-                const SizedBox(height: 8),
-                if (widget.tradableExchangeIds.isEmpty)
-                  Text(
-                    'Practice should appear here. Try reopening the app.',
-                    style: theme.textTheme.muted,
-                  )
-                else
-                  ShadSelect<String>(
-                    minWidth: double.infinity,
-                    initialValue: _autopilotExchangeId ?? _nonePortfolio,
-                    placeholder: const Text('Choose on Confirm'),
-                    options: [
-                      if (widget.tradableExchangeIds.length > 1)
-                        const ShadOption(
-                          value: _nonePortfolio,
-                          child: Text('None — choose on Confirm'),
-                        ),
-                      for (final e in widget.tradableExchangeIds)
-                        ShadOption(value: e.$1, child: Text(e.$2)),
-                    ],
-                    selectedOptionBuilder: (context, value) {
-                      if (value == _nonePortfolio) {
-                        return const Text('None — choose on Confirm');
-                      }
-                      for (final e in widget.tradableExchangeIds) {
-                        if (e.$1 == value) return Text(e.$2);
-                      }
-                      return Text(value);
-                    },
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() {
-                        _autopilotExchangeId =
-                            value == _nonePortfolio ? null : value;
-                      });
-                    },
-                  ),
-                const SizedBox(height: 18),
-                Text('Autopilot', style: theme.textTheme.small),
-                const SizedBox(height: 6),
-                Text(
-                  'Off by default. When on, risk-approved suggestions submit '
-                  'to the default portfolio without Confirm. Requires a '
-                  'default portfolio above.',
-                  style: theme.textTheme.muted,
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Enable Autopilot',
-                        style: theme.textTheme.p,
-                      ),
-                    ),
-                    ShadSwitch(
-                      value: _autopilotEnabled,
-                      onChanged: (v) => setState(() => _autopilotEnabled = v),
-                    ),
-                  ],
-                ),
-                if (_autopilotEnabled) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    'Max open pending proposals',
-                    style: theme.textTheme.small,
-                  ),
-                  const SizedBox(height: 6),
-                  ShadSelect<int>(
-                    minWidth: double.infinity,
-                    initialValue: _maxOpen,
-                    options: [
-                      for (final n in const [1, 2, 3, 5, 10])
-                        ShadOption(value: n, child: Text('$n')),
-                    ],
-                    selectedOptionBuilder: (context, value) => Text('$value'),
-                    onChanged: (value) {
-                      if (value == null) return;
-                      setState(() => _maxOpen = value);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Max notional (optional)',
-                    style: theme.textTheme.small,
-                  ),
-                  const SizedBox(height: 6),
-                  ShadInput(
-                    controller: _maxNotionalController,
-                    placeholder: const Text('e.g. 100'),
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                  ),
-                ],
-              ],
-              const SizedBox(height: 18),
-              Text('Schedule', style: theme.textTheme.small),
-              const SizedBox(height: 6),
-              Text(
-                'Runs while Omniscope is open on this device. '
-                'Pauses in the background.',
-                style: theme.textTheme.muted,
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Enable schedule',
-                      style: theme.textTheme.p,
-                    ),
-                  ),
-                  ShadSwitch(
-                    value: _scheduleEnabled,
-                    onChanged: (v) => setState(() => _scheduleEnabled = v),
-                  ),
-                ],
-              ),
-              if (_scheduleEnabled) ...[
-                const SizedBox(height: 12),
-                Text('Interval', style: theme.textTheme.small),
-                const SizedBox(height: 6),
-                ShadSelect<AgentScheduleInterval>(
-                  minWidth: double.infinity,
-                  initialValue: _scheduleInterval,
-                  options: [
-                    for (final interval in AgentScheduleInterval.values)
-                      ShadOption(
-                        value: interval,
-                        child: Text(interval.label),
-                      ),
-                  ],
-                  selectedOptionBuilder: (context, value) =>
-                      Text(value.label),
-                  onChanged: (value) {
-                    if (value == null) return;
-                    setState(() => _scheduleInterval = value);
-                  },
-                ),
-                const SizedBox(height: 12),
-                Text('Symbols', style: theme.textTheme.small),
-                const SizedBox(height: 6),
-                ShadInput(
-                  controller: _scheduleSymbolsController,
-                  placeholder: const Text('AAPL, BTC_USD, …'),
-                ),
-              ],
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatNavTile extends StatelessWidget {
+  const _ChatNavTile({
+    required this.thread,
+    required this.selected,
+    required this.onOpen,
+    required this.onRename,
+    required this.onDelete,
+  });
+
+  final AgentChatThread thread;
+  final bool selected;
+  final VoidCallback onOpen;
+  final Future<void> Function() onRename;
+  final Future<void> Function() onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final preview = thread.messages.isEmpty
+        ? 'Empty chat'
+        : thread.messages.last.content.trim().replaceAll(RegExp(r'\s+'), ' ');
+    final short =
+        preview.length <= 80 ? preview : '${preview.substring(0, 77)}…';
+    final foreground = selected
+        ? theme.colorScheme.secondaryForeground
+        : theme.colorScheme.foreground;
+    final muted = selected
+        ? theme.colorScheme.secondaryForeground.withValues(alpha: 0.8)
+        : theme.colorScheme.mutedForeground;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onOpen,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 56),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: selected ? theme.colorScheme.secondary : null,
+            border: Border.all(
+              color: selected
+                  ? theme.colorScheme.secondary
+                  : theme.colorScheme.border,
+            ),
+            borderRadius: theme.radius,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        thread.title,
+                        style: theme.textTheme.large.copyWith(color: foreground),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        short,
+                        style: theme.textTheme.muted.copyWith(color: muted),
+                        maxLines: 2,
+                      ),
+                    ],
+                  ),
+                ),
+                AppTooltip(
+                  message: 'Rename',
+                  child: ShadButton.ghost(
+                    size: ShadButtonSize.sm,
+                    width: 32,
+                    height: 32,
+                    padding: EdgeInsets.zero,
+                    onPressed: () async {
+                      await onRename();
+                    },
+                    child: Icon(
+                      LucideIcons.pencil,
+                      size: 14,
+                      color: muted,
+                    ),
+                  ),
+                ),
+                AppTooltip(
+                  message: 'Delete',
+                  child: ShadButton.ghost(
+                    size: ShadButtonSize.sm,
+                    width: 32,
+                    height: 32,
+                    padding: EdgeInsets.zero,
+                    onPressed: () async {
+                      await onDelete();
+                    },
+                    child: Icon(
+                      LucideIcons.trash2,
+                      size: 14,
+                      color: muted,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

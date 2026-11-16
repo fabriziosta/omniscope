@@ -1,23 +1,62 @@
 import 'package:genkit/experimental.dart';
 import 'package:genkit/genkit.dart';
+import 'package:genkit_middleware/agents.dart';
 import 'package:http/http.dart' as http;
 
 import '../agent_role_prompts.dart';
 import '../chat_models.dart';
+import '../llm_model_router.dart';
+import '../llm_runtime_settings.dart';
 import '../models.dart';
+import '../trade_proposal.dart';
+import 'agent_peer_delegation.dart';
 import 'genkit_runtime_factory.dart';
 import 'omniscope_agent_tools.dart';
 
+/// Result of one in-process Genkit chat turn.
+class GenkitAgentTurnResult {
+  const GenkitAgentTurnResult({
+    required this.reply,
+    this.delegatedTradeJson,
+    this.delegatedTradeRoleId,
+  });
+
+  /// Orchestrator final text (user-visible).
+  final String reply;
+
+  /// Trade JSON extracted from a delegated `intradayTrading` sub-agent, if any.
+  final Map<String, dynamic>? delegatedTradeJson;
+
+  /// Role that produced [delegatedTradeJson] (usually `intradayTrading`).
+  final String? delegatedTradeRoleId;
+}
+
+/// Specialty role registered for orchestrator delegation.
+class GenkitSpecialtySpec {
+  const GenkitSpecialtySpec({
+    required this.roleId,
+    required this.description,
+    required this.workload,
+    this.modelIdOverride,
+  });
+
+  final String roleId;
+  final String description;
+  final AgentWorkload workload;
+  final String? modelIdOverride;
+}
+
 /// Optional test hook that replaces the real Genkit turn.
 typedef GenkitAgentTurnOverride =
-    Future<String> Function({
-      required AgentConnection connection,
-      required String roleId,
+    Future<GenkitAgentTurnResult> Function({
+      required LlmResolvedEndpoint endpoint,
       required List<AgentChatMessage> messages,
       OmniscopeAgentToolDeps? toolDeps,
+      List<GenkitSpecialtySpec> specialties,
+      LlmRuntimeSettings? runtime,
     });
 
-/// Runs Omniscope chat turns through in-process Genkit [defineAgent] + tools.
+/// Runs Omniscope chat turns through an in-process orchestrator + specialists.
 class GenkitAgentRunner {
   GenkitAgentRunner({
     http.Client? httpClient,
@@ -29,21 +68,25 @@ class GenkitAgentRunner {
   /// When set (tests), skips Genkit and returns this function's result.
   final GenkitAgentTurnOverride? turnOverride;
 
-  /// Completes one assistant turn for [roleId] given the Omniscope thread
-  /// (including the latest user message).
-  Future<String> complete({
-    required AgentConnection connection,
-    required String roleId,
+  /// Completes one assistant turn via `omniscope_orchestrator`.
+  ///
+  /// [specialties] are enabled catalog roles registered as sub-agents on the
+  /// same Genkit instance (in-process `agents()` middleware — no HTTP).
+  Future<GenkitAgentTurnResult> complete({
+    required LlmResolvedEndpoint endpoint,
     required List<AgentChatMessage> messages,
     OmniscopeAgentToolDeps? toolDeps,
+    List<GenkitSpecialtySpec> specialties = const [],
+    LlmRuntimeSettings? runtime,
   }) async {
     final override = turnOverride;
     if (override != null) {
       return override(
-        connection: connection,
-        roleId: roleId,
+        endpoint: endpoint,
         messages: messages,
         toolDeps: toolDeps,
+        specialties: specialties,
+        runtime: runtime,
       );
     }
 
@@ -67,21 +110,73 @@ class GenkitAgentRunner {
     }
 
     final prior = usable.sublist(0, usable.length - 1);
-    final runtime = _factory.create(connection);
-    final ai = runtime.ai;
-    final tools = OmniscopeAgentTools.forRole(
-      ai: ai,
-      roleId: roleId,
-      deps: toolDeps,
-    );
+    final built = _factory.create(endpoint);
+    final ai = built.ai;
+    final primaryModel = built.model;
+
+    final peerNames = <String>[];
+    for (final spec in specialties) {
+      final peerTools = OmniscopeAgentTools.forRole(
+        ai: ai,
+        roleId: spec.roleId,
+        deps: toolDeps,
+      );
+      final weight = spec.workload.preferredModelWeight;
+      final specialtyModelId = spec.modelIdOverride?.trim().isNotEmpty == true
+          ? spec.modelIdOverride!.trim()
+          : _sameProviderModelId(
+              runtime: runtime,
+              provider: endpoint.provider,
+              weight: weight,
+            );
+      ai.defineAgent(
+        name: AgentPeerDelegation.agentName(spec.roleId),
+        description: spec.description,
+        system: AgentRolePrompts.forRoleId(
+          spec.roleId,
+          investInterestSymbols: toolDeps.investInterestSymbols,
+          mandateSummary: toolDeps.mandate?.toAgentSummary(),
+          answerMood: toolDeps.answerMood,
+          answerMoodNote: toolDeps.answerMoodNote,
+        ),
+        tools: peerTools,
+        model: _factory.specialtyModel(
+          primary: endpoint,
+          primaryModel: primaryModel,
+          specialtyModelId: specialtyModelId,
+        ),
+        use: [retry()],
+        maxTurns: 8,
+      );
+      peerNames.add(AgentPeerDelegation.agentName(spec.roleId));
+    }
+
+    final middleware = <GenerateMiddlewareRef>[
+      retry(),
+      if (peerNames.isNotEmpty)
+        agents(
+          agents: peerNames,
+          maxDelegations: 5,
+          historyLength: 2,
+        ),
+    ];
 
     final agent = ai.defineAgent(
-      name: 'omniscope_$roleId',
-      system: AgentRolePrompts.forRoleId(roleId),
-      tools: tools,
-      model: runtime.model,
-      use: [retry()],
-      maxTurns: 8,
+      name: AgentPeerDelegation.orchestratorName,
+      description:
+          'Routes user requests to the right Omniscope specialty agents '
+          'and synthesizes a clear answer.',
+      system: AgentRolePrompts.orchestratorSystem(
+        investInterestSymbols: toolDeps.investInterestSymbols,
+        mandateSummary: toolDeps.mandate?.toAgentSummary(),
+        specialtyRoleIds: [for (final s in specialties) s.roleId],
+        answerMood: toolDeps.answerMood,
+        answerMoodNote: toolDeps.answerMoodNote,
+      ),
+      tools: const [],
+      model: primaryModel,
+      use: middleware,
+      maxTurns: 10,
     );
 
     final history = <Message>[
@@ -102,7 +197,20 @@ class GenkitAgentRunner {
       if (text.isEmpty) {
         throw GenkitAgentException('Empty response from the agent.');
       }
-      return text;
+
+      final toolOutputs = _toolOutputsFromMessages(res.messages);
+      final delegatedJson =
+          AgentPeerDelegation.extractDelegatedTradeJson(toolOutputs);
+
+      // Also accept trade JSON in the orchestrator reply when it forwards it.
+      final replyJson = TradeProposalParser.extractJsonMap(text);
+      final tradeJson = delegatedJson ?? replyJson;
+
+      return GenkitAgentTurnResult(
+        reply: text,
+        delegatedTradeJson: tradeJson,
+        delegatedTradeRoleId: tradeJson != null ? 'intradayTrading' : null,
+      );
     } on GenkitAgentException {
       rethrow;
     } catch (e) {
@@ -111,5 +219,29 @@ class GenkitAgentRunner {
         msg.length > 240 ? '${msg.substring(0, 237)}…' : msg,
       );
     }
+  }
+
+  static String? _sameProviderModelId({
+    required LlmRuntimeSettings? runtime,
+    required LlmProvider provider,
+    required ModelWeight weight,
+  }) {
+    final prefs = runtime?.prefsFor(provider);
+    return prefs?.resolvedModelId(weight);
+  }
+
+  static List<({String toolName, Object? output})> _toolOutputsFromMessages(
+    List<Message> messages,
+  ) {
+    final out = <({String toolName, Object? output})>[];
+    for (final m in messages) {
+      if (m.role != Role.tool) continue;
+      for (final part in m.content) {
+        final tr = part.toolResponse;
+        if (tr == null) continue;
+        out.add((toolName: tr.name, output: tr.output));
+      }
+    }
+    return out;
   }
 }

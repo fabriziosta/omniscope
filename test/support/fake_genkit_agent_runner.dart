@@ -1,23 +1,33 @@
 import 'package:omniscope/data/agents/chat_models.dart';
 import 'package:omniscope/data/agents/genkit/genkit_agent_runner.dart';
 import 'package:omniscope/data/agents/genkit/omniscope_agent_tools.dart';
-import 'package:omniscope/data/agents/models.dart';
+import 'package:omniscope/data/agents/llm_model_router.dart';
+import 'package:omniscope/data/agents/llm_runtime_settings.dart';
 
 /// Test runner that returns canned assistant text (no Genkit / network).
 GenkitAgentRunner fakeGenkitAgentRunner({
   String reply = 'Test agent reply.',
-  String Function(String roleId, String lastUser)? replyFor,
+  String Function(String lastUser)? replyFor,
+  Map<String, dynamic>? Function(String lastUser)? delegatedTradeJsonFor,
 }) {
   return GenkitAgentRunner(
     turnOverride: ({
-      required AgentConnection connection,
-      required String roleId,
+      required LlmResolvedEndpoint endpoint,
       required List<AgentChatMessage> messages,
       OmniscopeAgentToolDeps? toolDeps,
+      List<GenkitSpecialtySpec> specialties = const [],
+      LlmRuntimeSettings? runtime,
     }) async {
       final last = messages.isEmpty ? '' : messages.last.content;
-      if (replyFor != null) return replyFor(roleId, last);
-      return reply;
+      final text = replyFor != null ? replyFor(last) : reply;
+      final tradeJson =
+          delegatedTradeJsonFor != null ? delegatedTradeJsonFor(last) : null;
+      return GenkitAgentTurnResult(
+        reply: text,
+        delegatedTradeJson: tradeJson,
+        delegatedTradeRoleId:
+            tradeJson != null ? 'intradayTrading' : null,
+      );
     },
   );
 }

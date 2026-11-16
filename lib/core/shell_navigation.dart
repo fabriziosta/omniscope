@@ -1,16 +1,26 @@
 import 'package:flutter/foundation.dart';
 
-/// Queued deep-link to open an agent chat from the shell notification inbox.
+/// Queued deep-link to open an agent chat (notifications, Activity, CTAs).
 class PendingAgentChatOpen {
   const PendingAgentChatOpen({
-    required this.roleId,
+    this.chatId,
     this.symbol,
     this.notificationId,
+    this.starterRoleId,
+    this.initialExchangeId,
+    this.autoRun = false,
+    this.initialSide,
+    this.initialQuantity,
   });
 
-  final String roleId;
+  final String? chatId;
   final String? symbol;
   final String? notificationId;
+  final String? starterRoleId;
+  final String? initialExchangeId;
+  final bool autoRun;
+  final String? initialSide;
+  final double? initialQuantity;
 }
 
 /// Bottom-tab selection for [HomeShell], including deep-links from feature CTAs.
@@ -22,19 +32,12 @@ class ShellNavigationController extends ChangeNotifier {
   static const settingsTabIndex = 4;
 
   var _tabIndex = marketsTabIndex;
-  String? _pendingAgentConnectRoleId;
   String? _pendingActivityProposalId;
   String? _pendingSettingsSectionId;
   PendingAgentChatOpen? _pendingAgentChatOpen;
 
   int get tabIndex => _tabIndex;
 
-  /// Role id to open Connect for once the Agents tab is visible; cleared by
-  /// [takePendingAgentConnectRoleId].
-  String? get pendingAgentConnectRoleId => _pendingAgentConnectRoleId;
-
-  /// Proposal id to focus on the Activity tab; cleared by
-  /// [takePendingActivityProposalId].
   String? get pendingActivityProposalId => _pendingActivityProposalId;
 
   String? get pendingSettingsSectionId => _pendingSettingsSectionId;
@@ -47,30 +50,39 @@ class ShellNavigationController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Switch to Agents and optionally queue a Connect dialog for [connectRoleId].
-  void goToAgents({String? connectRoleId}) {
-    _pendingAgentConnectRoleId = connectRoleId;
+  /// Switch to Agents tab.
+  void goToAgents() {
     _tabIndex = agentsTabIndex;
     notifyListeners();
   }
 
-  /// Switch to Activity and optionally focus a proposal.
   void goToActivity({String? proposalId}) {
     _pendingActivityProposalId = proposalId;
     _tabIndex = activityTabIndex;
     notifyListeners();
   }
 
-  /// Switch to Agents and open chat for [roleId] (e.g. from a shell notification).
+  /// Switch to Agents and open/create a chat (e.g. from a shell notification).
   void goToAgentChat({
-    required String roleId,
+    String? chatId,
+    String? roleId,
     String? symbol,
     String? notificationId,
+    String? starterRoleId,
+    String? initialExchangeId,
+    bool autoRun = false,
+    String? initialSide,
+    double? initialQuantity,
   }) {
     _pendingAgentChatOpen = PendingAgentChatOpen(
-      roleId: roleId,
+      chatId: chatId,
       symbol: symbol,
       notificationId: notificationId,
+      starterRoleId: starterRoleId ?? roleId,
+      initialExchangeId: initialExchangeId,
+      autoRun: autoRun,
+      initialSide: initialSide,
+      initialQuantity: initialQuantity,
     );
     _tabIndex = agentsTabIndex;
     notifyListeners();
@@ -82,14 +94,6 @@ class ShellNavigationController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Returns and clears any pending Connect role id.
-  String? takePendingAgentConnectRoleId() {
-    final id = _pendingAgentConnectRoleId;
-    _pendingAgentConnectRoleId = null;
-    return id;
-  }
-
-  /// Returns and clears any pending Activity proposal focus id.
   String? takePendingActivityProposalId() {
     final id = _pendingActivityProposalId;
     _pendingActivityProposalId = null;

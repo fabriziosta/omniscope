@@ -1,4 +1,4 @@
-/// App identity for Settings → About.
+/// App identity shown in Settings (sidebar version footer).
 ///
 /// [version] is `MAJOR.MINOR.PATCH+SHORTSHA` (7-char commit). The `X.Y.Z` part
 /// must match `pubspec.yaml`; the `+BUILD` in pubspec stays numeric for stores.

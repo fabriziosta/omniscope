@@ -55,15 +55,6 @@ extension AgentLaunchIntentX on AgentLaunchIntent {
         AgentLaunchIntent.explainPortfolio => 'Review allocation',
         AgentLaunchIntent.paperReview => 'Practice coach',
       };
-
-  /// Short dialog title when picking among several roles.
-  String get pickerTitle => switch (this) {
-        AgentLaunchIntent.investigate => 'Investigate with',
-        AgentLaunchIntent.tradeCheck => 'Trade check with',
-        AgentLaunchIntent.explainLive => 'Explain balances with',
-        AgentLaunchIntent.explainPortfolio => 'Review allocation with',
-        AgentLaunchIntent.paperReview => 'Practice coach with',
-      };
 }
 
 /// Resolves which catalog roles apply to an in-app launch intent.
@@ -82,13 +73,5 @@ class AgentLaunchResolver {
       for (final id in intent.preferredRoleIds)
         if (byId[id] != null) byId[id]!,
     ];
-  }
-
-  /// Connected subset of [roles], preserving order.
-  static List<AgentRoleDefinition> connectedAmong({
-    required List<AgentRoleDefinition> roles,
-    required bool Function(String roleId) isConnected,
-  }) {
-    return [for (final r in roles) if (isConnected(r.id)) r];
   }
 }
