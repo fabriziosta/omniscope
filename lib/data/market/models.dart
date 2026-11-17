@@ -38,7 +38,7 @@ class Quote {
   /// when present so the asset is identifiable before opening detail.
   String? get listSubtitle {
     final bits = <String>[];
-    final pairLabel = _pairLabelFromSymbol(symbol);
+    final pairLabel = pairLabelFromSymbol(symbol);
     final rawName = name?.trim();
     if (rawName != null && rawName.isNotEmpty) {
       final upper = rawName.toUpperCase();
@@ -66,7 +66,7 @@ class Quote {
 }
 
 /// `BTC_USD` → `BTC / USD`; returns null when [symbol] is not a pair.
-String? _pairLabelFromSymbol(String symbol) {
+String? pairLabelFromSymbol(String symbol) {
   final parts = symbol.split('_');
   if (parts.length < 2) return null;
   final base = parts.first.trim();

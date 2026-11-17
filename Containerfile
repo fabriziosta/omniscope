@@ -44,8 +44,7 @@ WORKDIR /src
 
 COPY . .
 
-RUN cp -n .env.example .env \
-  && flutter pub get \
+RUN flutter pub get \
   && flutter build linux --release
 
 # -----------------------------------------------------------------------------

@@ -44,17 +44,15 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('LlmApiKeyConfig', () {
-    test('parses provider keys and ignores empty / comments', () {
-      const raw = '''
-# comment
-OMNISCOPE_OPENAI_API_KEY=sk-openai
-OMNISCOPE_GEMINI_API_KEY=
-OMNISCOPE_ANTHROPIC_API_KEY="sk-claude"
-OMNISCOPE_DEEPSEEK_API_KEY='ds-key'
-OMNISCOPE_CRYPTO_COM_API_KEY=cdc-key
-UNKNOWN_KEY=nope
-''';
-      final config = LlmApiKeyConfig.parse(raw);
+    test('fromValues maps provider keys and ignores empty', () {
+      final config = LlmApiKeyConfig.fromValues({
+        'OMNISCOPE_OPENAI_API_KEY': 'sk-openai',
+        'OMNISCOPE_GEMINI_API_KEY': '',
+        'OMNISCOPE_ANTHROPIC_API_KEY': 'sk-claude',
+        'OMNISCOPE_DEEPSEEK_API_KEY': 'ds-key',
+        'OMNISCOPE_CRYPTO_COM_API_KEY': 'cdc-key',
+        'UNKNOWN_KEY': 'nope',
+      });
       expect(config.keyFor(LlmProvider.openAi), 'sk-openai');
       expect(config.keyFor(LlmProvider.gemini), isNull);
       expect(config.keyFor(LlmProvider.anthropic), 'sk-claude');

@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../core/app_copy.dart';
 import '../../core/fade_page_route.dart';
@@ -16,7 +15,6 @@ import '../../widgets/quotes_async_body.dart';
 import '../../widgets/quotes_filter_field.dart';
 import '../../widgets/quotes_load_more_bar.dart';
 import '../../widgets/quotes_paging_error_listener.dart';
-import '../../widgets/quotes_refresh_body.dart';
 import '../asset_detail/asset_detail_screen.dart';
 import '../quotes/quotes_list_controller.dart';
 
@@ -25,15 +23,11 @@ class CryptoExchangePairsPane extends StatelessWidget {
   const CryptoExchangePairsPane({
     super.key,
     required this.client,
-    required this.showBack,
-    this.onBack,
-    this.backLabel,
+    required this.onOpenMenu,
   });
 
   final CryptoExchangeClient client;
-  final bool showBack;
-  final VoidCallback? onBack;
-  final String? backLabel;
+  final VoidCallback onOpenMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -62,9 +56,7 @@ class CryptoExchangePairsPane extends StatelessWidget {
       child: _CryptoExchangePairsPaneView(
         displayName: client.exchange.displayName,
         exchangeId: client.exchange.id,
-        showBack: showBack,
-        onBack: onBack,
-        backLabel: backLabel ?? client.exchange.displayName,
+        onOpenMenu: onOpenMenu,
       ),
     );
   }
@@ -74,16 +66,12 @@ class _CryptoExchangePairsPaneView extends StatefulWidget {
   const _CryptoExchangePairsPaneView({
     required this.displayName,
     required this.exchangeId,
-    required this.showBack,
-    required this.backLabel,
-    this.onBack,
+    required this.onOpenMenu,
   });
 
   final String displayName;
   final String exchangeId;
-  final bool showBack;
-  final VoidCallback? onBack;
-  final String backLabel;
+  final VoidCallback onOpenMenu;
 
   @override
   State<_CryptoExchangePairsPaneView> createState() =>
@@ -118,7 +106,7 @@ class _CryptoExchangePairsPaneViewState
   Widget build(BuildContext context) {
     final density = context.watch<DisplaySettings>().listDensity;
     final compact = density == ListDensity.compact;
-    final gap = compact ? 6.0 : 10.0;
+    final gap = compact ? 4.0 : 8.0;
     final controller = context.watch<QuotesListController>();
 
     return MasterDetailContentPane(
@@ -126,15 +114,7 @@ class _CryptoExchangePairsPaneViewState
       subtitle:
           '${widget.displayName} spot USD pairs (public market data). '
           'Load more to browse additional instruments.',
-      showBack: widget.showBack,
-      onBack: widget.onBack,
-      backLabel: widget.backLabel,
-      trailing: ShadButton.outline(
-        size: ShadButtonSize.sm,
-        enabled: !controller.loading && !controller.loadingMore,
-        onPressed: controller.refresh,
-        child: const Text('Refresh'),
-      ),
+      onOpenMenu: widget.onOpenMenu,
       body: QuotesPagingErrorListener(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -154,29 +134,26 @@ class _CryptoExchangePairsPaneViewState
                           : AppCopy.noQuotesMatchFilter,
                     );
                   }
-                  return QuotesRefreshBody(
-                    child: ListView.builder(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                      itemCount: quotes.length + 1,
-                      itemBuilder: (context, index) {
-                        if (index == quotes.length) {
-                          return const QuotesLoadMoreBar();
-                        }
-                        final quote = quotes[index];
-                        return Padding(
-                          padding: EdgeInsets.only(
-                            bottom: index < quotes.length - 1 ? gap : 0,
-                          ),
-                          child: QuoteListTile(
-                            quote: quote,
-                            density: density,
-                            cryptoExchangeId: widget.exchangeId,
-                            onTap: () => _openAsset(quote.symbol),
-                          ),
-                        );
-                      },
-                    ),
+                  return ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                    itemCount: quotes.length + 1,
+                    itemBuilder: (context, index) {
+                      if (index == quotes.length) {
+                        return const QuotesLoadMoreBar();
+                      }
+                      final quote = quotes[index];
+                      return Padding(
+                        padding: EdgeInsets.only(
+                          bottom: index < quotes.length - 1 ? gap : 0,
+                        ),
+                        child: QuoteListTile(
+                          quote: quote,
+                          density: density,
+                          cryptoExchangeId: widget.exchangeId,
+                          onTap: () => _openAsset(quote.symbol),
+                        ),
+                      );
+                    },
                   );
                 },
               ),

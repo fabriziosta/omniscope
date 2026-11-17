@@ -208,23 +208,33 @@ class MandateSettings extends ChangeNotifier {
   void _applySlice(Object? slice) {
     if (slice is! Map) return;
     final map = Map<String, dynamic>.from(slice);
-    _goal = MandateGoalX.parse(map['goal'] as String?);
-    _horizon = MandateHorizonX.parse(map['horizon'] as String?);
-    _universe = MandateUniverseX.parse(map['universe'] as String?);
-    final maxSymbols = (map['maxSymbolCount'] as num?)?.toInt();
+    final goalRaw = map['goal'];
+    final horizonRaw = map['horizon'];
+    final universeRaw = map['universe'];
+    _goal = MandateGoalX.parse(goalRaw is String ? goalRaw : null);
+    _horizon = MandateHorizonX.parse(horizonRaw is String ? horizonRaw : null);
+    _universe =
+        MandateUniverseX.parse(universeRaw is String ? universeRaw : null);
+    final maxSymbolsRaw = map['maxSymbolCount'];
+    final maxSymbols =
+        maxSymbolsRaw is num ? maxSymbolsRaw.toInt() : null;
     if (maxSymbols != null) {
       _maxSymbolCount =
           maxSymbols.clamp(minSymbolCount, maxSymbolCountCap);
     }
-    final notional = (map['maxNotionalPerProposal'] as num?)?.toDouble();
+    final notionalRaw = map['maxNotionalPerProposal'];
+    final notional = notionalRaw is num ? notionalRaw.toDouble() : null;
     _maxNotionalPerProposal =
         notional != null && notional > 0 ? notional : null;
-    final maxOpen = (map['maxOpenProposals'] as num?)?.toInt();
+    final maxOpenRaw = map['maxOpenProposals'];
+    final maxOpen = maxOpenRaw is num ? maxOpenRaw.toInt() : null;
     if (maxOpen != null) {
       _maxOpenProposals =
           maxOpen.clamp(minOpenProposals, maxOpenProposalsCap);
     }
-    _cadencePreference =
-        AgentScheduleIntervalX.parse(map['cadencePreference'] as String?);
+    final cadenceRaw = map['cadencePreference'];
+    _cadencePreference = AgentScheduleIntervalX.parse(
+      cadenceRaw is String ? cadenceRaw : null,
+    );
   }
 }

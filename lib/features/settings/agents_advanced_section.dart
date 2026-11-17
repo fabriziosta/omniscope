@@ -30,15 +30,16 @@ class AgentsAdvancedSectionBody extends StatelessWidget {
           'LLM keys; specialists are chosen automatically.',
           style: theme.textTheme.muted,
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: settingsSectionGap),
         const SettingsSubsectionLabel(
           'Answer mood',
           description:
               'How agents phrase answers. Does not change Mandate risk rails.',
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         for (final mood in AgentAnswerMood.values) ...[
-          if (mood != AgentAnswerMood.values.first) const SizedBox(height: 8),
+          if (mood != AgentAnswerMood.values.first)
+            const SizedBox(height: settingsOptionGap),
           SettingsSelectableOptionTile(
             title: mood.label,
             subtitle: mood.description,
@@ -46,7 +47,7 @@ class AgentsAdvancedSectionBody extends StatelessWidget {
             onTap: () => app.setAnswerMood(mood),
           ),
         ],
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         Text('Optional style note', style: theme.textTheme.small),
         const SizedBox(height: 6),
         _AnswerMoodNoteField(

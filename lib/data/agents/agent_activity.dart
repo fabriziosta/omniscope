@@ -1,4 +1,7 @@
-/// Real in-app events for the Activity tab timeline (no simulated swarm).
+/// Real in-app events for operation timelines (no simulated swarm).
+///
+/// Activity lists pending/completed proposals only; [messageSent] is legacy
+/// (no longer written) and is filtered out of UI timelines.
 enum AgentActivityKind {
   messageSent,
   proposalParsed,

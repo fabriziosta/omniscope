@@ -35,8 +35,9 @@ import 'package:omniscope/data/trading/broker_exchange_registry.dart';
 import 'package:omniscope/data/trading/order_models.dart';
 import 'package:omniscope/data/trading/trade_executor.dart';
 import 'package:omniscope/data/venues/venue_catalog.dart';
+import 'package:omniscope/features/agents/agent_chat_screen.dart';
 import 'package:omniscope/features/agents/agent_schedule_coordinator.dart';
-import 'package:omniscope/widgets/nav_back_button.dart';
+import 'package:omniscope/widgets/master_detail_shell.dart';
 import 'package:provider/provider.dart';
 
 import 'support/agent_test_harness.dart';
@@ -309,13 +310,15 @@ void main() {
     expect(find.text('Activity'), findsWidgets);
     expect(find.text('Agents'), findsWidgets);
     expect(find.text('Settings'), findsWidgets);
+    // Content-first: Indices pane is open; switching to Markets auto-opens nav.
+    await tester.pumpAndSettle();
+    expect(find.text('Indices'), findsWidgets);
+    expect(find.byType(MasterDetailMenuButton), findsOneWidget);
     expect(find.text('Favorites'), findsOneWidget);
     expect(find.text('Invest interest'), findsOneWidget);
-    expect(find.text('Indices'), findsOneWidget);
     expect(find.text('ETFs'), findsOneWidget);
     expect(find.text('Stocks'), findsOneWidget);
     expect(find.text('Crypto.com'), findsOneWidget);
-    expect(find.text('Spot pairs'), findsOneWidget);
     expect(find.text('0 symbols'), findsNWidgets(2));
     expect(
       find.text('${watchlistSymbolsForKind(MarketAssetKind.indices).length} symbols'),
@@ -331,25 +334,33 @@ void main() {
     );
 
     await tester.tap(find.text('Stocks'));
-    await tester.pump();
+    await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 400));
     // First page of stocks (page size 15); AAPL/MSFT → Nasdaq, rest → Other.
     expect(find.text('AAPL'), findsOneWidget);
     expect(find.text('MSFT'), findsOneWidget);
     expect(find.text('Nasdaq  ·  2'), findsOneWidget);
     expect(find.text('Other  ·  13'), findsOneWidget);
+    // Load-more control may sit below the fold on a phone surface.
+    await tester.scrollUntilVisible(
+      find.textContaining('Showing'),
+      200,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.pumpAndSettle();
     expect(find.text('Load more'), findsOneWidget);
     // Nested tab navigators keep the shell bottom nav visible on detail pages.
     expect(find.text('Portfolio'), findsWidgets);
 
-    // Narrow phone surface: leave Stocks via in-pane Back to see venue tiles.
+    // Open menu again to reach Crypto.com.
     expect(find.text('Crypto.com'), findsNothing);
-    await tester.tap(find.byType(NavBackButton));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
+    tester
+        .widget<MasterDetailMenuButton>(find.byType(MasterDetailMenuButton))
+        .onPressed();
+    await tester.pumpAndSettle();
     expect(find.text('Crypto.com'), findsOneWidget);
     await tester.tap(find.text('Crypto.com'));
-    await tester.pump();
+    await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 400));
     // Quote load is async; wait briefly for the fake client.
     for (var i = 0; i < 10 && find.text('BTC_USD').evaluate().isEmpty; i++) {
@@ -364,19 +375,20 @@ void main() {
     await tester.tap(find.text('Activity').last);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.textContaining('Archive of agent discoveries'), findsOneWidget);
+    expect(find.text('History'), findsWidgets);
+    expect(
+      find.textContaining('No agent operations yet'),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('Agents').last);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
     expect(find.text('New chat'), findsOneWidget);
     await tester.tap(find.text('New chat'));
-    for (var i = 0; i < 20; i++) {
-      await tester.pump(const Duration(milliseconds: 50));
-    }
-    expect(find.text('Run research'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.text('Market research'), findsOneWidget);
     expect(find.textContaining('LangGraph'), findsNothing);
-    final agentsCtx = tester.element(find.text('Run research'));
+    final agentsCtx = tester.element(find.text('Market research'));
     final roleTitles = agentsCtx
         .read<AgentsRepository>()
         .availableRoles
@@ -384,19 +396,24 @@ void main() {
         .toList();
     expect(roleTitles, contains('Intraday Execution & Risk Control'));
     expect(roleTitles, isNot(contains('Hedge Fund Desk')));
-    expect(find.text('Run trade check'), findsOneWidget);
+    final tradeStarter = find.textContaining('Run a trade check for');
+    await tester.scrollUntilVisible(
+      tradeStarter,
+      120,
+      scrollable: find
+          .descendant(
+            of: find.byType(AgentChatScreen),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    expect(tradeStarter, findsOneWidget);
+    expect(find.text('Trade check'), findsOneWidget);
 
     await tester.tap(find.text('Settings').last);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    // Narrow: section list first (sidebar anchors).
-    expect(find.text('v${AppInfo.version}'), findsOneWidget);
-    expect(find.text('Appearance'), findsOneWidget);
-    expect(find.text('Data sources'), findsOneWidget);
-    expect(find.text('Connections'), findsOneWidget);
-
-    await tester.tap(find.text('Appearance'));
-    await tester.pumpAndSettle();
+    // Content-first: Appearance is the default section.
     expect(find.text('System'), findsOneWidget);
     expect(find.text('Light'), findsOneWidget);
     expect(find.text('Dark'), findsOneWidget);
@@ -405,11 +422,18 @@ void main() {
     expect(find.text('Compact'), findsWidgets);
     expect(find.text('Numbers'), findsOneWidget);
     expect(find.text('Charts'), findsOneWidget);
-    // Other sections are unloaded while Appearance is open.
     expect(find.text('Market providers'), findsNothing);
 
-    await tester.tap(find.byType(NavBackButton));
+    // Hit-testing the burger can miss under overlays; invoke directly.
+    tester
+        .widget<MasterDetailMenuButton>(find.byType(MasterDetailMenuButton))
+        .onPressed();
     await tester.pumpAndSettle();
+    expect(find.text('v${AppInfo.version}'), findsOneWidget);
+    expect(find.text('Appearance'), findsWidgets);
+    expect(find.text('Data sources'), findsOneWidget);
+    expect(find.text('Connections'), findsOneWidget);
+
     await tester.tap(find.text('Data sources'));
     await tester.pumpAndSettle();
     expect(find.text('Market providers'), findsOneWidget);
@@ -419,7 +443,9 @@ void main() {
     expect(find.text('Credentials'), findsOneWidget);
     expect(find.text('System'), findsNothing);
 
-    await tester.tap(find.byType(NavBackButton));
+    tester
+        .widget<MasterDetailMenuButton>(find.byType(MasterDetailMenuButton))
+        .onPressed();
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Connections'));
     await tester.tap(find.text('Connections'));
@@ -428,9 +454,11 @@ void main() {
     // Seeded OpenAI key from pumpApp — Connections should show configured state.
     expect(find.textContaining('ChatGPT'), findsWidgets);
 
-    await tester.tap(find.byType(NavBackButton));
+    tester
+        .widget<MasterDetailMenuButton>(find.byType(MasterDetailMenuButton))
+        .onPressed();
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Appearance'));
+    await tester.tap(find.text('Appearance').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Dark'));
     await tester.pump();

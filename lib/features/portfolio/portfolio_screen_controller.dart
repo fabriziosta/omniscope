@@ -49,7 +49,6 @@ class PortfolioScreenController extends ChangeNotifier {
       Map.unmodifiable(_liveByExchange);
   Map<String, String> get liveErrors => Map.unmodifiable(_liveErrors);
   bool get loadingLive => _loadingLive;
-  bool get isRefreshing => _loadingQuotes || _loadingLive;
 
   List<LiveVenueCapabilities> get liveClients => [
         for (final c in _cryptoRegistry.portfolioClientsWhere(

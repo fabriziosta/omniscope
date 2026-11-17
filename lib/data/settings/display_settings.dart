@@ -6,10 +6,10 @@ import 'user_config_store.dart';
 
 /// How dense Markets / Crypto list rows should render.
 enum ListDensity {
-  /// Multi-line rows with name and source (default).
+  /// Roomier rows with name and source.
   comfortable,
 
-  /// Tighter single-line rows for longer lists.
+  /// Tighter rows for longer lists (default).
   compact,
 }
 
@@ -50,7 +50,7 @@ class DisplaySettings extends ChangeNotifier {
   DisplaySettings({this.store});
 
   UserConfigStore? store;
-  ListDensity _listDensity = ListDensity.comfortable;
+  ListDensity _listDensity = ListDensity.compact;
   PriceFormat _priceFormat = PriceFormat.full;
   ChartRangePreset _defaultChartRange = ChartRangePreset.oneMonth;
   bool _ready = false;
@@ -111,13 +111,17 @@ class DisplaySettings extends ChangeNotifier {
 
     if (slice is! Map) return;
     final map = Map<String, dynamic>.from(slice);
-    _listDensity =
-        _parseDensity(map['listDensity'] as String?) ?? ListDensity.comfortable;
-    _priceFormat =
-        _parsePriceFormat(map['priceFormat'] as String?) ?? PriceFormat.full;
-    _defaultChartRange =
-        ChartRangePresetX.tryParse(map['defaultChartRange'] as String?) ??
-            ChartRangePreset.oneMonth;
+    final densityRaw = map['listDensity'];
+    final priceRaw = map['priceFormat'];
+    final rangeRaw = map['defaultChartRange'];
+    _listDensity = _parseDensity(densityRaw is String ? densityRaw : null) ??
+        ListDensity.compact;
+    _priceFormat = _parsePriceFormat(priceRaw is String ? priceRaw : null) ??
+        PriceFormat.full;
+    _defaultChartRange = ChartRangePresetX.tryParse(
+          rangeRaw is String ? rangeRaw : null,
+        ) ??
+        ChartRangePreset.oneMonth;
   }
 
   static String _encodeDensity(ListDensity density) => switch (density) {

@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import 'app_text.dart';
+
 /// Compact label + value column used in summary wells and asset meta rows.
 class MetricStat extends StatelessWidget {
   const MetricStat({
@@ -20,10 +22,15 @@ class MetricStat extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: theme.textTheme.muted),
+        AppEllipsisText(
+          label,
+          maxLines: 2,
+          style: theme.textTheme.muted,
+        ),
         const SizedBox(height: 2),
-        Text(
+        AppMoneyText(
           value,
+          textAlign: TextAlign.start,
           style: theme.textTheme.small.copyWith(
             color: valueColor,
             fontWeight: FontWeight.w600,

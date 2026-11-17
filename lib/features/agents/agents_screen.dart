@@ -10,11 +10,11 @@ import '../../data/agents/llm_model_router.dart';
 import '../../data/agents/llm_runtime_settings.dart';
 import '../../data/settings/env_secrets_repository.dart';
 import '../../widgets/app_empty_view.dart';
+import '../../widgets/app_text.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/app_tooltip.dart';
-import '../../widgets/in_tab_back.dart';
 import '../../widgets/master_detail_shell.dart';
-import '../../widgets/tab_page_header.dart';
+import '../../widgets/overflow_actions_menu.dart';
 import 'agent_chat_screen.dart';
 
 /// Agents tab: chat history sidebar + embedded orchestrator chat.
@@ -23,16 +23,15 @@ class AgentsScreen extends StatefulWidget {
 
   static const wideBreakpoint = MasterDetailShell.wideBreakpointDefault;
 
+  /// Sentinel [MasterDetailShell] selection when there are no chats yet.
+  static const emptySelectionId = '';
+
   @override
   State<AgentsScreen> createState() => _AgentsScreenState();
 }
 
 class _AgentsScreenState extends State<AgentsScreen> {
-  /// Wide layout selection when threads exist.
   String? _selectedChatId;
-
-  /// Narrow: null = history list only.
-  String? _narrowSelected;
 
   /// One-shot launch params applied when opening from [goToAgentChat].
   String? _launchSymbol;
@@ -45,6 +44,9 @@ class _AgentsScreenState extends State<AgentsScreen> {
 
   ShellNavigationController? _shellNav;
   var _openingPendingChat = false;
+
+  /// Latest [MasterDetailShell] closeNav from [sidebarBuilder].
+  VoidCallback? _closeNav;
 
   @override
   void didChangeDependencies() {
@@ -70,9 +72,6 @@ class _AgentsScreenState extends State<AgentsScreen> {
     _maybeOpenPendingChat();
   }
 
-  bool get _wide =>
-      MediaQuery.sizeOf(context).width >= AgentsScreen.wideBreakpoint;
-
   void _clearLaunchParams() {
     _launchSymbol = null;
     _launchExchangeId = null;
@@ -85,37 +84,19 @@ class _AgentsScreenState extends State<AgentsScreen> {
   void _applyLaunchParams(PendingAgentChatOpen pending) {
     _launchSymbol = pending.symbol;
     _launchExchangeId = pending.initialExchangeId;
-    _launchAutoRun = pending.autoRun ||
-        pending.starterRoleId != null ||
-        (pending.symbol != null && pending.symbol!.isNotEmpty);
+    _launchAutoRun = pending.autoRun;
     _launchSide = pending.initialSide;
     _launchQuantity = pending.initialQuantity;
     _launchStarterRoleId = pending.starterRoleId;
     _launchGeneration++;
   }
 
-  void _selectChat(
-    String chatId, {
-    required bool wide,
-    bool fromLaunch = false,
-  }) {
+  void _selectChat(String chatId, {bool fromLaunch = false}) {
     setState(() {
       if (!fromLaunch) {
         _clearLaunchParams();
       }
       _selectedChatId = chatId;
-      // Always set narrow selection for launches so the chat is visible even
-      // if MediaQuery width is reported as wide during the shell callback.
-      if (!wide || fromLaunch) {
-        _narrowSelected = chatId;
-      }
-    });
-  }
-
-  void _backToNavList() {
-    setState(() {
-      _narrowSelected = null;
-      _clearLaunchParams();
     });
   }
 
@@ -137,7 +118,10 @@ class _AgentsScreenState extends State<AgentsScreen> {
               .chatId;
       if (!mounted) return;
       _applyLaunchParams(pending);
-      _selectChat(chatId, wide: _wide, fromLaunch: true);
+      _selectChat(chatId, fromLaunch: true);
+      // Match tapping a chat tile — deep-link should show the composer, not
+      // the chat-list drawer.
+      _closeNav?.call();
     } finally {
       _openingPendingChat = false;
     }
@@ -164,7 +148,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
     return false;
   }
 
-  Future<void> _newChat() async {
+  Future<void> _newChat({VoidCallback? closeNav}) async {
     if (!await _ensureLlmReady()) return;
     if (!mounted) return;
     final chats = context.read<AgentChatRepository>();
@@ -173,10 +157,8 @@ class _AgentsScreenState extends State<AgentsScreen> {
     setState(() {
       _clearLaunchParams();
       _selectedChatId = thread.chatId;
-      // Always set narrow selection so the new chat opens even if MediaQuery
-      // width is reported as wide during this callback (matches launch path).
-      _narrowSelected = thread.chatId;
     });
+    closeNav?.call();
   }
 
   Future<void> _renameChat(AgentChatThread thread) async {
@@ -223,9 +205,6 @@ class _AgentsScreenState extends State<AgentsScreen> {
         _selectedChatId = next;
         _clearLaunchParams();
       }
-      if (_narrowSelected == id) {
-        _narrowSelected = null;
-      }
     });
   }
 
@@ -237,7 +216,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
     required List<AgentChatThread> threads,
     required bool ready,
     required String? highlighted,
-    required bool wide,
+    required VoidCallback closeNav,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -248,36 +227,41 @@ class _AgentsScreenState extends State<AgentsScreen> {
             alignment: Alignment.centerLeft,
             child: ShadButton(
               size: ShadButtonSize.sm,
-              onPressed: () => _newChat(),
+              onPressed: () => _newChat(closeNav: closeNav),
               child: const Text('New chat'),
             ),
           ),
         ),
         Expanded(
-          child: threads.isEmpty
-              ? AppEmptyView(
-                  ready
-                      ? 'No chats yet — tap New chat to start.'
-                      : 'Settings → Connections → add a provider key '
-                          'and pick light/heavy models.',
-                )
-              : ListView.separated(
-                  padding: MasterDetailNavList.listPadding,
-                  itemCount: threads.length,
-                  separatorBuilder: (_, _) =>
-                      const SizedBox(height: MasterDetailNavList.tileGap),
-                  itemBuilder: (context, index) {
-                    final thread = threads[index];
-                    return _ChatNavTile(
-                      thread: thread,
-                      selected: highlighted == thread.chatId,
-                      onOpen: () => _selectChat(thread.chatId, wide: wide),
-                      onTogglePin: () => _togglePin(thread),
-                      onRename: () => _renameChat(thread),
-                      onDelete: () => _deleteChat(thread),
-                    );
-                  },
-                ),
+          child: SelectionContainer.disabled(
+            child: threads.isEmpty
+                ? AppEmptyView(
+                    ready
+                        ? 'No chats yet — tap New chat to start.'
+                        : 'Settings → Connections → add a provider key '
+                            'and pick light/heavy models.',
+                  )
+                : ListView.separated(
+                    padding: MasterDetailNavList.listPadding,
+                    itemCount: threads.length,
+                    separatorBuilder: (_, _) =>
+                        const SizedBox(height: MasterDetailNavList.tileGap),
+                    itemBuilder: (context, index) {
+                      final thread = threads[index];
+                      return _ChatNavTile(
+                        thread: thread,
+                        selected: highlighted == thread.chatId,
+                        onOpen: () {
+                          _selectChat(thread.chatId);
+                          closeNav();
+                        },
+                        onTogglePin: () => _togglePin(thread),
+                        onRename: () => _renameChat(thread),
+                        onDelete: () => _deleteChat(thread),
+                      );
+                    },
+                  ),
+          ),
         ),
       ],
     );
@@ -295,76 +279,63 @@ class _AgentsScreenState extends State<AgentsScreen> {
     );
     final threads = chats.threads;
 
-    // Wide: keep a concrete selection when threads exist.
     final selectedId = () {
       if (_selectedChatId != null &&
           threads.any((t) => t.chatId == _selectedChatId)) {
         return _selectedChatId!;
       }
-      return threads.isEmpty ? null : threads.first.chatId;
+      return threads.isEmpty
+          ? AgentsScreen.emptySelectionId
+          : threads.first.chatId;
     }();
 
-    final narrowId = _narrowSelected != null &&
-            threads.any((t) => t.chatId == _narrowSelected)
-        ? _narrowSelected
-        : null;
-
-    return InTabBackEffect(
-      onBack: narrowId != null ? _backToNavList : null,
-      child: ColoredBox(
-        color: theme.colorScheme.background,
-        child: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (narrowId == null)
-                const TabPageHeader(
-                  title: 'Agents',
-                  subtitle:
-                      'Chats use your LLM keys. Specialists run in the background.',
+    return ColoredBox(
+      color: theme.colorScheme.background,
+      child: SafeArea(
+        child: MasterDetailShell<String>(
+          selected: selectedId,
+          sidebarWidth: 300,
+          sidebarBuilder: (context, highlighted, {required closeNav}) {
+            _closeNav = closeNav;
+            return _buildSidebar(
+              threads: threads,
+              ready: ready,
+              highlighted: highlighted == AgentsScreen.emptySelectionId
+                  ? null
+                  : highlighted,
+              closeNav: closeNav,
+            );
+          },
+          contentBuilder: (context, chatId, {required onOpenMenu}) {
+            if (chatId == AgentsScreen.emptySelectionId ||
+                !threads.any((t) => t.chatId == chatId)) {
+              return MasterDetailContentPane(
+                title: 'Agents',
+                subtitle:
+                    'Chats use your LLM keys. Specialists run in the background.',
+                onOpenMenu: onOpenMenu,
+                body: AppEmptyView(
+                  ready
+                      ? 'No chats yet — open the menu and tap New chat.'
+                      : 'Settings → Connections → add a provider key '
+                          'and pick light/heavy models.',
                 ),
-              Expanded(
-                child: selectedId == null
-                    ? _buildSidebar(
-                        threads: threads,
-                        ready: ready,
-                        highlighted: null,
-                        wide: _wide,
-                      )
-                    : MasterDetailShell<String>(
-                        selected: selectedId,
-                        narrowSelected: narrowId,
-                        onNarrowBack: _backToNavList,
-                        sidebarBuilder: (context, highlighted, {required wide}) {
-                          return _buildSidebar(
-                            threads: threads,
-                            ready: ready,
-                            highlighted: highlighted,
-                            wide: wide,
-                          );
-                        },
-                        contentBuilder:
-                            (context, chatId, {required showBack, onBack}) {
-                          return KeyedSubtree(
-                            key: ValueKey('$chatId-$_launchGeneration'),
-                            child: AgentChatScreen(
-                              chatId: chatId,
-                              showBack: showBack,
-                              onBack: onBack,
-                              backLabel: 'Agents',
-                              initialSymbol: _launchSymbol,
-                              initialExchangeId: _launchExchangeId,
-                              autoRun: _launchAutoRun,
-                              initialSide: _launchSide,
-                              initialQuantity: _launchQuantity,
-                              starterRoleId: _launchStarterRoleId,
-                            ),
-                          );
-                        },
-                      ),
+              );
+            }
+            return KeyedSubtree(
+              key: ValueKey('$chatId-$_launchGeneration'),
+              child: AgentChatScreen(
+                chatId: chatId,
+                onOpenMenu: onOpenMenu,
+                initialSymbol: _launchSymbol,
+                initialExchangeId: _launchExchangeId,
+                autoRun: _launchAutoRun,
+                initialSide: _launchSide,
+                initialQuantity: _launchQuantity,
+                starterRoleId: _launchStarterRoleId,
               ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
@@ -391,127 +362,112 @@ class _ChatNavTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final preview = thread.messages.isEmpty
-        ? 'Empty chat'
-        : thread.messages.last.content.trim().replaceAll(RegExp(r'\s+'), ' ');
-    final short =
-        preview.length <= 80 ? preview : '${preview.substring(0, 77)}…';
     final foreground = selected
         ? theme.colorScheme.secondaryForeground
         : theme.colorScheme.foreground;
     final muted = selected
         ? theme.colorScheme.secondaryForeground.withValues(alpha: 0.8)
         : theme.colorScheme.mutedForeground;
-    final pinColor = thread.pinned
-        ? (selected
-            ? theme.colorScheme.secondaryForeground
-            : theme.colorScheme.primary)
-        : muted;
+    final pinColor = selected
+        ? theme.colorScheme.secondaryForeground
+        : theme.colorScheme.primary;
     final updatedLabel = thread.updatedAt.millisecondsSinceEpoch == 0
         ? null
         : formatRelativeTime(thread.updatedAt);
+    final tooltipMessage = updatedLabel == null
+        ? thread.title
+        : '${thread.title} · $updatedLabel';
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onOpen,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 56),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: selected ? theme.colorScheme.secondary : null,
-            border: Border.all(
-              color: selected
-                  ? theme.colorScheme.secondary
-                  : theme.colorScheme.border,
+    return AppTooltip(
+      message: tooltipMessage,
+      wrapDetector: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onOpen,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: selected ? theme.colorScheme.secondary : null,
+              border: Border.all(
+                color: selected
+                    ? theme.colorScheme.secondary
+                    : theme.colorScheme.border,
+              ),
+              borderRadius: theme.radius,
             ),
-            borderRadius: theme.radius,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        thread.title,
-                        style: theme.textTheme.large.copyWith(color: foreground),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (updatedLabel != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          updatedLabel,
-                          style: theme.textTheme.muted.copyWith(
-                            color: muted,
-                            fontSize: 11,
-                          ),
-                          maxLines: 1,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            if (thread.pinned) ...[
+                              Icon(
+                                LucideIcons.pin,
+                                size: 12,
+                                color: pinColor,
+                              ),
+                              const SizedBox(width: 6),
+                            ],
+                            Flexible(
+                              child: AppEllipsisText(
+                                thread.title,
+                                style: theme.textTheme.large
+                                    .copyWith(color: foreground),
+                                maxLines: 2,
+                              ),
+                            ),
+                          ],
                         ),
+                        if (updatedLabel != null) ...[
+                          const SizedBox(height: 2),
+                          AppEllipsisText(
+                            updatedLabel,
+                            style: theme.textTheme.muted.copyWith(
+                              color: muted,
+                              fontSize: 11,
+                            ),
+                            maxLines: 1,
+                          ),
+                        ],
                       ],
-                      const SizedBox(height: 4),
-                      Text(
-                        short,
-                        style: theme.textTheme.muted.copyWith(color: muted),
-                        maxLines: 2,
+                    ),
+                  ),
+                  OverflowActionsMenu(
+                    actions: [
+                      OverflowAction(
+                        label: thread.pinned ? 'Unpin' : 'Pin',
+                        icon: thread.pinned
+                            ? LucideIcons.pinOff
+                            : LucideIcons.pin,
+                        active: thread.pinned,
+                        onTap: () {
+                          onTogglePin();
+                        },
+                      ),
+                      OverflowAction(
+                        label: 'Rename',
+                        icon: LucideIcons.pencil,
+                        onTap: () {
+                          onRename();
+                        },
+                      ),
+                      OverflowAction(
+                        label: 'Delete',
+                        icon: LucideIcons.trash2,
+                        onTap: () {
+                          onDelete();
+                        },
                       ),
                     ],
                   ),
-                ),
-                AppTooltip(
-                  message: thread.pinned ? 'Unpin' : 'Pin',
-                  child: ShadButton.ghost(
-                    size: ShadButtonSize.sm,
-                    width: 32,
-                    height: 32,
-                    padding: EdgeInsets.zero,
-                    onPressed: () async {
-                      await onTogglePin();
-                    },
-                    child: Icon(
-                      thread.pinned ? LucideIcons.pinOff : LucideIcons.pin,
-                      size: 14,
-                      color: pinColor,
-                    ),
-                  ),
-                ),
-                AppTooltip(
-                  message: 'Rename',
-                  child: ShadButton.ghost(
-                    size: ShadButtonSize.sm,
-                    width: 32,
-                    height: 32,
-                    padding: EdgeInsets.zero,
-                    onPressed: () async {
-                      await onRename();
-                    },
-                    child: Icon(
-                      LucideIcons.pencil,
-                      size: 14,
-                      color: muted,
-                    ),
-                  ),
-                ),
-                AppTooltip(
-                  message: 'Delete',
-                  child: ShadButton.ghost(
-                    size: ShadButtonSize.sm,
-                    width: 32,
-                    height: 32,
-                    padding: EdgeInsets.zero,
-                    onPressed: () async {
-                      await onDelete();
-                    },
-                    child: Icon(
-                      LucideIcons.trash2,
-                      size: 14,
-                      color: muted,
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

@@ -39,6 +39,6 @@ Out of scope (unless they cause a concrete vulnerability here):
 
 ## Secrets hygiene
 
-- Never commit `.env`, API keys, or credential JSON
+- Never commit API keys, credential JSON, or a filled `omniscope.json`
 - Prefer Settings / local config for keys; treat `omniscope.json` as sensitive
 - See [CONTRIBUTING.md](CONTRIBUTING.md) and the pre-commit hooks (gitleaks)

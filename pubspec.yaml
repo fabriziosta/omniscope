@@ -26,6 +26,7 @@ dependencies:
   schemantic: ^1.0.0
   genkit_middleware: ^1.0.2
   gpt_markdown: ^1.4.1
+  google_fonts: ^6.2.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -69,9 +70,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/brand/app_icon.png
+    - assets/brand/app_icon_foreground.png
     - assets/agents/llm_models.json
     # Source of truth for available Genkit Dart agent roles.
     - assets/agents/manifest.json
-    # Local keys (gitignored). tool/flutter_checks.sh copies .env.example → .env if missing.
-    - .env
-    - .env.example

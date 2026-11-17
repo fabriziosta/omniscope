@@ -15,7 +15,7 @@ v0 is a Flutter POC with **no user accounts**. Supported targets: **Linux**, **W
 
 - Real brokerage, KYC, or cloud sync
 - Auth / multi-user accounts
-- News, fundamentals, alerts, ticker search UI
+- News, fundamentals, alerts, or **remote free-universe** ticker search (Yahoo autocomplete of arbitrary listings). In-app curated symbol search (shell search over the watchlist / crypto catalog / favorites) is supported.
 
 ## Documentation map
 
@@ -99,7 +99,7 @@ lib/
 - Map provider-specific JSON **inside** the Yahoo / crypto exchange client, not in widgets.
 - Feature folders own their screens; shared chart stays under `widgets/`.
 - **Screen-scoped `ChangeNotifier`s** (provided at the route/screen with `ChangeNotifierProvider`, not in `main.dart`) own feature async: [`QuotesListController`](lib/features/quotes/quotes_list_controller.dart), [`PortfolioScreenController`](lib/features/portfolio/portfolio_screen_controller.dart), [`AssetDetailController`](lib/features/asset_detail/asset_detail_controller.dart), [`AgentChatController`](lib/features/agents/agent_chat_controller.dart). Use load-generation tokens so stale responses are ignored.
-- Shared chrome: `TabPageHeader`, `SubscreenAppBar`, `AppEmptyView`, `QuotesAsyncBody`, `MetricStat`, `SummaryWell`, `ThemedAccordionItem`, [`MasterDetailShell`](lib/widgets/master_detail_shell.dart) / `MasterDetailNavList` / `MasterDetailNavTile` / `MasterDetailContentPane` (Markets, Portfolio, Settings — wide sidebar + content at ≥720; narrow list → detail with Back), `pushFadePage` / `FadePageRoute`, [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart) (in-context Investigate / Trade check). Prefer [`showAppToast`](lib/widgets/app_toast.dart) over raw `ShadToaster`.
+- Shared chrome: `TabPageHeader`, `SubscreenAppBar`, `AppEmptyView`, `QuotesAsyncBody`, `MetricStat`, `SummaryWell`, `ThemedAccordionItem`, [`MasterDetailShell`](lib/widgets/master_detail_shell.dart) / `MasterDetailNavList` / `MasterDetailNavTile` / `MasterDetailContentPane` (Markets, Portfolio, Settings, Agents — content always visible; burger opens an overlay nav drawer on every viewport), `pushFadePage` / `FadePageRoute`, [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart) (in-context Investigate / Trade check), [`SymbolSearchButton`](lib/widgets/symbol_search.dart) (shell header curated symbol search → asset detail). Prefer [`showAppToast`](lib/widgets/app_toast.dart) over raw `ShadToaster`.
 - Quote lists (Markets equity kinds + crypto exchange spot) always go through [`MarketDataClient`](lib/data/market/market_data_client.dart) — never call `CryptoExchangeClient.getQuotes` from UI.
 
 ## Market data — always use `MarketDataClient`
@@ -167,7 +167,7 @@ lib/data/brokers/
   alpaca/                           # Alpaca paper/live portfolio + orders
 ```
 
-Venues register in **one place**: [`VenueCatalog.build`](lib/data/venues/venue_catalog.dart) (wired from [`lib/main.dart`](lib/main.dart)). Settings → Credentials cards and `.env` dual-sync ids are **derived from the catalog** — do not hard-code per-venue Settings widgets.
+Venues register in **one place**: [`VenueCatalog.build`](lib/data/venues/venue_catalog.dart) (wired from [`lib/main.dart`](lib/main.dart)). Settings → Credentials cards and config `secrets` key ids are **derived from the catalog** — do not hard-code per-venue Settings widgets.
 
 ### Adding a crypto exchange
 
@@ -175,7 +175,7 @@ Venues register in **one place**: [`VenueCatalog.build`](lib/data/venues/venue_c
 2. Map that venue’s DTOs → `Quote` / `Candle`; implement `handlesSymbol`.
 3. Optionally override `canFetchPortfolio` / `fetchPortfolio` / orders; declare a static `VenueCredentialSchema`.
 4. Append one `VenueRegistration.crypto(...)` line in [`VenueCatalog.build`](lib/data/venues/venue_catalog.dart) and add the id to `VenueCatalog.knownCredentialVenueIds`.
-5. Add `OMNISCOPE_<EXCHANGE_ID>_API_{KEY|SECRET|TOKEN}` placeholders to [`.env.example`](.env.example).
+5. Document `OMNISCOPE_<EXCHANGE_ID>_API_{KEY|SECRET|TOKEN}` as config `secrets` / canary process-env key names (Settings → Credentials).
 6. It appears under Settings → Crypto venues + generic Credentials automatically (enabled by default via [`DataSourceSettings`](lib/data/settings/data_source_settings.dart)).
 7. Document public endpoints / terms in [`README.md`](README.md) **Market data** (user-facing) and note wiring in [`docs/architecture.md`](docs/architecture.md) if needed.
 8. Add recorded response fixtures under `test/fixtures/venues/<id>/` and MockClient contract tests (see **Venue API health** below); extend [`tool/venue_canary.dart`](tool/venue_canary.dart) probes for the new venue.
@@ -185,7 +185,7 @@ Venues register in **one place**: [`VenueCatalog.build`](lib/data/venues/venue_c
 1. Create `lib/data/brokers/<venue>/` implementing [`BrokerExchangeClient`](lib/data/trading/broker_exchange_client.dart) (+ DTO / auth helpers). Keep equities **quotes on Yahoo** / `MarketDataClient` — brokers are private portfolio + orders.
 2. Override live portfolio + order methods; declare `VenueCredentialSchema` (use `supportsTradingMode` when paper/live hosts differ).
 3. Append one `VenueRegistration.broker(...)` in [`VenueCatalog.build`](lib/data/venues/venue_catalog.dart) and update `knownCredentialVenueIds`.
-4. Add env placeholders to [`.env.example`](.env.example).
+4. Document `OMNISCOPE_<EXCHANGE_ID>_API_{KEY|SECRET|TOKEN}` (and optional `_TRADING_MODE`) as config `secrets` / canary process-env key names.
 5. Settings → Brokers toggle + Credentials card appear automatically; Live portfolio / Confirm stay gated until key+secret unlock `canFetchPortfolio` / `canPlaceOrders`.
 6. Add fixtures + canary portfolio probe (same **Venue API health** rules as crypto).
 
@@ -198,13 +198,13 @@ Do **not** add curl suites or live network calls to `make check` / pre-push. Tra
 | **Fixture contract tests** | Every PR (`make check`) | Checked-in JSON under [`test/fixtures/venues/`](test/fixtures/venues/) + [`VenueHttpFixtures`](test/support/venue_http_fixtures.dart) / `MockClient` — proves adapters still parse known shapes |
 | **Live canary** | `make venue-canary` or scheduled [`.github/workflows/venue-canary.yml`](.github/workflows/venue-canary.yml) | Hits real endpoints through Dart clients ([`tool/venue_canary.dart`](tool/venue_canary.dart)); writes `build/venue-canary.json` + markdown matrix. Tag `live_canary` is excluded from [`tool/flutter_checks.sh`](tool/flutter_checks.sh) |
 
-**Refresh ritual** when a canary fails on parse: capture a fresh public response into `test/fixtures/venues/<id>/`, fix the adapter, keep the updated fixture as the regression. Prefer fixtures over inline JSON so schema drift is visible in git diffs. Public probes always run; portfolio probes need credentials in `.env` (or optional GitHub Actions secrets). Canary **never** places live orders.
+**Refresh ritual** when a canary fails on parse: capture a fresh public response into `test/fixtures/venues/<id>/`, fix the adapter, keep the updated fixture as the regression. Prefer fixtures over inline JSON so schema drift is visible in git diffs. Public probes always run; portfolio probes need `OMNISCOPE_*` in the process environment, local `omniscope.json` `secrets`, or optional GitHub Actions secrets. Canary **never** places live orders.
 
 ### Crypto.com notes
 
 - Base: `https://api.crypto.com/exchange/v1/`
 - Public (no key): `get-tickers`, `get-candlestick`
-- Optional private credentials (dual sync): `OMNISCOPE_CRYPTO_COM_API_KEY`, `_API_SECRET`, `_API_TOKEN` via `.env` **or** Settings → Data sources → Configure (persisted in `omniscope.json` + best-effort `.env` write on desktop)
+- Optional private credentials: `OMNISCOPE_CRYPTO_COM_API_KEY`, `_API_SECRET`, `_API_TOKEN` via Settings → Data sources → Configure (persisted in `omniscope.json` `secrets`)
 - Live portfolio (key **and** secret): `POST /private/user-balance` (HMAC-SHA256) → Portfolio tab **Live** subgroup
 - Live orders (same credentials): `POST /private/create-order` (+ cancel / get-order-detail) via [`canPlaceOrders`](lib/data/crypto/crypto_exchange_client.dart) → agent Confirm / Autopilot through [`TradeExecutor`](lib/data/trading/trade_executor.dart)
 - Spot symbols: `BTC_USD`, `ETH_USD`, … Curated `defaultSymbols` plus live catalog from `public/get-instruments` (`browseSymbols`); exchange screen paginates quote fetches.
@@ -250,7 +250,7 @@ Genkit plugins (`genkit_google_genai`, `genkit_openai`, `genkit_anthropic`) talk
 ```text
 assets/agents/manifest.json     # role catalog (ids, workload, model presets)
 assets/agents/llm_models.json   # selectable models per provider (data-driven)
-.env.example / .env             # optional local secrets: LLM + exchange/market (gitignored)
+omniscope.json                  # secrets + all prefs (UserConfigStore; not in git)
 
 lib/data/agents/                # models, AgentsRepository, catalog, prompts
   genkit/                       # GenkitAgentRunner, tools, runtime factory
@@ -280,10 +280,10 @@ Trade proposal fields `{ticker, action, quantity, rationale, risk_approved}` —
 - API keys stay **on device only** (plaintext in the config file / Web blob; no cloud sync).
 - Role list: [`AgentRoleCatalog`](lib/data/agents/agent_role_catalog.dart) ← `assets/agents/manifest.json`.
 - Model IDs come from [`assets/agents/llm_models.json`](assets/agents/llm_models.json) via `LlmModelCatalog`. Custom provider uses free-text model id + base URL.
-- Optional **local `.env`** (same file for LLM and venues): copy [`.env.example`](.env.example) → `.env`. Dual sync via [`EnvSecretsRepository`](lib/data/settings/env_secrets_repository.dart).
-  - LLM: `OMNISCOPE_<PROVIDER>_API_KEY` → Settings → Connections suggests the key + light/heavy models.
-  - Exchanges: `OMNISCOPE_<EXCHANGE_ID>_API_{KEY|SECRET|TOKEN}` → Settings → Configure.
-  - Web / mobile keep full UX via the config blob; `.env` file write is a no-op there.
+- Secrets keys use `OMNISCOPE_*` names in the config `secrets` slice via [`EnvSecretsRepository`](lib/data/settings/env_secrets_repository.dart).
+  - LLM: `OMNISCOPE_<PROVIDER>_API_KEY` → Settings → Connections.
+  - Exchanges: `OMNISCOPE_<EXCHANGE_ID>_API_{KEY|SECRET|TOKEN}` → Settings → Credentials.
+  - Venue canary / CI may also supply the same names as process environment variables.
 
 ### In-app chat
 
@@ -292,7 +292,7 @@ Trade proposal fields `{ticker, action, quantity, rationale, risk_approved}` —
 - Freeform messages plus **starter prompt chips** (one per enabled specialty).
 - Trade starters need a tradable exchange; otherwise the UI gates to Settings → Data sources.
 - Proposal cards under assistant bubbles (trade + Invest interest): Confirm → [`TradeExecutor.submit`](lib/data/trading/trade_executor.dart) or Invest interest apply; portfolio picker when no Autopilot default. Fills are never auto-executed by delegation alone.
-- Many agent-agnostic `chatId` threads; Clear / Delete are local-only.
+- Many agent-agnostic `chatId` threads; Delete is local-only.
 
 ### Robustness score (1–100)
 
@@ -316,20 +316,20 @@ Locked examples: Market Research **41**, Live Balance / Portfolio Guide / Practi
 
 ### UI
 
-- Shell tab **Activity** → historical archive of pending + accepted/refused operations with portfolio; Open chat deep-links to the originating thread ([`ActivityScreen`](lib/features/activity/activity_screen.dart)). Confirm / Dismiss only in Agents chats. Shared confirm path: [`TradeProposalActions`](lib/data/trading/trade_proposal_actions.dart) / [`InvestInterestProposalActions`](lib/data/agents/invest_interest_proposal_actions.dart).
+- Shell tab **Activity** → pending + accepted/refused operations only (not chat messages); Open chat deep-links to the originating thread when it still exists ([`ActivityScreen`](lib/features/activity/activity_screen.dart)). Confirm / Dismiss only in Agents chats. Shared confirm path: [`TradeProposalActions`](lib/data/trading/trade_proposal_actions.dart) / [`InvestInterestProposalActions`](lib/data/agents/invest_interest_proposal_actions.dart).
 - Shell tab **Agents** → **chat list** + **New chat**; empty / new chat shows **starter prompt chips** (one per enabled specialty from [`agent_role_prompts.dart`](lib/data/agents/agent_role_prompts.dart)). Soft hint to Settings → Connections for models/keys. No per-role Connect cards.
 - Settings → **Agents** (advanced) → enable/disable specialties, optional per-role model override, **global Autopilot**, **default portfolio**, and **Schedule**.
 - **Schedule** (foreground only) — configured under Settings → Agents; [`AgentScheduleCoordinator`](lib/features/agents/agent_schedule_coordinator.dart) polls while the app is open and resumed (Linux / Windows / Android / iOS / macOS / Web). Pauses on background / hidden tab; does **not** run with the app closed. When `scheduleUseInvestInterest` is on, the batch uses [`FavoritesRepository.investInterestSymbols`](lib/data/settings/favorites_repository.dart); otherwise typed `scheduleSymbols`. Each due tick Runs via the orchestrator chat path (research or trade check + Autopilot if enabled). Activity logs `scheduledRun` events. Every scheduled outcome also enqueues a stacked shell notification ([`AppNotificationRepository`](lib/data/notifications/app_notification_repository.dart) / bell in [`HomeShell`](lib/features/shell/home_shell.dart)) so the user can **Open** the originating Agents chat to Confirm / review (Dismiss clears the inbox item). The Agents tab badge shows pending actionable proposals.
 - **Invest interest context** — chat/Run injects the list into the system prompt (when non-empty) and exposes read-only `getInvestInterest` via [`OmniscopeAgentTools`](lib/data/agents/genkit/omniscope_agent_tools.dart) for market research, trading, and portfolio guidance roles.
 - **In-app launches** — other screens deep-link into an orchestrator chat via [`AgentLaunchActions`](lib/features/agents/agent_launch_actions.dart) + [`AgentLaunchIntent`](lib/data/agents/agent_launch.dart) (`investigate` → Market Research starter; `tradeCheck` → Intraday; `explainLive` → Live Balance Explainer; `explainPortfolio` → Portfolio Guide; `paperReview` → Practice Coach). Shared CTA: [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart).
-  - Asset detail app bar **Investigate**; Practice trade card **Practice coach** + **Trade check**; successful paper trade offers a Trade check dialog.
-  - Quote rows (Markets) sparkles icon → Investigate.
+  - Asset detail / quote sparkles / symbol search **Investigate** is a popover with **Investigate** + **Trade check**. Both draft the matching starter into the composer (do **not** auto-send) and open Agents with the chat-list sidebar closed.
+  - Practice trade card **Practice coach** + **Trade check**; successful paper trade offers a Trade check dialog.
   - Portfolio practice holdings sparkles → Trade check.
   - Portfolio **Practice** summary **Allocation** / **Coach**; Portfolio **Live** **Balances** / **Allocation** + per-asset sparkles → Live Balance Explainer.
   - Settings → Portfolios Practice **Allocation** / **Coach**; live cards **Balances** / **Allocation** when credentials are ready.
   - Settings → Connections **Try Investigate** when an LLM key is configured (sample symbol from the default watchlist).
-  - With a key: open Agents → ensure a chat → auto-send the matching starter ([`ShellNavigationController.goToAgents`](lib/core/shell_navigation.dart)). Without a key: Settings → Connections.
-  - [`AgentChatScreen`](lib/features/agents/agent_chat_screen.dart) is chatId-scoped and accepts starter / auto-run args for these launches.
+  - With a key: open Agents → ensure a chat → **draft** the matching starter into the composer (user sends); never auto-send from in-app CTAs ([`ShellNavigationController.goToAgents`](lib/core/shell_navigation.dart)). Without a key: Settings → Connections.
+  - [`AgentChatScreen`](lib/features/agents/agent_chat_screen.dart) is chatId-scoped and accepts starter / draft-launch args for these launches.
 
 ### Roadmap (more agent surfaces)
 
@@ -343,16 +343,15 @@ Single JSON document for secrets, favorites, and all customizations ([`UserConfi
 - **Custom path:** desktop only (Linux / Windows / macOS) — Settings → Data & privacy; override stored in prefs key `omniscope.config_path.v1`.
 - **Web:** no filesystem path — full document in prefs blob `omniscope.config.v1`; Import / Export in Settings → Data & privacy.
 - **Slices:** `theme`, `display`, `dataSources`, `secrets`, `agents`, `llmRuntime`, `agentApp`, `agentChats`, `tradeProposals`, `investInterestProposals`, `agentActivity`, `notifications`, `paperPortfolio`, `favorites`, `mandate`.
-- **Defaults:** [`UserConfigDefaults`](lib/data/settings/user_config_defaults.dart) seeds every slice when the file is created. On load (and Import), missing top-level or nested keys are deep-merged from those defaults and written back — existing user values win; new feature fields never fail the load. When adding a config field, update `UserConfigDefaults` so older files pick it up next session.
+- **Defaults:** [`UserConfigDefaults`](lib/data/settings/user_config_defaults.dart) seeds every slice when the file is created. On load (and Import), missing top-level or nested keys are deep-merged from those defaults and written back — existing user values win; new feature fields never fail the load. **Invalid values** (wrong JSON type or unknown enum token such as a bogus theme mode / palette / mandate goal) are overwritten with the matching default and persisted so a hand-edited `omniscope.json` cannot crash startup. When adding a config field, update `UserConfigDefaults` (including any enum allowlist) so older files pick it up next session.
 - **Legacy migration:** first load absorbs old per-feature prefs keys then removes them. Legacy per-role `agents` connections promote keys into `secrets` / `llmRuntime` and Autopilot/Schedule into `agentApp`; legacy `roleId` chat threads become `chatId` threads on load.
-- **`.env` dual-write:** secrets still upsert into the project `.env` when writable (desktop checkout). On startup, non-empty `.env` / asset keys that are missing or empty in the config are **promoted** into `omniscope.json` so checkout edits persist for Flutter.
-- Treat the file as secrets — it may contain API keys.
+- Treat the file as secrets — it may contain API keys. Enter keys in Settings → Connections / Credentials, or Import a config JSON; there is no project `.env` dual-sync.
 
 Favorites ([`FavoritesRepository`](lib/data/settings/favorites_repository.dart)): ordered `symbols` (starred) plus ordered `investInterest` (agent-facing) under the same `favorites` slice; Markets sidebar has **Favorites** and **Invest interest** subgroups. Legacy `{ markets, crypto }` config slices migrate on load (`investInterest` defaults to `[]`). Clearing favorites does not wipe invest interest (and vice versa).
 
 ## Settings
 
-Shell tab **Settings** (and Markets) use [`MasterDetailShell`](lib/widgets/master_detail_shell.dart): wide (≥720) = persistent sidebar + content pane; narrow = list → detail with Back. Switching sections unloads the previous body ([`settings_screen.dart`](lib/features/settings/settings_screen.dart)).
+Shell tab **Settings** (and Markets, Portfolio, Agents) use [`MasterDetailShell`](lib/widgets/master_detail_shell.dart): content always shown; switching to the tab opens the overlay nav drawer (burger also opens it; same UX on every viewport). Switching sections unloads the previous body ([`settings_screen.dart`](lib/features/settings/settings_screen.dart)).
 
 - **About** — tagline ([`AppCopy`](lib/core/app_copy.dart)), version ([`AppInfo`](lib/core/app_info.dart)), educational disclaimer.
 - **Appearance** — brightness + color set ([`ThemeSettings`](lib/data/settings/theme_settings.dart) / [`BrandPalette`](lib/core/brand_colors.dart)), list density / price format / default chart range ([`DisplaySettings`](lib/data/settings/display_settings.dart)).
@@ -414,7 +413,7 @@ Canonical tokens live in [`lib/core/brand_colors.dart`](lib/core/brand_colors.da
 - Trade feedback: `ShadToaster` + `ShadToast` (use `.destructive` for failures).
 - Theme: slate neutrals + brand primary/secondary via `BrandColors` in `app.dart`.
 - Keep copy plain — this product is for people who find finance intimidating.
-- Shared brand mark: [`lib/widgets/app_placeholder_icon.dart`](lib/widgets/app_placeholder_icon.dart) in a compact shell header (uses [`assets/brand/app_icon.png`](assets/brand/app_icon.png)).
+- Shared brand mark: [`lib/widgets/app_placeholder_icon.dart`](lib/widgets/app_placeholder_icon.dart) in a compact shell header (transparent [`assets/brand/app_icon_foreground.png`](assets/brand/app_icon_foreground.png) on `colorScheme.secondary`; launcher master remains [`assets/brand/app_icon.png`](assets/brand/app_icon.png)).
 - Launcher / favicon / splash pipeline: edit masters under `assets/brand/`, then run `make icons` (or [`tool/regen_icons.sh`](tool/regen_icons.sh)) — Android / iOS / macOS / Web / Windows via `flutter_launcher_icons`, Linux `linux/runner/resources/`, plus Android / iOS / Web splash via `flutter_native_splash` (Teal `#CCFBF1` / `#134E4A`; desktop has no native splash).
 
 ## Commands
@@ -447,7 +446,7 @@ Release builds need the matching host toolchain (Linux/Windows/macOS desktop and
 
 ### Podman (Linux runtime image)
 
-[`Containerfile`](Containerfile) is a multi-stage build: Flutter + Linux **build** deps live only in a throwaway builder; the published tag is **`omniscope:runtime`** (GTK/EGL runtime libs + `build/linux/x64/release/bundle/`). Secrets are not baked in (builder uses `.env.example`).
+[`Containerfile`](Containerfile) is a multi-stage build: Flutter + Linux **build** deps live only in a throwaway builder; the published tag is **`omniscope:runtime`** (GTK/EGL runtime libs + `build/linux/x64/release/bundle/`). Secrets are not baked in.
 
 ```bash
 make container-build    # podman build -t omniscope:runtime
@@ -480,7 +479,7 @@ Install once: `make hooks` (or `pre-commit install --hook-type pre-commit --hook
 - **pre-commit**: secret scan (gitleaks + private-key detect), merge-conflict / large-file checks
 - **pre-push**: gitleaks + `flutter analyze` + `flutter test --exclude-tags live_canary` (via `tool/flutter_checks.sh`)
 
-Do not commit `.env`, API keys, or credential JSON. Config: [`.pre-commit-config.yaml`](.pre-commit-config.yaml), [`.gitleaks.toml`](.gitleaks.toml).
+Do not commit API keys, credential JSON, or a filled `omniscope.json`. Config: [`.pre-commit-config.yaml`](.pre-commit-config.yaml), [`.gitleaks.toml`](.gitleaks.toml).
 
 Linux deps (Fedora): `clang`, `cmake`, `ninja-build`, `gtk3-devel`, `pkgconf-pkg-config`, etc. See [`docs/development.md`](docs/development.md). The same build packages (and runtime GTK/EGL packages) must stay mirrored in [`Containerfile`](Containerfile) — see **Podman** above and [`docs/container.md`](docs/container.md).
 

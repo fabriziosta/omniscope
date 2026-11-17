@@ -1,4 +1,3 @@
-import '../../core/material_compat.dart' show RefreshIndicator;
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -24,12 +23,13 @@ import '../../data/venues/exchange_portfolio.dart';
 import '../../data/venues/live_venue_capabilities.dart';
 import '../../widgets/agent_launch_button.dart';
 import '../../widgets/app_progress.dart';
-import '../../widgets/in_tab_back.dart';
+import '../../widgets/app_text.dart';
 import '../../widgets/master_detail_shell.dart';
 import '../../widgets/metric_stat.dart';
+import '../../widgets/overflow_actions_menu.dart';
 import '../../widgets/summary_well.dart';
-import '../../widgets/tab_page_header.dart';
 import '../../widgets/tappable_nav_row.dart';
+import '../agents/agent_launch_actions.dart';
 import '../asset_detail/asset_detail_screen.dart';
 import '../settings/portfolio_actions.dart';
 import 'portfolio_screen_controller.dart';
@@ -63,19 +63,61 @@ class _PortfolioView extends StatefulWidget {
 
 class _PortfolioViewState extends State<_PortfolioView> {
   String _selectedId = PortfolioDescriptor.practiceId;
-  String? _narrowSelectedId;
+  DataSourceSettings? _dataSources;
+  PortfolioRepository? _portfolio;
+  List<String> _holdingsSymbols = const [];
 
-  void _select(String id, {required bool wide}) {
-    setState(() {
-      _selectedId = id;
-      if (!wide) {
-        _narrowSelectedId = id;
-      }
-    });
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final nextSources = context.read<DataSourceSettings>();
+    if (!identical(_dataSources, nextSources)) {
+      _dataSources?.removeListener(_onDataSourcesChanged);
+      _dataSources = nextSources..addListener(_onDataSourcesChanged);
+    }
+    final nextPortfolio = context.read<PortfolioRepository>();
+    if (!identical(_portfolio, nextPortfolio)) {
+      _portfolio?.removeListener(_onPortfolioChanged);
+      _portfolio = nextPortfolio..addListener(_onPortfolioChanged);
+      _holdingsSymbols = _symbolsKey(nextPortfolio.state.holdings);
+    }
   }
 
-  void _backToNavList() {
-    setState(() => _narrowSelectedId = null);
+  @override
+  void dispose() {
+    _dataSources?.removeListener(_onDataSourcesChanged);
+    _portfolio?.removeListener(_onPortfolioChanged);
+    super.dispose();
+  }
+
+  void _onDataSourcesChanged() {
+    if (!mounted) return;
+    // Same pattern as Markets: source toggles re-fetch without a Refresh button.
+    context.read<PortfolioScreenController>().refreshAll();
+  }
+
+  void _onPortfolioChanged() {
+    if (!mounted || _portfolio == null) return;
+    final next = _symbolsKey(_portfolio!.state.holdings);
+    if (_listEquals(next, _holdingsSymbols)) return;
+    _holdingsSymbols = next;
+    context.read<PortfolioScreenController>().refreshQuotes();
+  }
+
+  static List<String> _symbolsKey(List<Holding> holdings) => [
+        for (final h in holdings) h.symbol,
+      ];
+
+  static bool _listEquals(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  void _select(String id) {
+    setState(() => _selectedId = id);
   }
 
   PortfolioDescriptor? _byId(List<PortfolioDescriptor> list, String? id) {
@@ -94,17 +136,6 @@ class _PortfolioViewState extends State<_PortfolioView> {
     }
   }
 
-  Widget _refreshTrailing(PortfolioScreenController controller) {
-    if (controller.isRefreshing) {
-      return const AppProgress(compact: true);
-    }
-    return ShadButton.ghost(
-      size: ShadButtonSize.sm,
-      onPressed: controller.refreshAll,
-      child: const Text('Refresh'),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final priceFormat = context.select<DisplaySettings, PriceFormat>(
@@ -120,159 +151,116 @@ class _PortfolioViewState extends State<_PortfolioView> {
     controller.syncLiveClientsIfNeeded();
 
     final descriptors = controller.portfolios;
-    final hasLive = controller.hasLive;
     final pendingLive = controller.pendingLiveClients;
 
-    final wideSelected = _byId(descriptors, _selectedId) ??
+    final selected = _byId(descriptors, _selectedId) ??
         (descriptors.isEmpty ? null : descriptors.first);
-    final narrowSelected = _byId(descriptors, _narrowSelectedId);
 
     final holdingsValue = controller.holdingsValueFor(state);
     final paperTotal = controller.paperTotalFor(state);
     final unrealized = controller.unrealizedFor(state);
 
-    return InTabBackEffect(
-      onBack: _narrowSelectedId != null ? _backToNavList : null,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_narrowSelectedId == null)
-            TabPageHeader(
-              title: 'Portfolio',
-              subtitle: hasLive
-                  ? 'Practice paper trading, plus live balances from '
-                      'connected exchanges.'
-                  : 'Practice with fake money — no account required.',
-            ),
-          Expanded(
-            child: wideSelected == null
-                ? const SizedBox.shrink()
-                : MasterDetailShell<PortfolioDescriptor>(
-                    selected: wideSelected,
-                    narrowSelected: narrowSelected,
-                    onNarrowBack: _backToNavList,
-                    sidebarBuilder: (context, highlighted, {required wide}) {
-                      return MasterDetailNavList(
-                        leading: [
-                          if (pendingLive.isNotEmpty)
-                            _ConnectLivePortfolioCard(pending: pendingLive),
-                        ],
-                        tiles: [
-                          for (final desc in descriptors)
-                            MasterDetailNavTile(
-                              title: desc.displayName,
-                              icon: desc.isPractice
-                                  ? LucideIcons.wallet
-                                  : LucideIcons.landmark,
-                              badge: desc.isPractice
-                                  ? const ShadBadge.secondary(
-                                      child: Text('Paper'),
-                                    )
-                                  : const ShadBadge(
-                                      child: Text('Live'),
-                                    ),
-                              meta: desc.isPractice
-                                  ? formatDisplayMoney(
-                                      paperTotal,
-                                      priceFormat,
-                                    )
-                                  : formatDisplayMoney(
-                                      controller
-                                          .liveByExchange[desc.id]?.totalValue,
-                                      priceFormat,
-                                    ),
-                              selected: highlighted?.id == desc.id,
-                              onTap: () => _select(desc.id, wide: wide),
-                            ),
-                        ],
-                      );
-                    },
-                    contentBuilder:
-                        (context, desc, {required showBack, onBack}) {
-                      if (desc.isPractice) {
-                        return MasterDetailContentPane(
-                          key: const ValueKey('portfolio-practice'),
-                          title: desc.displayName,
-                          subtitle: 'Fake money for learning — not real funds.',
-                          showBack: showBack,
-                          onBack: onBack,
-                          backLabel: 'Portfolio',
-                          trailing: _refreshTrailing(controller),
-                          body: RefreshIndicator(
-                            color: ShadTheme.of(context).colorScheme.primary,
-                            backgroundColor:
-                                ShadTheme.of(context).colorScheme.background,
-                            onRefresh: controller.refreshAll,
-                            child: ListView(
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                              children: [
-                                _PracticeBody(
-                                  cash: state.cash,
-                                  holdingsValue: holdingsValue,
-                                  paperTotal: paperTotal,
-                                  unrealized: unrealized,
-                                  holdings: state.holdings,
-                                  quotes: controller.quotes,
-                                  quoteError: controller.quoteError,
-                                  onReset: () => _confirmReset(context),
-                                  onOpenHolding: (symbol) {
-                                    pushFadePage(
-                                      context,
-                                      AssetDetailScreen(symbol: symbol),
-                                    ).then((_) {
-                                      if (context.mounted) {
-                                        controller.refreshQuotes();
-                                      }
-                                    });
-                                  },
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }
+    if (selected == null) {
+      return const SizedBox.shrink();
+    }
 
-                      return MasterDetailContentPane(
-                        key: ValueKey('portfolio-live-${desc.id}'),
-                        title: desc.displayName,
-                        subtitle:
-                            'Read-only balances from your API credentials.',
-                        showBack: showBack,
-                        onBack: onBack,
-                        backLabel: 'Portfolio',
-                        trailing: _refreshTrailing(controller),
-                        body: RefreshIndicator(
-                          color: ShadTheme.of(context).colorScheme.primary,
-                          backgroundColor:
-                              ShadTheme.of(context).colorScheme.background,
-                          onRefresh: controller.refreshAll,
-                          child: ListView(
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                            children: [
-                              _LiveBody(
-                                exchangeId: desc.id,
-                                exchangeName: desc.displayName,
-                                snapshot:
-                                    controller.liveByExchange[desc.id],
-                                error: controller.liveErrors[desc.id],
-                                loading: controller.loadingLive &&
-                                    !controller.liveByExchange
-                                        .containsKey(desc.id) &&
-                                    !controller.liveErrors
-                                        .containsKey(desc.id),
-                                onRetry: controller.refreshLivePortfolios,
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+    return MasterDetailShell<PortfolioDescriptor>(
+      selected: selected,
+      sidebarBuilder: (context, highlighted, {required closeNav}) {
+        return MasterDetailNavList(
+          leading: [
+            if (pendingLive.isNotEmpty)
+              _ConnectLivePortfolioCard(pending: pendingLive),
+          ],
+          tiles: [
+            for (final desc in descriptors)
+              MasterDetailNavTile(
+                title: desc.displayName,
+                icon: desc.isPractice
+                    ? LucideIcons.wallet
+                    : LucideIcons.landmark,
+                badge: desc.isPractice
+                    ? const ShadBadge.secondary(
+                        child: Text('Paper'),
+                      )
+                    : const ShadBadge(
+                        child: Text('Live'),
+                      ),
+                meta: desc.isPractice
+                    ? formatDisplayMoney(
+                        paperTotal,
+                        priceFormat,
+                      )
+                    : formatDisplayMoney(
+                        controller.liveByExchange[desc.id]?.totalValue,
+                        priceFormat,
+                      ),
+                selected: highlighted.id == desc.id,
+                onTap: () {
+                  _select(desc.id);
+                  closeNav();
+                },
+              ),
+          ],
+        );
+      },
+      contentBuilder: (context, desc, {required onOpenMenu}) {
+        if (desc.isPractice) {
+          return MasterDetailContentPane(
+            key: const ValueKey('portfolio-practice'),
+            title: desc.displayName,
+            subtitle: 'Fake money for learning — not real funds.',
+            onOpenMenu: onOpenMenu,
+            body: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              children: [
+                _PracticeBody(
+                  cash: state.cash,
+                  holdingsValue: holdingsValue,
+                  paperTotal: paperTotal,
+                  unrealized: unrealized,
+                  holdings: state.holdings,
+                  quotes: controller.quotes,
+                  quoteError: controller.quoteError,
+                  onReset: () => _confirmReset(context),
+                  onOpenHolding: (symbol) {
+                    pushFadePage(
+                      context,
+                      AssetDetailScreen(symbol: symbol),
+                    ).then((_) {
+                      if (context.mounted) {
+                        controller.refreshQuotes();
+                      }
+                    });
+                  },
+                ),
+              ],
+            ),
+          );
+        }
+
+        return MasterDetailContentPane(
+          key: ValueKey('portfolio-live-${desc.id}'),
+          title: desc.displayName,
+          subtitle: 'Read-only balances from your API credentials.',
+          onOpenMenu: onOpenMenu,
+          body: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            children: [
+              _LiveBody(
+                exchangeId: desc.id,
+                exchangeName: desc.displayName,
+                snapshot: controller.liveByExchange[desc.id],
+                error: controller.liveErrors[desc.id],
+                loading: controller.loadingLive &&
+                    !controller.liveByExchange.containsKey(desc.id) &&
+                    !controller.liveErrors.containsKey(desc.id),
+                onRetry: controller.refreshLivePortfolios,
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -318,15 +306,22 @@ class _ConnectLivePortfolioCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: ShadButton(
-                onPressed: () {
-                  context.read<ShellNavigationController>().goToSettings(
-                        sectionId: 'dataSources',
-                      );
-                },
-                child: const Text(AppCopy.connectLivePortfolioCta),
+            ShadButton(
+              size: ShadButtonSize.sm,
+              width: double.infinity,
+              onPressed: () {
+                context.read<ShellNavigationController>().goToSettings(
+                      sectionId: 'dataSources',
+                    );
+              },
+              // ShadButton's inner Row gives Text unbounded width; Flexible
+              // lets ellipsis kick in inside the narrow nav drawer.
+              child: const Flexible(
+                child: Text(
+                  AppCopy.connectLivePortfolioCta,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ),
           ],
@@ -632,30 +627,45 @@ class _HoldingTile extends StatelessWidget {
       leading: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(holding.symbol, style: theme.textTheme.large),
+          AppEllipsisText(
+            holding.symbol,
+            maxLines: 2,
+            style: theme.textTheme.large,
+          ),
           if (identity != null) ...[
             const SizedBox(height: 2),
-            Text(
+            AppEllipsisText(
               identity,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+              maxLines: 2,
               style: theme.textTheme.muted,
             ),
           ],
           const SizedBox(height: 2),
-          Text(
+          AppEllipsisText(
             holdingMeta,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
             style: theme.textTheme.small.copyWith(
               color: theme.colorScheme.mutedForeground,
             ),
           ),
         ],
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+      trailing: RowActionCluster(
+        actions: [
+          OverflowAction(
+            label: AgentLaunchIntent.tradeCheck.ctaLabel,
+            icon: LucideIcons.sparkles,
+            onTap: () {
+              AgentLaunchActions.launch(
+                context,
+                intent: AgentLaunchIntent.tradeCheck,
+                symbol: holding.symbol,
+                quantity: holding.shares,
+              );
+            },
+          ),
+        ],
+        inlineChildren: [
           AgentLaunchButton(
             symbol: holding.symbol,
             intent: AgentLaunchIntent.tradeCheck,
@@ -663,27 +673,21 @@ class _HoldingTile extends StatelessWidget {
             quantity: holding.shares,
           ),
           const SizedBox(width: 4),
-          Flexible(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  formatDisplayMoney(value, priceFormat),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.large,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  formatSignedMoney(pnl),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.small.copyWith(color: pnlColor),
-                ),
-              ],
-            ),
-          ),
         ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            AppMoneyText(
+              formatDisplayMoney(value, priceFormat),
+              style: theme.textTheme.large,
+            ),
+            const SizedBox(height: 2),
+            AppMoneyText(
+              formatSignedMoney(pnl),
+              style: theme.textTheme.small.copyWith(color: pnlColor),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -714,42 +718,64 @@ class _BalanceTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(balance.asset, style: theme.textTheme.large),
+                  AppEllipsisText(
+                    balance.asset,
+                    maxLines: 2,
+                    style: theme.textTheme.large,
+                  ),
                   const SizedBox(height: 2),
-                  Text(
+                  AppEllipsisText(
                     '${formatShares(balance.quantity)} units',
+                    maxLines: 2,
                     style: theme.textTheme.muted,
                   ),
                 ],
               ),
             ),
-            AgentLaunchButton(
-              exchangeId: exchangeId,
-              symbol: balance.asset,
-              intent: AgentLaunchIntent.explainLive,
-              iconOnly: true,
-            ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 8),
             Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    formatDisplayMoney(balance.marketValue, priceFormat),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.large,
+              child: RowActionCluster(
+                actions: [
+                  OverflowAction(
+                    label: AgentLaunchIntent.explainLive.ctaLabel,
+                    icon: LucideIcons.sparkles,
+                    onTap: () {
+                      AgentLaunchActions.launch(
+                        context,
+                        intent: AgentLaunchIntent.explainLive,
+                        exchangeId: exchangeId,
+                        symbol: balance.asset,
+                      );
+                    },
                   ),
-                  if (balance.available != null) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      'avail ${formatShares(balance.available!)}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.muted,
-                    ),
-                  ],
                 ],
+                inlineChildren: [
+                  AgentLaunchButton(
+                    exchangeId: exchangeId,
+                    symbol: balance.asset,
+                    intent: AgentLaunchIntent.explainLive,
+                    iconOnly: true,
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    AppMoneyText(
+                      formatDisplayMoney(balance.marketValue, priceFormat),
+                      style: theme.textTheme.large,
+                    ),
+                    if (balance.available != null) ...[
+                      const SizedBox(height: 2),
+                      AppEllipsisText(
+                        'avail ${formatShares(balance.available!)}',
+                        maxLines: 2,
+                        textAlign: TextAlign.end,
+                        style: theme.textTheme.muted,
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
           ],

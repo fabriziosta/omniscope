@@ -28,9 +28,9 @@ class GroupLandingBody extends StatelessWidget {
 
     final compact = density == ListDensity.compact;
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 20),
       itemCount: itemCount,
-      separatorBuilder: (_, _) => SizedBox(height: compact ? 6 : 10),
+      separatorBuilder: (_, _) => SizedBox(height: compact ? 4 : 8),
       itemBuilder: (context, index) => itemBuilder(context, index, compact),
     );
   }

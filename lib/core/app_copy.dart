@@ -34,6 +34,15 @@ abstract final class AppCopy {
 
   static const filterQuotesHint = 'Filter by symbol…';
 
+  static const symbolSearchHint = 'Search symbols or names…';
+
+  static const symbolSearchEmpty =
+      'Type part of a symbol or name to find assets in Omniscope.';
+
+  static const symbolSearchNoMatches = 'No symbols match that search.';
+
+  static const symbolSearchTooltip = 'Search symbols';
+
   static const noQuotesMatchFilter = 'No quotes match that filter.';
 
   static const noQuotes = 'No quotes available';

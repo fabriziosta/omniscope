@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -12,11 +13,13 @@ import '../../widgets/app_tooltip.dart';
 import '../../widgets/in_tab_back.dart';
 import '../../widgets/master_detail_shell.dart';
 import '../../widgets/notification_inbox.dart';
+import '../../widgets/symbol_search.dart';
 import '../../data/agents/invest_interest_proposal_repository.dart';
 import '../../data/agents/trade_proposal_repository.dart';
 import '../activity/activity_screen.dart';
 import '../agents/agent_schedule_coordinator.dart';
 import '../agents/agents_screen.dart';
+import '../asset_detail/asset_detail_screen.dart';
 import '../markets/markets_screen.dart';
 import '../portfolio/portfolio_screen.dart';
 import '../settings/settings_screen.dart';
@@ -146,9 +149,20 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
           child: SafeArea(
             child: Column(
               children: [
-                // Always show shell chrome so the notification bell is reachable
-                // on phones; brand wordmark stays wide-only.
-                _ShellHeader(showBrand: wide),
+                // Always show shell chrome so search + notification bell are
+                // reachable on phones; brand wordmark stays wide-only.
+                _ShellHeader(
+                  showBrand: wide,
+                  onSymbolSelected: (symbol) {
+                    final nav = _tabNavigatorKeys[index].currentState;
+                    if (nav == null) return;
+                    nav.push<void>(
+                      FadePageRoute<void>(
+                        builder: (_) => AssetDetailScreen(symbol: symbol),
+                      ),
+                    );
+                  },
+                ),
                 Expanded(
                   child: IndexedStack(
                     index: index,
@@ -261,11 +275,15 @@ class _TabRouteObserver extends NavigatorObserver {
       _notify();
 }
 
-/// Slim shell chrome — brand (wide) + always-visible notification bell.
+/// Slim shell chrome — brand (wide) + symbol search + notification bell.
 class _ShellHeader extends StatelessWidget {
-  const _ShellHeader({required this.showBrand});
+  const _ShellHeader({
+    required this.showBrand,
+    required this.onSymbolSelected,
+  });
 
   final bool showBrand;
+  final ValueChanged<String> onSymbolSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -280,11 +298,20 @@ class _ShellHeader extends StatelessWidget {
             if (showBrand) ...[
               const AppPlaceholderIcon(size: 24),
               const SizedBox(width: 10),
-              Text('Omniscope', style: theme.textTheme.large),
+              Text(
+                'Omniscope',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: theme.textTheme.large.fontSize ?? 18,
+                  fontWeight: FontWeight.w600,
+                  height: theme.textTheme.large.height,
+                  color: theme.colorScheme.foreground,
+                ),
+              ),
             ] else ...[
               const AppPlaceholderIcon(size: 22),
             ],
             const Spacer(),
+            SymbolSearchButton(onSymbolSelected: onSymbolSelected),
             const NotificationBellButton(),
           ],
         ),
@@ -292,7 +319,6 @@ class _ShellHeader extends StatelessWidget {
     );
   }
 }
-
 /// Compact bottom-nav control that scales labels on narrow phones.
 class _NavTab extends StatelessWidget {
   const _NavTab({

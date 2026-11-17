@@ -8,25 +8,25 @@ import 'support/memory_config.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('defaults to comfortable / full / 1mo and persists JSON', () async {
+  test('defaults to compact / full / 1mo and persists JSON', () async {
     final store = await memoryConfig();
     final settings = DisplaySettings(store: store);
     await settings.load();
-    expect(settings.listDensity, ListDensity.comfortable);
-    expect(settings.isCompact, isFalse);
+    expect(settings.listDensity, ListDensity.compact);
+    expect(settings.isCompact, isTrue);
     expect(settings.priceFormat, PriceFormat.full);
     expect(settings.defaultChartRange, ChartRangePreset.oneMonth);
 
-    await settings.setListDensity(ListDensity.compact);
+    await settings.setListDensity(ListDensity.comfortable);
     await settings.setPriceFormat(PriceFormat.compact);
     await settings.setDefaultChartRange(ChartRangePreset.oneYear);
-    expect(settings.listDensity, ListDensity.compact);
+    expect(settings.listDensity, ListDensity.comfortable);
     expect(settings.priceFormat, PriceFormat.compact);
     expect(settings.defaultChartRange, ChartRangePreset.oneYear);
 
     final again = DisplaySettings(store: store);
     await again.load();
-    expect(again.listDensity, ListDensity.compact);
+    expect(again.listDensity, ListDensity.comfortable);
     expect(again.priceFormat, PriceFormat.compact);
     expect(again.defaultChartRange, ChartRangePreset.oneYear);
   });

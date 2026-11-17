@@ -5,13 +5,15 @@ import '../core/brand_colors.dart';
 
 /// Compact brand glyph for the shell header.
 ///
-/// Uses [assets/brand/app_icon.png] (same master as launcher icons).
+/// Renders the transparent [assetPath] glyph on a circle filled with
+/// `colorScheme.secondary` so light/dark and BrandPalette switches update
+/// the background. Launcher masters stay in `assets/brand/app_icon.png`.
 class AppPlaceholderIcon extends StatelessWidget {
   const AppPlaceholderIcon({super.key, this.size = 24});
 
   final double size;
 
-  static const assetPath = 'assets/brand/app_icon.png';
+  static const assetPath = 'assets/brand/app_icon_foreground.png';
 
   @override
   Widget build(BuildContext context) {
@@ -24,6 +26,7 @@ class AppPlaceholderIcon extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
+        color: scheme.secondary,
         border: Border.all(color: scheme.border, width: compact ? 1 : 1.5),
         boxShadow: compact
             ? null

@@ -1,7 +1,7 @@
 import '../market/exchange_credentials.dart';
 import 'venue_trading_mode.dart';
 
-/// Declares which credential fields a venue needs in Settings / `.env`.
+/// Declares which credential fields a venue needs in Settings / config secrets.
 ///
 /// Settings renders a generic Configure dialog from this schema — venue folders
 /// must not ship their own credential cards.

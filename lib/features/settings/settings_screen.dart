@@ -4,9 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../core/app_info.dart';
 import '../../core/shell_navigation.dart';
-import '../../widgets/in_tab_back.dart';
 import '../../widgets/master_detail_shell.dart';
-import '../../widgets/tab_page_header.dart';
 import 'agents_advanced_section.dart';
 import 'appearance_section.dart';
 import 'connections_section.dart';
@@ -83,11 +81,7 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  /// Wide layout always has a selection; narrow starts on the nav list.
   SettingsNavSection _selected = SettingsNavSection.appearance;
-
-  /// On narrow viewports, null means show the section list only.
-  SettingsNavSection? _narrowSelected;
 
   ShellNavigationController? _shellNav;
 
@@ -135,34 +129,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     }
     if (section == null) return;
-    final wide = MediaQuery.sizeOf(context).width >=
-        SettingsScreen.wideBreakpoint;
-    _select(section, wide: wide);
+    _select(section);
   }
 
-  void _select(SettingsNavSection section, {required bool wide}) {
-    setState(() {
-      _selected = section;
-      if (!wide) {
-        _narrowSelected = section;
-      }
-    });
+  void _select(SettingsNavSection section) {
+    setState(() => _selected = section);
   }
 
-  void _backToNavList() {
-    setState(() => _narrowSelected = null);
-  }
-
-  Widget _bodyFor(SettingsNavSection section, {required bool wide}) {
+  Widget _bodyFor(SettingsNavSection section) {
     return switch (section) {
       SettingsNavSection.appearance => const AppearanceSectionBody(),
       SettingsNavSection.mandate => const MandateSectionBody(),
       SettingsNavSection.dataSources => const DataSourcesSectionBody(),
       SettingsNavSection.portfolios => PortfoliosSectionBody(
-          onOpenDataSources: () => _select(
-            SettingsNavSection.dataSources,
-            wide: wide,
-          ),
+          onOpenDataSources: () => _select(SettingsNavSection.dataSources),
         ),
       SettingsNavSection.connections => const ConnectionsSectionBody(),
       SettingsNavSection.agents => const AgentsAdvancedSectionBody(),
@@ -174,67 +154,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
 
-    return InTabBackEffect(
-      onBack: _narrowSelected != null ? _backToNavList : null,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_narrowSelected == null)
-            const TabPageHeader(
-              title: 'Settings',
-              subtitle:
-                  'Choose a section, then change only what’s on this device.',
-            ),
-          Expanded(
-            child: MasterDetailShell<SettingsNavSection>(
-              selected: _selected,
-              narrowSelected: _narrowSelected,
-              onNarrowBack: _backToNavList,
-              sidebarBuilder: (context, highlighted, {required wide}) {
-                return MasterDetailNavList(
-                  tiles: [
-                    for (final section in SettingsNavSection.values)
-                      MasterDetailNavTile(
-                        title: section.title,
-                        icon: section.icon,
-                        selected: highlighted == section,
-                        onTap: () => _select(section, wide: wide),
-                      ),
-                  ],
-                  footer: Text(
-                    'v${AppInfo.version}',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.small.copyWith(
-                      color: theme.colorScheme.mutedForeground,
-                    ),
-                  ),
-                );
-              },
-              contentBuilder: (context, section, {required showBack, onBack}) {
-                final wide = MediaQuery.sizeOf(context).width >=
-                    SettingsScreen.wideBreakpoint;
-                return MasterDetailContentPane(
-                  key: ValueKey(section),
-                  title: section.title,
-                  subtitle: section.subtitle,
-                  showBack: showBack,
-                  onBack: onBack,
-                  backLabel: 'Settings',
-                  body: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                    children: [
-                      KeyedSubtree(
-                        key: ValueKey(section),
-                        child: _bodyFor(section, wide: wide),
-                      ),
-                    ],
-                  ),
-                );
-              },
+    return MasterDetailShell<SettingsNavSection>(
+      selected: _selected,
+      sidebarBuilder: (context, highlighted, {required closeNav}) {
+        return MasterDetailNavList(
+          tiles: [
+            for (final section in SettingsNavSection.values)
+              MasterDetailNavTile(
+                title: section.title,
+                icon: section.icon,
+                selected: highlighted == section,
+                onTap: () {
+                  _select(section);
+                  closeNav();
+                },
+              ),
+          ],
+          footer: Text(
+            'v${AppInfo.version}',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.small.copyWith(
+              color: theme.colorScheme.mutedForeground,
             ),
           ),
-        ],
-      ),
+        );
+      },
+      contentBuilder: (context, section, {required onOpenMenu}) {
+        return MasterDetailContentPane(
+          key: ValueKey(section),
+          title: section.title,
+          subtitle: section.subtitle,
+          onOpenMenu: onOpenMenu,
+          body: ListView(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
+            children: [
+              KeyedSubtree(
+                key: ValueKey(section),
+                child: _bodyFor(section),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

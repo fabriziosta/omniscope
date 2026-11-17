@@ -12,7 +12,7 @@ ifeq ($(shell command -v flutter 2>/dev/null),)
   endif
 endif
 
-.PHONY: help ensure-env get analyze test check run doctor icons \
+.PHONY: help get analyze test check run doctor icons \
 	hooks hooks-run agent-skills bump-patch clean \
 	build build-linux build-windows build-macos build-ios \
 	build-apk build-appbundle build-web \
@@ -20,7 +20,7 @@ endif
 
 help:
 	@echo "Omniscope developer targets:"
-	@echo "  make get              flutter pub get (+ ensure .env)"
+	@echo "  make get              flutter pub get"
 	@echo "  make analyze          tool/flutter_checks.sh analyze"
 	@echo "  make test             tool/flutter_checks.sh test"
 	@echo "  make check            analyze + test (same as pre-push)"
@@ -49,13 +49,7 @@ help:
 	@echo "  Linux host → linux + apk + web; macOS → macos + ios + apk + web;"
 	@echo "  Windows host → windows + apk + web."
 
-ensure-env:
-	@if [ ! -f .env ]; then \
-		cp .env.example .env; \
-		echo "note: created .env from .env.example (fill in API keys locally)" >&2; \
-	fi
-
-get: ensure-env
+get:
 	flutter pub get
 
 analyze:
@@ -68,37 +62,38 @@ check:
 	tool/flutter_checks.sh all
 
 # Live network probes through Dart adapters (Yahoo / Crypto.com / Alpaca).
-# Not part of make check / pre-push — public always; portfolio when .env has keys.
+# Not part of make check / pre-push — public always; portfolio when OMNISCOPE_*
+# process env or omniscope.json secrets are set.
 # Uses flutter test (package needs dart:ui); do not add to flutter_checks.sh.
-venue-canary: ensure-env
+venue-canary:
 	flutter test test/venue_canary_test.dart --tags live_canary --reporter expanded
 
-run: ensure-env
+run:
 	flutter run -d $(DEVICE)
 
-build-linux: ensure-env
+build-linux:
 	flutter build linux --release
 
-build-windows: ensure-env
+build-windows:
 	flutter build windows --release
 
-build-macos: ensure-env
+build-macos:
 	flutter build macos --release
 
-build-ios: ensure-env
+build-ios:
 	flutter build ios --release --no-codesign
 
-build-apk: ensure-env
+build-apk:
 	flutter build apk --release
 
-build-appbundle: ensure-env
+build-appbundle:
 	flutter build appbundle --release
 
-build-web: ensure-env
+build-web:
 	flutter build web --release
 
 # Host-aware: only platforms this machine can produce (skips the rest with a note).
-build: ensure-env
+build:
 	@os=$$(uname -s 2>/dev/null || echo unknown); \
 	case "$$os" in \
 		Linux) \

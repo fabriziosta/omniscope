@@ -46,6 +46,33 @@ void main() {
     expect(json?['action'], 'buy');
   });
 
+  test('extractDelegatedRoleIds preserves first-seen order', () {
+    final ids = AgentPeerDelegation.extractDelegatedRoleIds([
+      (
+        toolName: AgentPeerDelegation.delegateToolName('marketResearch'),
+        output: {'response': 'brief'},
+      ),
+      (
+        toolName: AgentPeerDelegation.delegateToolName('intradayTrading'),
+        output: {'response': 'trade'},
+      ),
+      (
+        toolName: AgentPeerDelegation.delegateToolName('marketResearch'),
+        output: {'response': 'again'},
+      ),
+      (
+        toolName: 'getQuotes',
+        output: {'ok': true},
+      ),
+    ]);
+    expect(ids, ['marketResearch', 'intradayTrading']);
+    expect(
+      AgentPeerDelegation.chatMetaLabel('marketResearch'),
+      'Market Research',
+    );
+    expect(AgentPeerDelegation.chatMetaLabel('orchestrator'), 'Orchestrator');
+  });
+
   test('controller upserts proposal from delegated trade JSON', () async {
     final store = await memoryConfig();
     final roles = await AgentRoleCatalog.load();

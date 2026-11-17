@@ -1,7 +1,13 @@
 import 'package:flutter/widgets.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-/// Exclusive choice row (theme, density, etc.).
+/// Vertical gap between stacked settings option rows.
+const double settingsOptionGap = 4;
+
+/// Section break between settings subsections.
+const double settingsSectionGap = 14;
+
+/// Exclusive choice row (theme, density, mandate, etc.).
 class SettingsSelectableOptionTile extends StatelessWidget {
   const SettingsSelectableOptionTile({
     super.key,
@@ -37,38 +43,140 @@ class SettingsSelectableOptionTile extends StatelessWidget {
               borderRadius: theme.radius,
             ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(
                 children: [
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           title,
-                          style: theme.textTheme.large.copyWith(
+                          style: theme.textTheme.p.copyWith(
                             color: foreground,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          subtitle,
-                          style: theme.textTheme.muted.copyWith(
-                            color: selected
-                                ? theme.colorScheme.secondaryForeground
-                                    .withValues(alpha: 0.8)
-                                : null,
+                        if (subtitle.isNotEmpty) ...[
+                          const SizedBox(height: 1),
+                          Text(
+                            subtitle,
+                            style: theme.textTheme.small.copyWith(
+                              color: selected
+                                  ? theme.colorScheme.secondaryForeground
+                                      .withValues(alpha: 0.8)
+                                  : theme.colorScheme.mutedForeground,
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),
                   if (selected)
                     Icon(
                       LucideIcons.check,
-                      size: 18,
+                      size: 16,
                       color: theme.colorScheme.secondaryForeground,
                     ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact exclusive choices in a wrapping chip row (short labels).
+///
+/// Prefer this when the subsection description already carries the detail and
+/// each option is a short label (Brightness, Lists, Numbers, Charts).
+class SettingsChoiceChips<T> extends StatelessWidget {
+  const SettingsChoiceChips({
+    super.key,
+    required this.options,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final List<(T value, String label)> options;
+  final T value;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        for (final option in options)
+          _SettingsChoiceChip(
+            label: option.$2,
+            selected: option.$1 == value,
+            onTap: () => onChanged(option.$1),
+          ),
+      ],
+    );
+  }
+}
+
+class _SettingsChoiceChip extends StatelessWidget {
+  const _SettingsChoiceChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final foreground = selected
+        ? theme.colorScheme.secondaryForeground
+        : theme.colorScheme.foreground;
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: selected ? theme.colorScheme.secondary : null,
+              border: Border.all(
+                color: selected
+                    ? theme.colorScheme.secondary
+                    : theme.colorScheme.border,
+              ),
+              borderRadius: theme.radius,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: theme.textTheme.small.copyWith(
+                      color: foreground,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (selected) ...[
+                    const SizedBox(width: 6),
+                    Icon(
+                      LucideIcons.check,
+                      size: 14,
+                      color: theme.colorScheme.secondaryForeground,
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -106,16 +214,26 @@ class SettingsDataSourceToggleTile extends StatelessWidget {
           borderRadius: theme.radius,
         ),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
           child: Row(
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(title, style: theme.textTheme.large),
-                    const SizedBox(height: 2),
-                    Text(subtitle, style: theme.textTheme.muted),
+                    Text(
+                      title,
+                      style: theme.textTheme.p.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 1),
+                      Text(subtitle, style: theme.textTheme.small.copyWith(
+                        color: theme.colorScheme.mutedForeground,
+                      )),
+                    ],
                   ],
                 ),
               ),
@@ -152,7 +270,7 @@ class SettingsConnectionCard extends StatelessWidget {
     final theme = ShadTheme.of(context);
 
     return ShadCard(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final stackTrailing =
@@ -161,23 +279,31 @@ class SettingsConnectionCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 36,
-                height: 36,
+                width: 32,
+                height: 32,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: theme.colorScheme.secondary,
                   borderRadius: theme.radius,
                 ),
-                child: Icon(icon, size: 18, color: theme.colorScheme.primary),
+                child: Icon(icon, size: 16, color: theme.colorScheme.primary),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(title, style: theme.textTheme.large),
-                    const SizedBox(height: 2),
-                    Text(subtitle, style: theme.textTheme.muted),
+                    Text(
+                      title,
+                      style: theme.textTheme.p.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(subtitle, style: theme.textTheme.small.copyWith(
+                      color: theme.colorScheme.mutedForeground,
+                    )),
                   ],
                 ),
               ),
@@ -197,7 +323,7 @@ class SettingsConnectionCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               header,
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
               Align(
                 alignment: Alignment.centerLeft,
                 child: trailing!,
@@ -236,7 +362,7 @@ class SettingsSubsectionLabel extends StatelessWidget {
           ),
         ),
         if (description != null) ...[
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           Text(
             description!,
             style: theme.textTheme.small.copyWith(

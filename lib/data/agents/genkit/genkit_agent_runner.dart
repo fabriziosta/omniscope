@@ -19,6 +19,7 @@ class GenkitAgentTurnResult {
     required this.reply,
     this.delegatedTradeJson,
     this.delegatedTradeRoleId,
+    this.delegatedRoleIds = const [],
   });
 
   /// Orchestrator final text (user-visible).
@@ -29,6 +30,11 @@ class GenkitAgentTurnResult {
 
   /// Role that produced [delegatedTradeJson] (usually `intradayTrading`).
   final String? delegatedTradeRoleId;
+
+  /// Specialty role ids the `agents()` middleware delegated to this turn.
+  ///
+  /// Empty when the orchestrator answered without calling a specialty.
+  final List<String> delegatedRoleIds;
 }
 
 /// Specialty role registered for orchestrator delegation.
@@ -199,6 +205,8 @@ class GenkitAgentRunner {
       }
 
       final toolOutputs = _toolOutputsFromMessages(res.messages);
+      final delegatedRoleIds =
+          AgentPeerDelegation.extractDelegatedRoleIds(toolOutputs);
       final delegatedJson =
           AgentPeerDelegation.extractDelegatedTradeJson(toolOutputs);
 
@@ -210,6 +218,7 @@ class GenkitAgentRunner {
         reply: text,
         delegatedTradeJson: tradeJson,
         delegatedTradeRoleId: tradeJson != null ? 'intradayTrading' : null,
+        delegatedRoleIds: delegatedRoleIds,
       );
     } on GenkitAgentException {
       rethrow;

@@ -12,13 +12,13 @@ import '../../data/market/models.dart';
 import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/display_settings.dart';
 import '../../widgets/app_empty_view.dart';
+import '../../widgets/app_text.dart';
 import '../../widgets/master_detail_shell.dart';
 import '../../widgets/quote_list_tile.dart';
 import '../../widgets/quotes_async_body.dart';
 import '../../widgets/quotes_filter_field.dart';
 import '../../widgets/quotes_load_more_bar.dart';
 import '../../widgets/quotes_paging_error_listener.dart';
-import '../../widgets/quotes_refresh_body.dart';
 import '../../widgets/section_caption.dart';
 import '../../widgets/themed_accordion_item.dart';
 import '../asset_detail/asset_detail_screen.dart';
@@ -31,15 +31,11 @@ class MarketKindPane extends StatelessWidget {
   const MarketKindPane({
     super.key,
     required this.kind,
-    required this.showBack,
-    this.onBack,
-    this.backLabel = 'Markets',
+    required this.onOpenMenu,
   });
 
   final MarketAssetKind kind;
-  final bool showBack;
-  final VoidCallback? onBack;
-  final String backLabel;
+  final VoidCallback onOpenMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -52,9 +48,7 @@ class MarketKindPane extends StatelessWidget {
       )..refresh(),
       child: _MarketKindPaneView(
         kind: kind,
-        showBack: showBack,
-        onBack: onBack,
-        backLabel: backLabel,
+        onOpenMenu: onOpenMenu,
       ),
     );
   }
@@ -63,15 +57,11 @@ class MarketKindPane extends StatelessWidget {
 class _MarketKindPaneView extends StatefulWidget {
   const _MarketKindPaneView({
     required this.kind,
-    required this.showBack,
-    this.onBack,
-    this.backLabel = 'Markets',
+    required this.onOpenMenu,
   });
 
   final MarketAssetKind kind;
-  final bool showBack;
-  final VoidCallback? onBack;
-  final String backLabel;
+  final VoidCallback onOpenMenu;
 
   @override
   State<_MarketKindPaneView> createState() => _MarketKindPaneViewState();
@@ -136,17 +126,7 @@ class _MarketKindPaneViewState extends State<_MarketKindPaneView> {
       title: title,
       subtitle:
           'Grouped by exchange. Load more for the next page of symbols.',
-      showBack: widget.showBack,
-      onBack: widget.onBack,
-      backLabel: widget.backLabel,
-      trailing: ShadButton.outline(
-        size: ShadButtonSize.sm,
-        enabled: enabledEquities.isNotEmpty &&
-            !controller.loading &&
-            !controller.loadingMore,
-        onPressed: controller.refresh,
-        child: const Text('Refresh'),
-      ),
+      onOpenMenu: widget.onOpenMenu,
       body: enabledEquities.isEmpty
           ? const AppEmptyView(AppCopy.noMarketSourcesEnabled)
           : QuotesPagingErrorListener(
@@ -174,19 +154,15 @@ class _MarketKindPaneViewState extends State<_MarketKindPaneView> {
                           );
                         }
 
-                        return QuotesRefreshBody(
-                          child: ListView(
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            padding:
-                                const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                            children: [
-                              _ExchangeSubgroups(
-                                group: group,
-                                onOpenAsset: _openAsset,
-                              ),
-                              const QuotesLoadMoreBar(),
-                            ],
-                          ),
+                        return ListView(
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                          children: [
+                            _ExchangeSubgroups(
+                              group: group,
+                              onOpenAsset: _openAsset,
+                            ),
+                            const QuotesLoadMoreBar(),
+                          ],
                         );
                       },
                     ),
@@ -258,15 +234,16 @@ class _ExchangeHeaderTitle extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        AppEllipsisText(
           '$name  ·  $count',
+          maxLines: 2,
           style: theme.textTheme.large,
-          overflow: TextOverflow.ellipsis,
         ),
         if (blurb != null) ...[
           const SizedBox(height: 2),
-          Text(
+          AppEllipsisText(
             blurb,
+            maxLines: 2,
             style: theme.textTheme.small.copyWith(
               color: theme.colorScheme.mutedForeground,
             ),
@@ -291,7 +268,7 @@ class _QuoteList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final density = context.watch<DisplaySettings>().listDensity;
-    final gap = density == ListDensity.compact ? 6.0 : 10.0;
+    final gap = density == ListDensity.compact ? 4.0 : 8.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -299,7 +276,7 @@ class _QuoteList extends StatelessWidget {
         if (exchangeLabel != null) ...[
           Padding(
             padding: EdgeInsets.only(
-              bottom: density == ListDensity.compact ? 6 : 8,
+              bottom: density == ListDensity.compact ? 4 : 6,
             ),
             child: _ExchangeCaption(exchangeLabel!),
           ),

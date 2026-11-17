@@ -14,7 +14,6 @@ import 'app_empty_view.dart';
 import 'master_detail_shell.dart';
 import 'quote_list_tile.dart';
 import 'quotes_async_body.dart';
-import 'quotes_refresh_body.dart';
 
 /// Shared Favorites content pane for Markets.
 ///
@@ -27,9 +26,7 @@ class FavoritesQuotesPane extends StatelessWidget {
     required this.subtitle,
     required this.emptyMessage,
     required this.onReorder,
-    required this.showBack,
-    this.onBack,
-    this.backLabel = 'Back',
+    required this.onOpenMenu,
     this.blockedMessage,
     this.title = 'Favorites',
     this.errorTitle = 'Could not load Favorites',
@@ -39,9 +36,7 @@ class FavoritesQuotesPane extends StatelessWidget {
   final String subtitle;
   final String emptyMessage;
   final Future<List<String>> Function(int oldIndex, int newIndex) onReorder;
-  final bool showBack;
-  final VoidCallback? onBack;
-  final String backLabel;
+  final VoidCallback onOpenMenu;
 
   /// When non-null (e.g. no data sources enabled), shown instead of the list.
   final String? blockedMessage;
@@ -66,9 +61,7 @@ class FavoritesQuotesPane extends StatelessWidget {
         subtitle: subtitle,
         emptyMessage: emptyMessage,
         onReorder: onReorder,
-        showBack: showBack,
-        onBack: onBack,
-        backLabel: backLabel,
+        onOpenMenu: onOpenMenu,
         blockedMessage: blockedMessage,
       ),
     );
@@ -83,9 +76,7 @@ class _FavoritesQuotesPaneView extends StatelessWidget {
     required this.subtitle,
     required this.emptyMessage,
     required this.onReorder,
-    required this.showBack,
-    required this.backLabel,
-    this.onBack,
+    required this.onOpenMenu,
     this.blockedMessage,
   });
 
@@ -95,9 +86,7 @@ class _FavoritesQuotesPaneView extends StatelessWidget {
   final String subtitle;
   final String emptyMessage;
   final Future<List<String>> Function(int oldIndex, int newIndex) onReorder;
-  final bool showBack;
-  final VoidCallback? onBack;
-  final String backLabel;
+  final VoidCallback onOpenMenu;
   final String? blockedMessage;
 
   void _openAsset(BuildContext context, String symbol) {
@@ -107,25 +96,13 @@ class _FavoritesQuotesPaneView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final density = context.watch<DisplaySettings>().listDensity;
-    final gap = density == ListDensity.compact ? 6.0 : 10.0;
-    final controller = context.watch<QuotesListController>();
+    final gap = density == ListDensity.compact ? 4.0 : 8.0;
     final blocked = blockedMessage;
 
     return MasterDetailContentPane(
       title: title,
       subtitle: subtitle,
-      showBack: showBack,
-      onBack: onBack,
-      backLabel: backLabel,
-      trailing: ShadButton.outline(
-        size: ShadButtonSize.sm,
-        enabled: blocked == null &&
-            symbols.isNotEmpty &&
-            !controller.loading &&
-            !controller.loadingMore,
-        onPressed: controller.refresh,
-        child: const Text('Refresh'),
-      ),
+      onOpenMenu: onOpenMenu,
       body: blocked != null
           ? AppEmptyView(blocked)
           : symbols.isEmpty
@@ -141,54 +118,51 @@ class _FavoritesQuotesPaneView extends StatelessWidget {
                       for (final s in symbols)
                         if (bySymbol.containsKey(s)) bySymbol[s]!,
                     ];
-                    return QuotesRefreshBody(
-                      child: ReorderableListView.builder(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                        itemCount: ordered.length,
-                        onReorderItem: (oldIndex, newIndex) async {
-                          final next = await onReorder(oldIndex, newIndex);
-                          if (!context.mounted) return;
-                          context
-                              .read<QuotesListController>()
-                              .updateSymbols(next);
-                        },
-                        itemBuilder: (context, index) {
-                          final quote = ordered[index];
-                          return Padding(
-                            key: ValueKey(quote.symbol),
-                            padding: EdgeInsets.only(
-                              bottom: index < ordered.length - 1 ? gap : 0,
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: QuoteListTile(
-                                    quote: quote,
-                                    density: density,
-                                    onTap: () =>
-                                        _openAsset(context, quote.symbol),
+                    return ReorderableListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      itemCount: ordered.length,
+                      onReorderItem: (oldIndex, newIndex) async {
+                        final next = await onReorder(oldIndex, newIndex);
+                        if (!context.mounted) return;
+                        context
+                            .read<QuotesListController>()
+                            .updateSymbols(next);
+                      },
+                      itemBuilder: (context, index) {
+                        final quote = ordered[index];
+                        return Padding(
+                          key: ValueKey(quote.symbol),
+                          padding: EdgeInsets.only(
+                            bottom: index < ordered.length - 1 ? gap : 0,
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: QuoteListTile(
+                                  quote: quote,
+                                  density: density,
+                                  onTap: () =>
+                                      _openAsset(context, quote.symbol),
+                                ),
+                              ),
+                              ReorderableDragStartListener(
+                                index: index,
+                                child: SizedBox(
+                                  width: 44,
+                                  height: 44,
+                                  child: Icon(
+                                    LucideIcons.gripVertical,
+                                    size: 18,
+                                    color: ShadTheme.of(context)
+                                        .colorScheme
+                                        .mutedForeground,
                                   ),
                                 ),
-                                ReorderableDragStartListener(
-                                  index: index,
-                                  child: SizedBox(
-                                    width: 44,
-                                    height: 44,
-                                    child: Icon(
-                                      LucideIcons.gripVertical,
-                                      size: 18,
-                                      color: ShadTheme.of(context)
-                                          .colorScheme
-                                          .mutedForeground,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     );
                   },
                 ),

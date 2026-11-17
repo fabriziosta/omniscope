@@ -12,14 +12,10 @@ import '../../widgets/favorites_quotes_pane.dart';
 class MarketFavoritesPane extends StatelessWidget {
   const MarketFavoritesPane({
     super.key,
-    required this.showBack,
-    this.onBack,
-    this.backLabel = 'Markets',
+    required this.onOpenMenu,
   });
 
-  final bool showBack;
-  final VoidCallback? onBack;
-  final String backLabel;
+  final VoidCallback onOpenMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -40,9 +36,7 @@ class MarketFavoritesPane extends StatelessWidget {
           'or tap the star again to remove.',
       emptyMessage: AppCopy.noMarketFavorites,
       blockedMessage: noSources ? AppCopy.noMarketSourcesEnabled : null,
-      showBack: showBack,
-      onBack: onBack,
-      backLabel: backLabel,
+      onOpenMenu: onOpenMenu,
       onReorder: (oldIndex, newIndex) async {
         await favorites.reorderFavorites(oldIndex, newIndex);
         return favorites.symbols;

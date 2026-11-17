@@ -95,16 +95,13 @@ class AgentLaunchActions {
 
     final preferred = enabled.first;
     final sym = symbol?.trim();
-    final shouldAutoRun = intent.isPortfolioLevel
-        ? true
-        : (sym != null && sym.isNotEmpty);
-
+    // All in-app CTAs draft the composer; the user decides when to send.
     await openAgentChat(
       context,
       starterRoleId: preferred.id,
       initialSymbol: sym,
       initialExchangeId: exchangeId,
-      autoRun: shouldAutoRun,
+      autoRun: false,
       side: side,
       quantity: quantity,
     );

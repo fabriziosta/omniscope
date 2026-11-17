@@ -29,13 +29,6 @@ usage() {
 [[ $# -eq 1 ]] || usage
 ensure_flutter
 
-# Flutter bundles `.env` as an asset for LLM + exchange credential preload.
-# Keep a local copy (gitignored); never commit real keys.
-if [[ ! -f "$ROOT/.env" ]]; then
-  cp "$ROOT/.env.example" "$ROOT/.env"
-  echo "note: created .env from .env.example (fill in API keys locally)" >&2
-fi
-
 case "$1" in
   analyze)
     flutter analyze

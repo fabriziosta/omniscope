@@ -28,8 +28,11 @@ class ThemeSettings extends ChangeNotifier {
       _paletteId = BrandColors.defaultPaletteId;
     } else if (raw is Map) {
       final map = Map<String, dynamic>.from(raw);
-      _mode = _parseMode(map['mode'] as String?) ?? ThemeMode.system;
-      _paletteId = BrandColors.palette(map['palette'] as String?).id;
+      final modeRaw = map['mode'];
+      final paletteRaw = map['palette'];
+      _mode = _parseMode(modeRaw is String ? modeRaw : null) ?? ThemeMode.system;
+      _paletteId =
+          BrandColors.palette(paletteRaw is String ? paletteRaw : null).id;
     } else {
       _mode = ThemeMode.system;
       _paletteId = BrandColors.defaultPaletteId;

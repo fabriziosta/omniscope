@@ -8,20 +8,24 @@ import '../data/agents/agent_launch.dart';
 import '../data/market/models.dart';
 import '../data/settings/display_settings.dart';
 import '../data/settings/favorites_repository.dart';
+import '../features/agents/agent_launch_actions.dart';
 import 'agent_launch_button.dart';
+import 'app_text.dart';
 import 'app_tooltip.dart';
+import 'overflow_actions_menu.dart';
 import 'tappable_nav_row.dart';
 
 /// Shared Markets / Crypto quote row — respects [ListDensity] and [PriceFormat].
 ///
 /// Both densities keep a two-line identity (symbol + name/venue) so the row is
 /// readable before opening asset detail; compact only tightens padding/gaps.
+/// On narrow windows, secondary CTAs collapse into a ⋯ menu.
 class QuoteListTile extends StatelessWidget {
   const QuoteListTile({
     super.key,
     required this.quote,
     required this.onTap,
-    this.density = ListDensity.comfortable,
+    this.density = ListDensity.compact,
     this.cryptoExchangeId,
     this.showFavorite = true,
     this.showInvestInterest = true,
@@ -63,16 +67,23 @@ class QuoteListTile extends StatelessWidget {
         '${quote.symbol}${subtitle == null ? '' : ', $subtitle'}, '
         'price $priceText, change $changeText';
 
+    final favorites = context.watch<FavoritesRepository>();
+    final favorited = showFavorite && favorites.isFavorite(quote.symbol);
+    final investMarked =
+        showInvestInterest && favorites.isInvestInterest(quote.symbol);
+
     final favoriteButton = showFavorite
         ? _FavoriteStarButton(
             symbol: quote.symbol,
             compact: compact,
+            favorited: favorited,
           )
         : null;
     final investInterestButton = showInvestInterest
         ? _InvestInterestButton(
             symbol: quote.symbol,
             compact: compact,
+            marked: investMarked,
           )
         : null;
     final investigateButton = showInvestigate
@@ -83,22 +94,69 @@ class QuoteListTile extends StatelessWidget {
           )
         : null;
 
+    final overflowActions = <OverflowAction>[
+      if (showInvestigate) ...[
+        OverflowAction(
+          label: AgentLaunchIntent.investigate.ctaLabel,
+          icon: LucideIcons.sparkles,
+          onTap: () {
+            AgentLaunchActions.launch(
+              context,
+              intent: AgentLaunchIntent.investigate,
+              symbol: quote.symbol,
+            );
+          },
+        ),
+        OverflowAction(
+          label: AgentLaunchIntent.tradeCheck.ctaLabel,
+          icon: LucideIcons.candlestickChart,
+          onTap: () {
+            AgentLaunchActions.launch(
+              context,
+              intent: AgentLaunchIntent.tradeCheck,
+              symbol: quote.symbol,
+            );
+          },
+        ),
+      ],
+      if (showInvestInterest)
+        OverflowAction(
+          label: investMarked
+              ? 'Remove from invest interest'
+              : 'Add to invest interest',
+          icon: LucideIcons.crosshair,
+          active: investMarked,
+          onTap: () {
+            context.read<FavoritesRepository>().toggleInvestInterest(
+                  quote.symbol,
+                );
+          },
+        ),
+      if (showFavorite)
+        OverflowAction(
+          label: favorited ? 'Remove from favorites' : 'Add to favorites',
+          icon: favorited ? LucideIcons.star : LucideIcons.starOff,
+          active: favorited,
+          onTap: () {
+            context.read<FavoritesRepository>().toggleFavorite(quote.symbol);
+          },
+        ),
+    ];
+
     final leading = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
+        AppEllipsisText(
           quote.symbol,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+          maxLines: 2,
           style: theme.textTheme.large,
         ),
         if (subtitle != null) ...[
           SizedBox(height: compact ? 1 : 2),
-          Text(
+          AppEllipsisText(
             subtitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
             style: theme.textTheme.muted,
           ),
         ],
@@ -109,19 +167,13 @@ class QuoteListTile extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.end,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
+        AppMoneyText(
           priceText,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.end,
           style: theme.textTheme.large,
         ),
         SizedBox(height: compact ? 1 : 2),
-        Text(
+        AppMoneyText(
           changeText,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.end,
           style: theme.textTheme.small.copyWith(color: changeColor),
         ),
       ],
@@ -131,17 +183,17 @@ class QuoteListTile extends StatelessWidget {
       onTap: onTap,
       compact: compact,
       leading: leading,
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+      trailing: RowActionCluster(
+        actions: overflowActions,
+        inlineChildren: [
           ?investigateButton,
           ?investInterestButton,
           if (favoriteButton != null) ...[
             favoriteButton,
             SizedBox(width: compact ? 4 : 8),
           ],
-          Flexible(child: priceColumn),
         ],
+        child: priceColumn,
       ),
     );
 
@@ -157,17 +209,16 @@ class _FavoriteStarButton extends StatelessWidget {
   const _FavoriteStarButton({
     required this.symbol,
     required this.compact,
+    required this.favorited,
   });
 
   final String symbol;
   final bool compact;
+  final bool favorited;
 
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final favorited = context.select<FavoritesRepository, bool>(
-      (favorites) => favorites.isFavorite(symbol),
-    );
     final label =
         favorited ? 'Remove $symbol from favorites' : 'Add $symbol to favorites';
 
@@ -205,17 +256,16 @@ class _InvestInterestButton extends StatelessWidget {
   const _InvestInterestButton({
     required this.symbol,
     required this.compact,
+    required this.marked,
   });
 
   final String symbol;
   final bool compact;
+  final bool marked;
 
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final marked = context.select<FavoritesRepository, bool>(
-      (favorites) => favorites.isInvestInterest(symbol),
-    );
     final label = marked
         ? 'Remove $symbol from invest interest'
         : 'Add $symbol to invest interest';

@@ -2,7 +2,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscope/widgets/in_tab_back.dart';
 import 'package:omniscope/widgets/master_detail_shell.dart';
-import 'package:omniscope/widgets/nav_back_button.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 void main() {
@@ -27,8 +26,7 @@ void main() {
   });
 
   group('MasterDetailContentPane', () {
-    testWidgets('shows NavBackButton with parent label when showBack',
-        (tester) async {
+    testWidgets('shows burger menu that invokes onOpenMenu', (tester) async {
       var tapped = false;
 
       await tester.pumpWidget(
@@ -36,36 +34,18 @@ void main() {
           home: MasterDetailContentPane(
             title: 'Indices',
             subtitle: 'Grouped by exchange.',
-            showBack: true,
-            backLabel: 'Markets',
-            onBack: () => tapped = true,
+            onOpenMenu: () => tapped = true,
             body: const SizedBox.expand(),
           ),
         ),
       );
 
-      expect(find.text('Markets'), findsOneWidget);
+      expect(find.byType(MasterDetailMenuButton), findsOneWidget);
       expect(find.text('Indices'), findsOneWidget);
-      expect(find.text('Back'), findsNothing);
 
-      await tester.tap(find.byType(NavBackButton));
+      await tester.tap(find.byType(MasterDetailMenuButton));
       await tester.pump();
       expect(tapped, isTrue);
-    });
-
-    testWidgets('hides back control when showBack is false', (tester) async {
-      await tester.pumpWidget(
-        const ShadApp(
-          home: MasterDetailContentPane(
-            title: 'Indices',
-            subtitle: 'Grouped by exchange.',
-            body: SizedBox.expand(),
-          ),
-        ),
-      );
-
-      expect(find.byType(NavBackButton), findsNothing);
-      expect(find.text('Indices'), findsOneWidget);
     });
   });
 }

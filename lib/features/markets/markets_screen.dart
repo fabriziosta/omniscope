@@ -10,9 +10,7 @@ import '../../data/market/models.dart';
 import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/favorites_repository.dart';
 import '../../widgets/app_empty_view.dart';
-import '../../widgets/in_tab_back.dart';
 import '../../widgets/master_detail_shell.dart';
-import '../../widgets/tab_page_header.dart';
 import '../crypto/crypto_exchange_pairs_body.dart';
 import 'market_favorites_body.dart';
 import 'market_invest_interest_body.dart';
@@ -102,19 +100,9 @@ class MarketsScreen extends StatefulWidget {
 
 class _MarketsScreenState extends State<MarketsScreen> {
   String _selectedId = const MarketsKindDestination(MarketAssetKind.indices).id;
-  String? _narrowSelectedId;
 
-  void _select(MarketsDestination item, {required bool wide}) {
-    setState(() {
-      _selectedId = item.id;
-      if (!wide) {
-        _narrowSelectedId = item.id;
-      }
-    });
-  }
-
-  void _backToNavList() {
-    setState(() => _narrowSelectedId = null);
+  void _select(MarketsDestination item) {
+    setState(() => _selectedId = item.id);
   }
 
   MarketsDestination? _byId(List<MarketsDestination> items, String? id) {
@@ -180,9 +168,8 @@ class _MarketsScreenState extends State<MarketsScreen> {
     );
     final selected = _byId(destinations, _selectedId) ??
         (destinations.isEmpty ? null : destinations.first);
-    final narrowSelected = _byId(destinations, _narrowSelectedId);
 
-    // Keep wide selection valid when sources are toggled off.
+    // Keep selection valid when sources are toggled off.
     if (selected != null && selected.id != _selectedId) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -190,90 +177,65 @@ class _MarketsScreenState extends State<MarketsScreen> {
       });
     }
 
-    return InTabBackEffect(
-      onBack: _narrowSelectedId != null ? _backToNavList : null,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_narrowSelectedId == null)
-            const TabPageHeader(
-              title: 'Markets',
-              subtitle:
-                  'Browse by type or exchange. Star Favorites for yourself; '
-                  'mark Invest interest for agents.',
-            ),
-          Expanded(
-            child: !hasSources || selected == null
-                ? const AppEmptyView(AppCopy.noMarketSourcesEnabled)
-                : MasterDetailShell<MarketsDestination>(
-                    selected: selected,
-                    narrowSelected: narrowSelected,
-                    onNarrowBack: _backToNavList,
-                    sidebarBuilder: (context, highlighted, {required wide}) {
-                      return MasterDetailNavList(
-                        tiles: [
-                          for (final item in destinations)
-                            MasterDetailNavTile(
-                              title: item.title,
-                              meta: _metaFor(item, favorites),
-                              icon: item.icon,
-                              selected: highlighted?.id == item.id,
-                              onTap: () => _select(item, wide: wide),
-                            ),
-                        ],
-                      );
-                    },
-                    contentBuilder:
-                        (context, item, {required showBack, onBack}) {
-                      switch (item) {
-                        case MarketsFavoritesDestination():
-                          return MarketFavoritesPane(
-                            key: const ValueKey('markets-favorites'),
-                            showBack: showBack,
-                            onBack: onBack,
-                            backLabel: 'Markets',
-                          );
-                        case MarketsInvestInterestDestination():
-                          return MarketInvestInterestPane(
-                            key: const ValueKey('markets-invest-interest'),
-                            showBack: showBack,
-                            onBack: onBack,
-                            backLabel: 'Markets',
-                          );
-                        case MarketsKindDestination(:final kind):
-                          return MarketKindPane(
-                            key: ValueKey(kind),
-                            kind: kind,
-                            showBack: showBack,
-                            onBack: onBack,
-                            backLabel: 'Markets',
-                          );
-                        case MarketsCryptoDestination(:final exchangeId):
-                          CryptoExchangeClient? client;
-                          for (final c in enabledCrypto) {
-                            if (c.exchange.id == exchangeId) {
-                              client = c;
-                              break;
-                            }
-                          }
-                          if (client == null) {
-                            return const AppEmptyView(
-                              AppCopy.noCryptoExchangesEnabled,
-                            );
-                          }
-                          return CryptoExchangePairsPane(
-                            key: ValueKey(exchangeId),
-                            client: client,
-                            showBack: showBack,
-                            onBack: onBack,
-                            backLabel: 'Markets',
-                          );
-                      }
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
+    return !hasSources || selected == null
+        ? const AppEmptyView(AppCopy.noMarketSourcesEnabled)
+        : MasterDetailShell<MarketsDestination>(
+            selected: selected,
+            sidebarBuilder: (context, highlighted, {required closeNav}) {
+              return MasterDetailNavList(
+                tiles: [
+                  for (final item in destinations)
+                    MasterDetailNavTile(
+                      title: item.title,
+                      meta: _metaFor(item, favorites),
+                      icon: item.icon,
+                      selected: highlighted.id == item.id,
+                      onTap: () {
+                        _select(item);
+                        closeNav();
+                      },
+                    ),
+                ],
+              );
+            },
+            contentBuilder: (context, item, {required onOpenMenu}) {
+              switch (item) {
+                case MarketsFavoritesDestination():
+                  return MarketFavoritesPane(
+                    key: const ValueKey('markets-favorites'),
+                    onOpenMenu: onOpenMenu,
+                  );
+                case MarketsInvestInterestDestination():
+                  return MarketInvestInterestPane(
+                    key: const ValueKey('markets-invest-interest'),
+                    onOpenMenu: onOpenMenu,
+                  );
+                case MarketsKindDestination(:final kind):
+                  return MarketKindPane(
+                    key: ValueKey(kind),
+                    kind: kind,
+                    onOpenMenu: onOpenMenu,
+                  );
+                case MarketsCryptoDestination(:final exchangeId):
+                  CryptoExchangeClient? client;
+                  for (final c in enabledCrypto) {
+                    if (c.exchange.id == exchangeId) {
+                      client = c;
+                      break;
+                    }
+                  }
+                  if (client == null) {
+                    return const AppEmptyView(
+                      AppCopy.noCryptoExchangesEnabled,
+                    );
+                  }
+                  return CryptoExchangePairsPane(
+                    key: ValueKey(exchangeId),
+                    client: client,
+                    onOpenMenu: onOpenMenu,
+                  );
+              }
+            },
+          );
   }
 }

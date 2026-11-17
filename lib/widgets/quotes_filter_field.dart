@@ -59,15 +59,10 @@ class _QuotesFilterFieldState extends State<QuotesFilterField> {
     final theme = ShadTheme.of(context);
     final hasQuery = widget.controller.text.trim().isNotEmpty;
 
-    // Border only — no drop shadow (shadow paints over the list without
-    // reserving layout space and hides the first rows).
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.background,
-        border: Border(
-          bottom: BorderSide(color: theme.colorScheme.border),
-        ),
-      ),
+    // Background fill only — no bottom rule or drop shadow (shadow paints
+    // over the list without reserving layout space and hides the first rows).
+    return ColoredBox(
+      color: theme.colorScheme.background,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
         child: ConstrainedBox(

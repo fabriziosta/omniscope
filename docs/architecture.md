@@ -29,7 +29,7 @@ Non-UI packages: `http`, `shared_preferences`, `intl`, `provider`.
 
 Equities / indices use **Yahoo Finance** chart endpoints (keyless, unofficial). Crypto uses a swappable [`CryptoExchangeClient`](../lib/data/crypto/crypto_exchange_client.dart) registry; **Crypto.com Exchange** public REST is registered first. Equity brokers (e.g. **Alpaca**) register via [`VenueCatalog`](../lib/data/venues/venue_catalog.dart) for Live portfolio + agent orders — not as Markets quote sources.
 
-Optional venue API credentials: [`.env`](../.env.example) or **Settings → Data sources → Credentials**. Market data is reached through [`RoutingMarketDataClient`](../lib/data/market/routing_market_data_client.dart). Secrets and other customizations share one **`omniscope.json`**.
+Optional venue API credentials: **Settings → Data sources → Credentials**. Market data is reached through [`RoutingMarketDataClient`](../lib/data/market/routing_market_data_client.dart). Secrets and other customizations share one **`omniscope.json`**.
 
 - Data may be delayed; endpoints can change or rate-limit without notice.
 - **Web:** Yahoo’s chart host omits CORS headers; equities on Web go through a public GET proxy inside [`YahooMarketDataClient`](../lib/data/market/yahoo_market_data_client.dart). Native targets call Yahoo directly. Private broker APIs may be blocked by CORS on Web.

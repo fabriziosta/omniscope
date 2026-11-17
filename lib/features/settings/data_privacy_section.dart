@@ -337,7 +337,7 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
       title: 'Clear exchange credentials?',
       description:
           'Removes API key, secret, and token for configured exchanges '
-          'on this device (and the project .env when writable). '
+          'on this device. '
           'Public market data still works. This cannot be undone.',
       confirmLabel: 'Clear credentials',
     );

@@ -164,10 +164,12 @@ class FavoritesRepository extends ChangeNotifier {
     if (invest is List) {
       _appendUniqueTo(_investInterest, invest);
     }
+    final managedAtRaw = map['investInterestManagedAt'];
     final managedAt = DateTime.tryParse(
-      map['investInterestManagedAt'] as String? ?? '',
+      managedAtRaw is String ? managedAtRaw : '',
     );
-    final managedBy = map['investInterestManagedByRoleId'] as String?;
+    final managedByRaw = map['investInterestManagedByRoleId'];
+    final managedBy = managedByRaw is String ? managedByRaw : null;
     if (managedAt != null) {
       _investInterestManagedAt = managedAt.toUtc();
       _investInterestManagedByRoleId =

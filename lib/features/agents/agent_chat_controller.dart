@@ -59,7 +59,7 @@ class AgentChatSendBlockedNoLlm extends AgentChatSendResult {
   const AgentChatSendBlockedNoLlm();
 }
 
-/// Screen-scoped chat send / clear / confirm for one agent-agnostic thread.
+/// Screen-scoped chat send / confirm for one agent-agnostic thread.
 class AgentChatController extends ChangeNotifier {
   AgentChatController({
     required this.chatId,
@@ -305,19 +305,6 @@ class AgentChatController extends ChangeNotifier {
       kind: kind,
     );
     await _chats.append(chatId: chatId, message: userMessage);
-    await _activity.add(
-      AgentActivityEvent(
-        id: AgentActivityEvent.newId(),
-        kind: AgentActivityKind.messageSent,
-        roleId: activityRoleId ?? 'orchestrator',
-        createdAt: DateTime.now().toUtc(),
-        exchangeId: stampedId ?? liveExplainId,
-        messageId: userMessage.id,
-        symbol: symbolHint?.trim().toUpperCase(),
-        summary:
-            content.length > 120 ? '${content.substring(0, 117)}…' : content,
-      ),
-    );
 
     _sending = true;
     notifyListeners();
@@ -475,6 +462,10 @@ class AgentChatController extends ChangeNotifier {
         await investInterestRepo.upsert(pendingInvestInterest!);
       }
 
+      final selectedRoleIds = result.delegatedRoleIds.isNotEmpty
+          ? result.delegatedRoleIds
+          : const ['orchestrator'];
+
       await _chats.append(
         chatId: chatId,
         message: AgentChatMessage(
@@ -485,6 +476,7 @@ class AgentChatController extends ChangeNotifier {
           proposalId: proposal?.id ?? pendingInvestInterest?.id,
           modelId: endpoint.modelId,
           generationMs: stopwatch.elapsedMilliseconds,
+          specialtyRoleIds: selectedRoleIds,
         ),
       );
 
@@ -608,5 +600,4 @@ class AgentChatController extends ChangeNotifier {
     }
   }
 
-  Future<void> clearThread() => _chats.clearThread(chatId);
 }

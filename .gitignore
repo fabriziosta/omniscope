@@ -1,8 +1,7 @@
-# Secrets / local env (never commit API keys)
-# Copy .env.example → .env for LLM + exchange/market credentials.
+# Secrets / local env leftovers (never commit API keys)
+# App secrets live in omniscope.json — not a project .env file.
 .env
 .env.*
-!.env.example
 *.pem
 *.p12
 *.key

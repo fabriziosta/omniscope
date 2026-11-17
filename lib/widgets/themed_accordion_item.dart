@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-/// Shared separator / chevron / padding for feature accordion items.
+/// Shared chevron / padding for feature accordion items (spacing, no hairline).
 class ThemedAccordionItem<T> extends StatelessWidget {
   const ThemedAccordionItem({
     super.key,
@@ -19,10 +19,8 @@ class ThemedAccordionItem<T> extends StatelessWidget {
     final theme = ShadTheme.of(context);
     return ShadAccordionItem<T>(
       value: value,
-      separator: Container(
-        height: 1,
-        color: theme.colorScheme.border,
-      ),
+      // Omit default ShadSeparator.horizontal — vertical padding separates items.
+      separator: const SizedBox.shrink(),
       underlineTitleOnHover: false,
       padding: const EdgeInsets.symmetric(vertical: 12),
       icon: Icon(

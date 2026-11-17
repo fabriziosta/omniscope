@@ -1,7 +1,11 @@
 import 'package:flutter/widgets.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import 'app_text.dart';
 import 'app_tooltip.dart';
+
+/// Width under which the back control shows the arrow only (label in tooltip).
+const double kNavBackIconOnlyWidth = 360;
 
 /// Top-of-screen back control: primary arrow + parent label, ≥44px tap target.
 class NavBackButton extends StatelessWidget {
@@ -17,6 +21,7 @@ class NavBackButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
+    final iconOnly = MediaQuery.sizeOf(context).width < kNavBackIconOnlyWidth;
 
     return AppTooltip(
       message: 'Back to $label',
@@ -38,19 +43,20 @@ class NavBackButton extends StatelessWidget {
                     size: 18,
                     color: theme.colorScheme.primary,
                   ),
-                  const SizedBox(width: 6),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 160),
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.small.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w600,
+                  if (!iconOnly) ...[
+                    const SizedBox(width: 6),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 120),
+                      child: AppEllipsisText(
+                        label,
+                        maxLines: 1,
+                        style: theme.textTheme.small.copyWith(
+                          color: theme.colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),

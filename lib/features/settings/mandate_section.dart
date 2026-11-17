@@ -119,14 +119,15 @@ class _MandateSectionBodyState extends State<MandateSectionBody> {
           AppCopy.mandateIntro,
           style: theme.textTheme.muted,
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: settingsSectionGap),
         const SettingsSubsectionLabel(
           'Goal',
           description: 'What agents should optimize for.',
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         for (final goal in MandateGoal.values) ...[
-          if (goal != MandateGoal.values.first) const SizedBox(height: 8),
+          if (goal != MandateGoal.values.first)
+            const SizedBox(height: settingsOptionGap),
           SettingsSelectableOptionTile(
             title: goal.label,
             subtitle: goal.description,
@@ -134,14 +135,15 @@ class _MandateSectionBodyState extends State<MandateSectionBody> {
             onTap: () => mandate.setGoal(goal),
           ),
         ],
-        const SizedBox(height: 20),
+        const SizedBox(height: settingsSectionGap),
         const SettingsSubsectionLabel(
           'Horizon',
           description: 'How far ahead agents should think.',
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         for (final horizon in MandateHorizon.values) ...[
-          if (horizon != MandateHorizon.values.first) const SizedBox(height: 8),
+          if (horizon != MandateHorizon.values.first)
+            const SizedBox(height: settingsOptionGap),
           SettingsSelectableOptionTile(
             title: horizon.label,
             subtitle: horizon.description,
@@ -149,15 +151,15 @@ class _MandateSectionBodyState extends State<MandateSectionBody> {
             onTap: () => mandate.setHorizon(horizon),
           ),
         ],
-        const SizedBox(height: 20),
+        const SizedBox(height: settingsSectionGap),
         const SettingsSubsectionLabel(
           'Universe',
           description: 'Which assets agents may put in Invest interest.',
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         for (final universe in MandateUniverse.values) ...[
           if (universe != MandateUniverse.values.first)
-            const SizedBox(height: 8),
+            const SizedBox(height: settingsOptionGap),
           SettingsSelectableOptionTile(
             title: universe.label,
             subtitle: universe.description,
@@ -165,17 +167,17 @@ class _MandateSectionBodyState extends State<MandateSectionBody> {
             onTap: () => mandate.setUniverse(universe),
           ),
         ],
-        const SizedBox(height: 20),
+        const SizedBox(height: settingsSectionGap),
         const SettingsSubsectionLabel(
           'Preferred cadence',
           description:
               'Suggested schedule interval when connecting agents. '
               'Does not change existing connections.',
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         for (final interval in AgentScheduleInterval.values) ...[
           if (interval != AgentScheduleInterval.values.first)
-            const SizedBox(height: 8),
+            const SizedBox(height: settingsOptionGap),
           SettingsSelectableOptionTile(
             title: interval.label,
             subtitle: 'Run about every ${interval.label.toLowerCase()}',
@@ -183,13 +185,13 @@ class _MandateSectionBodyState extends State<MandateSectionBody> {
             onTap: () => mandate.setCadencePreference(interval),
           ),
         ],
-        const SizedBox(height: 20),
+        const SizedBox(height: settingsSectionGap),
         const SettingsSubsectionLabel(
           'Risk rails',
           description:
               'Hard caps for Invest interest size and Autopilot proposals.',
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         Text('Max invest-interest symbols', style: theme.textTheme.small),
         const SizedBox(height: 6),
         ShadInput(

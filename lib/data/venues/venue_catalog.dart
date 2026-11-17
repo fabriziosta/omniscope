@@ -14,7 +14,7 @@ import 'venue_registration.dart';
 /// `lib/data/brokers/`, then append one [VenueRegistration] in [build].
 /// **Remove a venue:** delete the folder and remove that line.
 ///
-/// Settings credentials UI, `.env` dual-sync ids, and live client fan-out all
+/// Settings credentials UI, config `secrets` ids, and live client fan-out all
 /// derive from this catalog — do not hard-code venue ids in Settings.
 class VenueCatalog {
   VenueCatalog._({
@@ -44,7 +44,7 @@ class VenueCatalog {
         for (final r in registrations) r.schema,
       ];
 
-  /// Venue ids that participate in secrets / `.env` dual-sync.
+  /// Venue ids that participate in the config `secrets` slice.
   List<String> get credentialVenueIds => [
         for (final r in registrations) r.id,
       ];
@@ -57,7 +57,7 @@ class VenueCatalog {
     'alpaca',
   ];
 
-  /// Apply Settings / `.env` credential updates to the matching live client.
+  /// Apply Settings credential updates to the matching live client.
   void applyCredentials(String exchangeId, ExchangeCredentials credentials) {
     for (final registration in registrations) {
       if (registration.id == exchangeId) {

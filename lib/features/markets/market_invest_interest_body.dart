@@ -12,14 +12,10 @@ import '../../widgets/favorites_quotes_pane.dart';
 class MarketInvestInterestPane extends StatelessWidget {
   const MarketInvestInterestPane({
     super.key,
-    required this.showBack,
-    this.onBack,
-    this.backLabel = 'Markets',
+    required this.onOpenMenu,
   });
 
-  final bool showBack;
-  final VoidCallback? onBack;
-  final String backLabel;
+  final VoidCallback onOpenMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -45,9 +41,7 @@ class MarketInvestInterestPane extends StatelessWidget {
       subtitle: subtitle,
       emptyMessage: AppCopy.noInvestInterest,
       blockedMessage: noSources ? AppCopy.noMarketSourcesEnabled : null,
-      showBack: showBack,
-      onBack: onBack,
-      backLabel: backLabel,
+      onOpenMenu: onOpenMenu,
       onReorder: (oldIndex, newIndex) async {
         await favorites.reorderInvestInterest(oldIndex, newIndex);
         return favorites.investInterestSymbols;

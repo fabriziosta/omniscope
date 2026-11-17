@@ -207,16 +207,58 @@ class AgentRolePrompts {
         roleId == 'paperPortfolioCoach';
   }
 
-  /// Label + default user prompt for the Run shortcut chip.
+  /// Placeholder ticker shown in editable starter drafts for the user to replace.
+  static const draftSymbolPlaceholder = 'SYMBOL';
+
+  /// Placeholder side shown in trading / practice coach drafts.
+  static const draftSidePlaceholder = 'buy|sell';
+
+  /// Placeholder quantity shown in trading / practice coach drafts.
+  static const draftQuantityPlaceholder = 'QUANTITY';
+
+  /// Short title for a starter card / auto-run label.
   static String runChipLabel(String roleId) {
     return switch (roleId) {
-      'marketResearch' => 'Run research',
+      'marketResearch' => 'Market research',
       'liveBalanceExplainer' => 'Explain balances',
       'portfolioGuide' => 'Review allocation',
-      'paperPortfolioCoach' => 'Coach practice',
-      'intradayTrading' => 'Run trade check',
-      _ => 'Run',
+      'paperPortfolioCoach' => 'Practice coach',
+      'intradayTrading' => 'Trade check',
+      _ => 'Starter',
     };
+  }
+
+  /// Editable composer draft for a starter (placeholders for custom values).
+  ///
+  /// Prefer [symbol] / [side] / [quantity] when known; otherwise insert
+  /// [draftSymbolPlaceholder] and related tokens the user can replace.
+  static String runUserPromptDraft({
+    required String roleId,
+    String symbol = '',
+    String? side,
+    double? quantity,
+  }) {
+    final trimmed = symbol.trim();
+    final needsSymbol = !allowsRunWithoutSymbol(roleId);
+    final withTradeExtras =
+        roleId == 'intradayTrading' || roleId == 'paperPortfolioCoach';
+    final sym = trimmed.isNotEmpty
+        ? trimmed.toUpperCase()
+        : (needsSymbol ? draftSymbolPlaceholder : '');
+    final sideDraft = (side != null && side.trim().isNotEmpty)
+        ? side.trim().toLowerCase()
+        : (withTradeExtras ? draftSidePlaceholder : null);
+    return runUserPrompt(
+      roleId: roleId,
+      symbol: sym,
+      side: sideDraft,
+      quantity: quantity != null && quantity > 0 ? quantity : null,
+      quantityPlaceholder: withTradeExtras && (quantity == null || quantity <= 0)
+          ? draftQuantityPlaceholder
+          : null,
+      forceOptionalSymbolPlaceholder:
+          allowsRunWithoutSymbol(roleId) && trimmed.isEmpty,
+    );
   }
 
   static String runUserPrompt({
@@ -224,6 +266,8 @@ class AgentRolePrompts {
     required String symbol,
     String? side,
     double? quantity,
+    String? quantityPlaceholder,
+    bool forceOptionalSymbolPlaceholder = false,
   }) {
     final sym = symbol.trim().toUpperCase();
     switch (roleId) {
@@ -235,6 +279,11 @@ class AgentRolePrompts {
         );
         if (sym.isNotEmpty) {
           buf.write(' Focus on $sym if it appears in the snapshot.');
+        } else if (forceOptionalSymbolPlaceholder) {
+          buf.write(
+            ' Focus on $draftSymbolPlaceholder if it appears in the snapshot '
+            '(or delete this sentence).',
+          );
         }
         buf.write(
           ' Cover total vs available, assets vs cash, and what is read-only '
@@ -248,6 +297,11 @@ class AgentRolePrompts {
         );
         if (sym.isNotEmpty) {
           buf.write(' Pay special attention to $sym.');
+        } else if (forceOptionalSymbolPlaceholder) {
+          buf.write(
+            ' Pay special attention to $draftSymbolPlaceholder '
+            '(or delete this sentence).',
+          );
         }
         buf.write(
           ' Cover cash vs holdings, concentration, diversification, and cash '
@@ -260,12 +314,18 @@ class AgentRolePrompts {
         );
         if (sym.isNotEmpty) {
           buf.write(' Focus on $sym.');
+        } else if (forceOptionalSymbolPlaceholder) {
+          buf.write(
+            ' Focus on $draftSymbolPlaceholder (or delete this sentence).',
+          );
         }
         if (side != null && side.trim().isNotEmpty) {
           buf.write(' Proposed side: ${side.trim().toLowerCase()}.');
         }
         if (quantity != null && quantity > 0) {
           buf.write(' Proposed quantity: $quantity.');
+        } else if (quantityPlaceholder != null) {
+          buf.write(' Proposed quantity: $quantityPlaceholder.');
         }
         buf.write(
           ' Cover practice cash, holdings, size vs cash, and average cost. '
@@ -281,6 +341,8 @@ class AgentRolePrompts {
         }
         if (quantity != null && quantity > 0) {
           buf.write(' Quantity: $quantity.');
+        } else if (quantityPlaceholder != null) {
+          buf.write(' Quantity: $quantityPlaceholder.');
         }
         buf.write(
           ' Explain risk gates and whether you would approve a suggestion. '

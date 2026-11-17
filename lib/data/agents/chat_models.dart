@@ -1,3 +1,6 @@
+import '../../core/formatting.dart';
+import 'genkit/agent_peer_delegation.dart';
+
 /// Who wrote a chat turn.
 enum AgentChatRole {
   user,
@@ -37,6 +40,7 @@ class AgentChatMessage {
     this.proposalId,
     this.modelId,
     this.generationMs,
+    this.specialtyRoleIds = const [],
   });
 
   final String id;
@@ -54,16 +58,35 @@ class AgentChatMessage {
   /// Wall-clock time spent generating this assistant turn.
   final int? generationMs;
 
-  /// Muted footer for assistant turns: `model · 1.2s`.
+  /// Specialty role ids the orchestrator middleware selected for this turn.
+  ///
+  /// Empty for user messages, legacy threads, or when the orchestrator
+  /// answered without delegating. When non-empty, order matches first
+  /// delegation calls.
+  final List<String> specialtyRoleIds;
+
+  /// Muted footer for assistant turns:
+  /// `Market Research · model · 1.2s · 5m ago`.
   String? get generationMetaLabel {
     final model = modelId?.trim();
     final ms = generationMs;
     final hasModel = model != null && model.isNotEmpty;
     final hasDuration = ms != null && ms >= 0;
-    if (!hasModel && !hasDuration) return null;
+    final specialty = specialtyRoleIds
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .map(AgentPeerDelegation.chatMetaLabel)
+        .where((label) => label.trim().isNotEmpty)
+        .join(' + ');
+    final hasSpecialty = specialty.isNotEmpty;
+    // Show a sent-at label whenever other generation meta is present.
+    final hasSentAt = hasSpecialty || hasModel || hasDuration;
+    if (!hasSentAt) return null;
     final parts = <String>[
+      if (hasSpecialty) specialty,
       if (hasModel) model,
       if (hasDuration) formatGenerationDuration(ms),
+      formatRelativeTime(createdAt),
     ];
     return parts.join(' · ');
   }
@@ -92,9 +115,15 @@ class AgentChatMessage {
         if (proposalId != null) 'proposalId': proposalId,
         if (modelId != null) 'modelId': modelId,
         if (generationMs != null) 'generationMs': generationMs,
+        if (specialtyRoleIds.isNotEmpty) 'specialtyRoleIds': specialtyRoleIds,
       };
 
   factory AgentChatMessage.fromJson(Map<String, dynamic> json) {
+    final rawRoles = json['specialtyRoleIds'] as List? ?? const [];
+    final specialtyRoleIds = <String>[
+      for (final item in rawRoles)
+        if (item is String && item.trim().isNotEmpty) item.trim(),
+    ];
     return AgentChatMessage(
       id: json['id'] as String? ?? '',
       role: AgentChatRoleX.parse(json['role'] as String?),
@@ -105,6 +134,7 @@ class AgentChatMessage {
       proposalId: json['proposalId'] as String?,
       modelId: json['modelId'] as String?,
       generationMs: (json['generationMs'] as num?)?.toInt(),
+      specialtyRoleIds: specialtyRoleIds,
     );
   }
 

@@ -50,7 +50,7 @@ make check               # analyze + test (same as pre-push)
 
 Underlying Flutter commands still work: `flutter pub get`, `flutter run -d linux`, `flutter analyze`, `flutter test`.
 
-Copy [`.env.example`](../.env.example) → `.env` for local LLM / exchange keys. **Never commit `.env` or real secrets.**
+Add LLM / exchange keys in **Settings → Connections** / **Credentials** (stored in `omniscope.json`). **Never commit API keys or a filled config file.** For `make venue-canary` portfolio probes, export `OMNISCOPE_*` in the process environment or rely on keys already saved in the local config.
 
 ## Pre-commit / pre-push hooks
 

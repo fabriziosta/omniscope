@@ -12,54 +12,26 @@ import 'settings_option_tiles.dart';
 class AppearanceSectionBody extends StatelessWidget {
   const AppearanceSectionBody({super.key});
 
-  static const _themeOptions = <(ThemeMode, String, String)>[
-    (ThemeMode.system, 'System', 'Match the device setting'),
-    (ThemeMode.light, 'Light', 'Always use the light theme'),
-    (ThemeMode.dark, 'Dark', 'Always use the dark theme'),
+  static const _themeOptions = <(ThemeMode, String)>[
+    (ThemeMode.system, 'System'),
+    (ThemeMode.light, 'Light'),
+    (ThemeMode.dark, 'Dark'),
   ];
 
-  static const _densityOptions = <(ListDensity, String, String)>[
-    (
-      ListDensity.comfortable,
-      'Comfortable',
-      'Larger rows with name and source',
-    ),
-    (
-      ListDensity.compact,
-      'Compact',
-      'Tighter rows for longer Markets lists',
-    ),
+  static const _densityOptions = <(ListDensity, String)>[
+    (ListDensity.comfortable, 'Comfortable'),
+    (ListDensity.compact, 'Compact'),
   ];
 
-  static const _priceOptions = <(PriceFormat, String, String)>[
-    (
-      PriceFormat.full,
-      'Full',
-      'Always show full currency amounts',
-    ),
-    (
-      PriceFormat.compact,
-      'Compact',
-      'Shorten larger prices (for example \$12.35K)',
-    ),
+  static const _priceOptions = <(PriceFormat, String)>[
+    (PriceFormat.full, 'Full'),
+    (PriceFormat.compact, 'Compact'),
   ];
 
-  static const _chartOptions = <(ChartRangePreset, String, String)>[
-    (
-      ChartRangePreset.oneMonth,
-      '1M',
-      'One month of daily history when you open an asset',
-    ),
-    (
-      ChartRangePreset.threeMonths,
-      '3M',
-      'Three months of daily history when you open an asset',
-    ),
-    (
-      ChartRangePreset.oneYear,
-      '1Y',
-      'One year of daily history when you open an asset',
-    ),
+  static const _chartOptions = <(ChartRangePreset, String)>[
+    (ChartRangePreset.oneMonth, '1M'),
+    (ChartRangePreset.threeMonths, '3M'),
+    (ChartRangePreset.oneYear, '1Y'),
   ];
 
   @override
@@ -72,84 +44,67 @@ class AppearanceSectionBody extends StatelessWidget {
       children: [
         const SettingsSubsectionLabel(
           'Brightness',
-          description: 'Light, dark, or follow the device. Works with any color set.',
+          description:
+              'Light, dark, or follow the device. Works with any color set.',
         ),
-        const SizedBox(height: 10),
-        for (var i = 0; i < _themeOptions.length; i++) ...[
-          if (i > 0) const SizedBox(height: 8),
-          SettingsSelectableOptionTile(
-            title: _themeOptions[i].$2,
-            subtitle: _themeOptions[i].$3,
-            selected: themeSettings.mode == _themeOptions[i].$1,
-            onTap: () => themeSettings.setMode(_themeOptions[i].$1),
-          ),
-        ],
-        const SizedBox(height: 20),
+        const SizedBox(height: 8),
+        SettingsChoiceChips<ThemeMode>(
+          options: _themeOptions,
+          value: themeSettings.mode,
+          onChanged: themeSettings.setMode,
+        ),
+        const SizedBox(height: settingsSectionGap),
         const SettingsSubsectionLabel(
           'Color set',
           description:
               'Brand accents for buttons, icons, and chrome. '
               'Gain and loss numbers stay green and red in every set.',
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         for (var i = 0; i < BrandColors.all.length; i++) ...[
-          if (i > 0) const SizedBox(height: 8),
+          if (i > 0) const SizedBox(height: settingsOptionGap),
           _PaletteOptionTile(
             palette: BrandColors.all[i],
             selected: themeSettings.paletteId == BrandColors.all[i].id,
             onTap: () => themeSettings.setPaletteId(BrandColors.all[i].id),
           ),
         ],
-        const SizedBox(height: 20),
+        const SizedBox(height: settingsSectionGap),
         const SettingsSubsectionLabel(
           'Lists',
           description: 'How dense Markets list rows look.',
         ),
-        const SizedBox(height: 10),
-        for (var i = 0; i < _densityOptions.length; i++) ...[
-          if (i > 0) const SizedBox(height: 8),
-          SettingsSelectableOptionTile(
-            title: _densityOptions[i].$2,
-            subtitle: _densityOptions[i].$3,
-            selected: displaySettings.listDensity == _densityOptions[i].$1,
-            onTap: () =>
-                displaySettings.setListDensity(_densityOptions[i].$1),
-          ),
-        ],
-        const SizedBox(height: 20),
+        const SizedBox(height: 8),
+        SettingsChoiceChips<ListDensity>(
+          options: _densityOptions,
+          value: displaySettings.listDensity,
+          onChanged: displaySettings.setListDensity,
+        ),
+        const SizedBox(height: settingsSectionGap),
         const SettingsSubsectionLabel(
           'Numbers',
           description:
               'How prices appear in Markets, Portfolio, and Asset detail.',
         ),
-        const SizedBox(height: 10),
-        for (var i = 0; i < _priceOptions.length; i++) ...[
-          if (i > 0) const SizedBox(height: 8),
-          SettingsSelectableOptionTile(
-            title: _priceOptions[i].$2,
-            subtitle: _priceOptions[i].$3,
-            selected: displaySettings.priceFormat == _priceOptions[i].$1,
-            onTap: () => displaySettings.setPriceFormat(_priceOptions[i].$1),
-          ),
-        ],
-        const SizedBox(height: 20),
+        const SizedBox(height: 8),
+        SettingsChoiceChips<PriceFormat>(
+          options: _priceOptions,
+          value: displaySettings.priceFormat,
+          onChanged: displaySettings.setPriceFormat,
+        ),
+        const SizedBox(height: settingsSectionGap),
         const SettingsSubsectionLabel(
           'Charts',
           description:
-              'Default history range when you open an asset. You can still change it on the chart.',
+              'Default history range when you open an asset. '
+              'You can still change it on the chart.',
         ),
-        const SizedBox(height: 10),
-        for (var i = 0; i < _chartOptions.length; i++) ...[
-          if (i > 0) const SizedBox(height: 8),
-          SettingsSelectableOptionTile(
-            title: _chartOptions[i].$2,
-            subtitle: _chartOptions[i].$3,
-            selected:
-                displaySettings.defaultChartRange == _chartOptions[i].$1,
-            onTap: () =>
-                displaySettings.setDefaultChartRange(_chartOptions[i].$1),
-          ),
-        ],
+        const SizedBox(height: 8),
+        SettingsChoiceChips<ChartRangePreset>(
+          options: _chartOptions,
+          value: displaySettings.defaultChartRange,
+          onChanged: displaySettings.setDefaultChartRange,
+        ),
       ],
     );
   }
@@ -192,7 +147,7 @@ class _PaletteOptionTile extends StatelessWidget {
               borderRadius: theme.radius,
             ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(
                 children: [
                   _PaletteSwatches(
@@ -200,25 +155,27 @@ class _PaletteOptionTile extends StatelessWidget {
                     secondary: swatchSecondary,
                     border: swatchBorder,
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           palette.label,
-                          style: theme.textTheme.large.copyWith(
+                          style: theme.textTheme.p.copyWith(
                             color: foreground,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 1),
                         Text(
                           palette.description,
-                          style: theme.textTheme.muted.copyWith(
+                          style: theme.textTheme.small.copyWith(
                             color: selected
                                 ? theme.colorScheme.secondaryForeground
                                     .withValues(alpha: 0.8)
-                                : null,
+                                : theme.colorScheme.mutedForeground,
                           ),
                         ),
                       ],
@@ -227,7 +184,7 @@ class _PaletteOptionTile extends StatelessWidget {
                   if (selected)
                     Icon(
                       LucideIcons.check,
-                      size: 18,
+                      size: 16,
                       color: theme.colorScheme.secondaryForeground,
                     ),
                 ],
@@ -255,23 +212,23 @@ class _PaletteSwatches extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
     return SizedBox(
-      width: 52,
-      height: 28,
+      width: 46,
+      height: 22,
       child: Stack(
         children: [
           Positioned(
             left: 0,
-            top: 2,
+            top: 1,
             child: _Dot(color: primary, outline: theme.colorScheme.border),
           ),
           Positioned(
-            left: 14,
-            top: 2,
+            left: 12,
+            top: 1,
             child: _Dot(color: secondary, outline: border),
           ),
           Positioned(
-            left: 28,
-            top: 2,
+            left: 24,
+            top: 1,
             child: _Dot(color: border, outline: theme.colorScheme.border),
           ),
         ],
@@ -289,8 +246,8 @@ class _Dot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 24,
-      height: 24,
+      width: 20,
+      height: 20,
       decoration: BoxDecoration(
         color: color,
         shape: BoxShape.circle,

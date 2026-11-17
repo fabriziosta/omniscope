@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:omniscope/core/formatting.dart';
 import 'package:omniscope/data/agents/agent_chat_repository.dart';
 import 'package:omniscope/data/agents/agent_role_prompts.dart';
 import 'package:omniscope/data/agents/chat_models.dart';
@@ -337,7 +338,33 @@ void main() {
       );
       expect(
         AgentRolePrompts.runChipLabel('paperPortfolioCoach'),
-        'Coach practice',
+        'Practice coach',
+      );
+      expect(
+        AgentRolePrompts.runChipLabel('marketResearch'),
+        'Market research',
+      );
+      expect(
+        AgentRolePrompts.runUserPromptDraft(roleId: 'marketResearch'),
+        allOf(
+          contains(AgentRolePrompts.draftSymbolPlaceholder),
+          contains('plain-language research brief'),
+        ),
+      );
+      expect(
+        AgentRolePrompts.runUserPromptDraft(
+          roleId: 'intradayTrading',
+          symbol: 'msft',
+        ),
+        allOf(
+          contains('MSFT'),
+          contains(AgentRolePrompts.draftSidePlaceholder),
+          contains(AgentRolePrompts.draftQuantityPlaceholder),
+        ),
+      );
+      expect(
+        AgentRolePrompts.runUserPromptDraft(roleId: 'portfolioGuide'),
+        contains(AgentRolePrompts.draftSymbolPlaceholder),
       );
       expect(AgentRolePrompts.supportsTradeProposals('liveBalanceExplainer'), isFalse);
       expect(AgentRolePrompts.usesLiveBalanceContext('liveBalanceExplainer'), isTrue);
@@ -397,24 +424,41 @@ void main() {
   });
 
   group('AgentChatMessage generation meta', () {
-    test('formats duration and joins model · time', () {
+    test('formats duration and joins specialty · model · time', () {
       expect(AgentChatMessage.formatGenerationDuration(842), '842ms');
       expect(AgentChatMessage.formatGenerationDuration(1200), '1.2s');
       expect(AgentChatMessage.formatGenerationDuration(10500), '11s');
       expect(AgentChatMessage.formatGenerationDuration(65000), '1m 5s');
 
+      final sentAt = DateTime.utc(2026, 1, 1, 12);
+      final whenLabel = formatRelativeTime(sentAt);
       final labeled = AgentChatMessage(
         id: 'a1',
         role: AgentChatRole.assistant,
         content: 'Hello',
-        createdAt: DateTime.utc(2026, 1, 1),
+        createdAt: sentAt,
         modelId: 'gemini-2.0-flash',
         generationMs: 1200,
+        specialtyRoleIds: const ['marketResearch'],
       );
-      expect(labeled.generationMetaLabel, 'gemini-2.0-flash · 1.2s');
+      expect(
+        labeled.generationMetaLabel,
+        'Market Research · gemini-2.0-flash · 1.2s · $whenLabel',
+      );
       expect(
         AgentChatMessage(
           id: 'a2',
+          role: AgentChatRole.assistant,
+          content: 'Hi',
+          createdAt: sentAt,
+          modelId: 'gemini-2.0-flash',
+          generationMs: 1200,
+        ).generationMetaLabel,
+        'gemini-2.0-flash · 1.2s · $whenLabel',
+      );
+      expect(
+        AgentChatMessage(
+          id: 'a3',
           role: AgentChatRole.assistant,
           content: 'Hi',
           createdAt: DateTime.utc(2026, 1, 1),

@@ -35,9 +35,6 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Ensure .env
-        run: cp .env.example .env
-
       - name: Pub get
         run: flutter pub get
 
@@ -63,9 +60,6 @@ jobs:
         with:
           channel: stable
           cache: true
-
-      - name: Ensure .env
-        run: cp .env.example .env
 
       - name: Pub get
         run: flutter pub get

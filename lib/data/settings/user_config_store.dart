@@ -122,6 +122,9 @@ class UserConfigStore extends ChangeNotifier {
     if (UserConfigDefaults.mergeInto(_document)) {
       shouldPersist = true;
     }
+    if (UserConfigDefaults.sanitizeInto(_document)) {
+      shouldPersist = true;
+    }
 
     if (shouldPersist) {
       await _persistImmediate();
@@ -162,6 +165,7 @@ class UserConfigStore extends ChangeNotifier {
       _document[UserConfigKeys.version] = UserConfigKeys.currentVersion;
     }
     UserConfigDefaults.mergeInto(_document);
+    UserConfigDefaults.sanitizeInto(_document);
     await _persistImmediate();
     notifyListeners();
   }

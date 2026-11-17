@@ -35,12 +35,12 @@ class DataSourcesSectionBody extends StatelessWidget {
               'Choose which sources fetch indices, ETFs, and stocks. '
               'More providers can be added later.',
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         if (equityRegistry.all.isEmpty)
           Text('No market providers registered.', style: theme.textTheme.muted)
         else
           for (var i = 0; i < equityRegistry.all.length; i++) ...[
-            if (i > 0) const SizedBox(height: 8),
+            if (i > 0) const SizedBox(height: settingsOptionGap),
             SettingsDataSourceToggleTile(
               title: equityRegistry.all[i].source.displayName,
               subtitle: equityRegistry.all[i].source.description.isEmpty
@@ -55,14 +55,14 @@ class DataSourcesSectionBody extends StatelessWidget {
               ),
             ),
           ],
-        const SizedBox(height: 20),
+        const SizedBox(height: settingsSectionGap),
         const SettingsSubsectionLabel(
           'Crypto venues',
           description:
               'Choose which exchanges appear under Markets and supply live '
               'quotes. Credentials below unlock Live balances and trading.',
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         if (cryptoRegistry.exchanges.isEmpty)
           Text(
             'No crypto exchanges registered.',
@@ -70,7 +70,7 @@ class DataSourcesSectionBody extends StatelessWidget {
           )
         else
           for (var i = 0; i < cryptoRegistry.exchanges.length; i++) ...[
-            if (i > 0) const SizedBox(height: 8),
+            if (i > 0) const SizedBox(height: settingsOptionGap),
             SettingsDataSourceToggleTile(
               title: cryptoRegistry.exchanges[i].exchange.displayName,
               subtitle:
@@ -85,14 +85,14 @@ class DataSourcesSectionBody extends StatelessWidget {
               ),
             ),
           ],
-        const SizedBox(height: 20),
+        const SizedBox(height: settingsSectionGap),
         const SettingsSubsectionLabel(
           'Brokers',
           description:
               'Equity brokers for Live portfolio balances and agent Confirm / '
               'Autopilot. Quotes still come from market providers above.',
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         if (brokerRegistry.brokers.isEmpty)
           Text(
             'No brokers registered.',
@@ -100,7 +100,7 @@ class DataSourcesSectionBody extends StatelessWidget {
           )
         else
           for (var i = 0; i < brokerRegistry.brokers.length; i++) ...[
-            if (i > 0) const SizedBox(height: 8),
+            if (i > 0) const SizedBox(height: settingsOptionGap),
             SettingsDataSourceToggleTile(
               title: brokerRegistry.brokers[i].broker.displayName,
               subtitle: brokerRegistry.brokers[i].broker.description.isEmpty
@@ -115,17 +115,17 @@ class DataSourcesSectionBody extends StatelessWidget {
               ),
             ),
           ],
-        const SizedBox(height: 20),
+        const SizedBox(height: settingsSectionGap),
         const SettingsSubsectionLabel(
           'Credentials',
           description:
               'Optional. Key + secret unlock Live balances on Portfolio and '
               'live order placement for agent Confirm / Autopilot. '
-              'Suggested from .env when present; saving writes back when possible.',
+              'Saved in your omniscope.json config on this device.',
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         for (var i = 0; i < venueCatalog.credentialSchemas.length; i++) ...[
-          if (i > 0) const SizedBox(height: 8),
+          if (i > 0) const SizedBox(height: settingsOptionGap),
           _VenueCredentialsCard(schema: venueCatalog.credentialSchemas[i]),
         ],
       ],
@@ -146,7 +146,6 @@ class _VenueCredentialsCard extends StatelessWidget {
       builder: (context) => _VenueCredentialsDialog(
         schema: schema,
         initial: initial,
-        canWriteEnvFile: secrets.canWriteEnvFile,
       ),
     );
     if (result == null || !context.mounted) return;
@@ -235,12 +234,10 @@ class _VenueCredentialsDialog extends StatefulWidget {
   const _VenueCredentialsDialog({
     required this.schema,
     required this.initial,
-    required this.canWriteEnvFile,
   });
 
   final VenueCredentialSchema schema;
   final ExchangeCredentials initial;
-  final bool canWriteEnvFile;
 
   @override
   State<_VenueCredentialsDialog> createState() =>
@@ -297,9 +294,8 @@ class _VenueCredentialsDialogState extends State<_VenueCredentialsDialog> {
     return ShadDialog(
       title: Text('${schema.displayName} credentials'),
       description: Text(
-        'Suggested from .env when present. '
         'Key and secret unlock Live balances and agent trade suggestions. '
-        '${widget.canWriteEnvFile ? 'Saving also updates the project .env file.' : 'Saving keeps keys on this device (project .env write unavailable here).'}',
+        'Saving keeps keys on this device in your omniscope.json config.',
       ),
       actions: [
         if (suggested)

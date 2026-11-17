@@ -27,6 +27,6 @@ Packages start **private** on first publish; set visibility under the repo’s *
 
 ## Sync rules
 
-Do not bake secrets into the image (builder copies `.env.example` for the asset requirement).
+Do not bake secrets into the image.
 
 Whenever Linux OS packages (builder or runtime), Flutter install channel/flags used in the Containerfile, or the Linux bundle packaging path change, update [`Containerfile`](../Containerfile) in the **same** change. Keep the Fedora build list in [`development.md`](development.md) and CI `apt-get` Linux deps consistent with the builder stage. Do not leave the image definition stale.

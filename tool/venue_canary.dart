@@ -1,9 +1,10 @@
 // Live venue / market-data canary — runs through Omniscope Dart adapters.
 //
 // Public probes always run. Private portfolio probes run only when the
-// matching OMNISCOPE_* credentials are present in `.env`. Never places orders.
+// matching OMNISCOPE_* credentials are present in the process environment
+// or the local omniscope.json `secrets` slice. Never places orders.
 //
-// Invoke via Flutter (this package imports dart:ui through Yahoo / dotenv):
+// Invoke via Flutter (this package imports dart:ui through Yahoo):
 //   make venue-canary
 //   flutter test test/venue_canary_test.dart
 //
@@ -14,12 +15,13 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
-import 'package:omniscope/core/dotenv_asset.dart';
+import 'package:omniscope/core/user_config_file.dart';
 import 'package:omniscope/data/brokers/alpaca/alpaca_exchange_client.dart';
 import 'package:omniscope/data/crypto/crypto_com/crypto_com_exchange_client.dart';
 import 'package:omniscope/data/market/exchange_credentials.dart';
 import 'package:omniscope/data/market/market_data_client.dart';
 import 'package:omniscope/data/market/yahoo_market_data_client.dart';
+import 'package:omniscope/data/settings/user_config_keys.dart';
 import 'package:omniscope/data/venues/venue_catalog.dart';
 
 enum ProbeStatus { ok, httpError, parseError, skipped }
@@ -52,7 +54,7 @@ Future<int> runVenueCanary({
 }) async {
   void write(String line) => (log ?? stdout.writeln)(line);
 
-  final envValues = _loadEnvValues();
+  final envValues = await _loadCredentialValues();
   ExchangeCredentialsConfig.defaultExchangeIds =
       VenueCatalog.knownCredentialVenueIds;
   final creds = ExchangeCredentialsConfig.fromValues(envValues);
@@ -130,14 +132,49 @@ String markdownTable(List<ProbeResult> results) {
   return buf.toString();
 }
 
-Map<String, String> _loadEnvValues() {
-  for (final path in ['.env', '.env.example']) {
-    final file = File(path);
-    if (file.existsSync()) {
-      return DotEnvAsset.parse(file.readAsStringSync());
-    }
+/// Process `OMNISCOPE_*` env vars, then fill gaps from omniscope.json secrets.
+Future<Map<String, String>> _loadCredentialValues() async {
+  final values = <String, String>{};
+  for (final entry in Platform.environment.entries) {
+    if (!entry.key.startsWith('OMNISCOPE_')) continue;
+    final trimmed = entry.value.trim();
+    if (trimmed.isEmpty) continue;
+    values[entry.key] = trimmed;
   }
-  return const {};
+
+  final configSecrets = await _readOmniscopeJsonSecrets();
+  for (final entry in configSecrets.entries) {
+    if (!entry.key.startsWith('OMNISCOPE_')) continue;
+    final existing = values[entry.key];
+    if (existing != null && existing.isNotEmpty) continue;
+    final trimmed = entry.value.trim();
+    if (trimmed.isEmpty) continue;
+    values[entry.key] = trimmed;
+  }
+  return values;
+}
+
+Future<Map<String, String>> _readOmniscopeJsonSecrets() async {
+  if (!UserConfigFile.supportsFilesystem) return const {};
+  final path = await UserConfigFile.defaultPath();
+  if (path == null || path.isEmpty) return const {};
+  final raw = await UserConfigFile.read(path);
+  if (raw == null || raw.isEmpty) return const {};
+  try {
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map) return const {};
+    final secrets = decoded[UserConfigKeys.secrets];
+    if (secrets is! Map) return const {};
+    final out = <String, String>{};
+    for (final entry in secrets.entries) {
+      final key = entry.key.toString();
+      final value = entry.value?.toString() ?? '';
+      if (key.isNotEmpty) out[key] = value;
+    }
+    return out;
+  } catch (_) {
+    return const {};
+  }
 }
 
 Future<List<ProbeResult>> _probeYahoo(YahooMarketDataClient client) async {

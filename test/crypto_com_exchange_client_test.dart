@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:omniscope/core/dotenv_asset.dart';
 import 'package:omniscope/data/crypto/crypto_com/crypto_com_exchange_client.dart';
 import 'package:omniscope/data/market/exchange_credentials.dart';
 import 'package:omniscope/data/market/market_data_client.dart';
@@ -11,15 +10,13 @@ import 'package:omniscope/data/market/market_data_client.dart';
 import 'support/venue_http_fixtures.dart';
 
 void main() {
-  test('loads Crypto.com credentials from shared .env values', () {
-    const raw = '''
-OMNISCOPE_CRYPTO_COM_API_KEY=cdc-key
-OMNISCOPE_CRYPTO_COM_API_SECRET="cdc-secret"
-OMNISCOPE_CRYPTO_COM_API_TOKEN='cdc-token'
-OMNISCOPE_OPENAI_API_KEY=sk-openai
-''';
-    final values = DotEnvAsset.parse(raw);
-    final config = ExchangeCredentialsConfig.fromValues(values);
+  test('loads Crypto.com credentials from secrets map values', () {
+    final config = ExchangeCredentialsConfig.fromValues({
+      'OMNISCOPE_CRYPTO_COM_API_KEY': 'cdc-key',
+      'OMNISCOPE_CRYPTO_COM_API_SECRET': 'cdc-secret',
+      'OMNISCOPE_CRYPTO_COM_API_TOKEN': 'cdc-token',
+      'OMNISCOPE_OPENAI_API_KEY': 'sk-openai',
+    });
     final creds = config.forId('crypto_com');
     expect(creds.apiKey, 'cdc-key');
     expect(creds.apiSecret, 'cdc-secret');

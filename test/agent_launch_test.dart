@@ -7,6 +7,7 @@ import 'package:omniscope/data/agents/agent_app_settings.dart';
 import 'package:omniscope/data/agents/agent_chat_repository.dart';
 import 'package:omniscope/data/agents/agent_launch.dart';
 import 'package:omniscope/data/agents/agent_role_catalog.dart';
+import 'package:omniscope/data/agents/agent_role_prompts.dart';
 import 'package:omniscope/data/agents/agents_repository.dart';
 import 'package:omniscope/data/agents/genkit/genkit_agent_runner.dart';
 import 'package:omniscope/data/agents/invest_interest_proposal_repository.dart';
@@ -24,6 +25,7 @@ import 'package:omniscope/data/settings/mandate_settings.dart';
 import 'package:omniscope/data/trading/broker_exchange_registry.dart';
 import 'package:omniscope/data/trading/trade_executor.dart';
 import 'package:omniscope/features/agents/agent_chat_screen.dart';
+import 'package:omniscope/features/agents/agent_launch_actions.dart';
 import 'package:omniscope/features/agents/agents_screen.dart';
 import 'package:omniscope/widgets/agent_launch_button.dart';
 import 'package:provider/provider.dart';
@@ -155,8 +157,8 @@ void main() {
 
   });
 
-  testWidgets('Investigate opens chat and auto-runs with LLM key configured',
-      (tester) async {
+  Future<({int Function() agentCallCount, ShellNavigationController shellNav})>
+      _pumpLaunchHarness(WidgetTester tester) async {
     final store = await memoryConfig();
     final agentRoles = await AgentRoleCatalog.load();
     final agents = AgentsRepository(store: store, roleCatalog: agentRoles);
@@ -203,9 +205,14 @@ void main() {
         return 'Brief';
       },
     );
+    final shellNav = ShellNavigationController();
 
     await tester.binding.setSurfaceSize(const Size(390, 844));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      await tester.binding.setSurfaceSize(null);
+    });
 
     await tester.pumpWidget(
       MultiProvider(
@@ -231,8 +238,8 @@ void main() {
           ),
           ChangeNotifierProvider<EnvSecretsRepository>.value(value: secrets),
           Provider<GenkitAgentRunner>.value(value: agentRunner),
-          ChangeNotifierProvider<ShellNavigationController>(
-            create: (_) => ShellNavigationController(),
+          ChangeNotifierProvider<ShellNavigationController>.value(
+            value: shellNav,
           ),
         ],
         child: ShadApp(
@@ -245,9 +252,48 @@ void main() {
                     const Expanded(child: AgentsScreen()),
                     Padding(
                       padding: const EdgeInsets.all(8),
-                      child: AgentLaunchButton(
-                        symbol: 'AAPL',
-                        intent: AgentLaunchIntent.investigate,
+                      child: Wrap(
+                        spacing: 8,
+                        children: [
+                          ShadButton(
+                            onPressed: () {
+                              AgentLaunchActions.launch(
+                                context,
+                                intent: AgentLaunchIntent.investigate,
+                                symbol: 'AAPL',
+                              );
+                            },
+                            child: const Text('Launch investigate'),
+                          ),
+                          ShadButton(
+                            onPressed: () {
+                              AgentLaunchActions.launch(
+                                context,
+                                intent: AgentLaunchIntent.tradeCheck,
+                                symbol: 'AAPL',
+                              );
+                            },
+                            child: const Text('Launch trade'),
+                          ),
+                          ShadButton(
+                            onPressed: () {
+                              AgentLaunchActions.launch(
+                                context,
+                                intent: AgentLaunchIntent.explainPortfolio,
+                              );
+                            },
+                            child: const Text('Launch allocation'),
+                          ),
+                          ShadButton(
+                            onPressed: () {
+                              AgentLaunchActions.launch(
+                                context,
+                                intent: AgentLaunchIntent.paperReview,
+                              );
+                            },
+                            child: const Text('Launch coach'),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -263,16 +309,102 @@ void main() {
       ),
     );
     await tester.pump();
+    return (agentCallCount: () => agentCalls, shellNav: shellNav);
+  }
 
-    await tester.tap(find.text('Investigate'));
-    await tester.pump();
-    // createChat + shell pending open + auto-run
+  Future<void> _expectComposerDraft(
+    WidgetTester tester, {
+    required String roleId,
+    String symbol = '',
+    required int Function() agentCallCount,
+  }) async {
     for (var i = 0; i < 20; i++) {
       await tester.pump(const Duration(milliseconds: 50));
     }
-
+    final draft = AgentRolePrompts.runUserPromptDraft(
+      roleId: roleId,
+      symbol: symbol,
+    );
     expect(find.byType(AgentChatScreen), findsOneWidget);
-    expect(find.textContaining('Investigate AAPL'), findsOneWidget);
-    expect(agentCalls, greaterThan(0));
+    final inputs = tester.widgetList<ShadInput>(find.byType(ShadInput));
+    final composer = inputs.cast<ShadInput?>().firstWhere(
+          (input) => input?.controller?.text == draft,
+          orElse: () => null,
+        );
+    expect(composer, isNotNull);
+    expect(composer!.controller!.text, draft);
+    expect(agentCallCount(), 0);
+  }
+
+  testWidgets('Investigate CTA shows Investigate and Trade check menu',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(
+      ShadApp(
+        theme: ShadThemeData(
+          brightness: Brightness.light,
+          colorScheme: BrandColors.lightScheme(),
+        ),
+        home: const ColoredBox(
+          color: Color(0xFFFFFFFF),
+          child: Center(
+            child: AgentLaunchButton(
+              symbol: 'AAPL',
+              intent: AgentLaunchIntent.investigate,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Investigate'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Investigate'), findsWidgets);
+    expect(find.text('Trade check'), findsOneWidget);
+  });
+
+  testWidgets(
+      'in-app launches draft composer without sending (research/trade/allocation/coach)',
+      (tester) async {
+    final harness = await _pumpLaunchHarness(tester);
+
+    await tester.tap(find.text('Launch investigate'));
+    await _expectComposerDraft(
+      tester,
+      roleId: 'marketResearch',
+      symbol: 'AAPL',
+      agentCallCount: harness.agentCallCount,
+    );
+
+    await tester.tap(find.text('Launch trade'));
+    await _expectComposerDraft(
+      tester,
+      roleId: 'intradayTrading',
+      symbol: 'AAPL',
+      agentCallCount: harness.agentCallCount,
+    );
+
+    await tester.tap(find.text('Launch allocation'));
+    await _expectComposerDraft(
+      tester,
+      roleId: 'portfolioGuide',
+      agentCallCount: harness.agentCallCount,
+    );
+
+    await tester.tap(find.text('Launch coach'));
+    await _expectComposerDraft(
+      tester,
+      roleId: 'paperPortfolioCoach',
+      agentCallCount: harness.agentCallCount,
+    );
   });
 }

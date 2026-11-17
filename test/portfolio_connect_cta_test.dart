@@ -17,6 +17,7 @@ import 'package:omniscope/data/settings/env_secrets_repository.dart';
 import 'package:omniscope/data/trading/broker_exchange_registry.dart';
 import 'package:omniscope/data/trading/order_models.dart';
 import 'package:omniscope/features/portfolio/portfolio_screen.dart';
+import 'package:omniscope/widgets/master_detail_shell.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -90,8 +91,8 @@ void main() {
     await dataSources.load();
     final displaySettings = DisplaySettings(store: store);
     await displaySettings.load();
-    final envSecrets = EnvSecretsRepository(store: store, syncEnvFile: false);
-    await envSecrets.load(additionalBootstrap: const {});
+    final envSecrets = EnvSecretsRepository(store: store);
+    await envSecrets.load();
     final shellNav = ShellNavigationController();
 
     await tester.binding.setSurfaceSize(const Size(390, 844));
@@ -132,6 +133,10 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
+
+    // Connect CTA lives in the overlay nav drawer.
+    await tester.tap(find.byType(MasterDetailMenuButton));
+    await tester.pumpAndSettle();
 
     expect(find.text(AppCopy.connectLivePortfolioTitle), findsOneWidget);
     expect(find.text(AppCopy.connectLivePortfolioCta), findsOneWidget);

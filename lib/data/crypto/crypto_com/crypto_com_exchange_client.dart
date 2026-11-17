@@ -17,9 +17,9 @@ import '../exchange_portfolio.dart';
 /// Crypto.com Exchange REST adapter.
 ///
 /// Public market data (tickers / candlesticks) needs no key. Optional
-/// [credentials] from `.env` (`OMNISCOPE_CRYPTO_COM_API_KEY` / `_SECRET` /
-/// `_TOKEN`) enable authenticated portfolio via `private/user-balance` and
-/// live orders via `private/create-order`.
+/// [credentials] from config secrets (`OMNISCOPE_CRYPTO_COM_API_KEY` /
+/// `_SECRET` / `_TOKEN`) enable authenticated portfolio via
+/// `private/user-balance` and live orders via `private/create-order`.
 ///
 /// Base: `https://api.crypto.com/exchange/v1/`
 /// - `GET /public/get-tickers`
@@ -109,11 +109,11 @@ class CryptoComExchangeClient implements CryptoExchangeClient {
   @override
   String get displayName => exchange.displayName;
 
-  /// Local credentials (`.env` / Settings UI; may be empty for public endpoints).
+  /// Local credentials (config secrets / Settings UI; may be empty for public endpoints).
   @override
   ExchangeCredentials get credentials => _credentials;
 
-  /// Refresh credentials without recreating the client (Settings dual-sync).
+  /// Refresh credentials without recreating the client (Settings updates).
   @override
   void setCredentials(ExchangeCredentials value) {
     _credentials = value;

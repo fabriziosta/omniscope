@@ -19,12 +19,40 @@ import '../../data/trading/trade_executor.dart';
 import '../../data/trading/trade_proposal_actions.dart';
 import '../../widgets/agent_launch_button.dart';
 import '../../widgets/app_empty_view.dart';
+import '../../widgets/app_toast.dart';
 import '../../widgets/in_tab_back.dart';
-import '../../widgets/tab_page_header.dart';
+import '../../widgets/master_detail_shell.dart';
+
+/// Sidebar destinations for Activity. Only one body is mounted at a time.
+enum ActivityNavSection {
+  pending,
+  history,
+}
+
+extension ActivityNavSectionX on ActivityNavSection {
+  String get title => switch (this) {
+        ActivityNavSection.pending => 'Pending',
+        ActivityNavSection.history => 'History',
+      };
+
+  String get subtitle => switch (this) {
+        ActivityNavSection.pending =>
+          'Open a chat to Confirm or Dismiss pending suggestions.',
+        ActivityNavSection.history =>
+          'Completed and non-actionable agent operations.',
+      };
+
+  IconData get icon => switch (this) {
+        ActivityNavSection.pending => LucideIcons.circleDot,
+        ActivityNavSection.history => LucideIcons.history,
+      };
+}
 
 /// Shell tab: historical archive of agent discoveries and operations.
 class ActivityScreen extends StatefulWidget {
   const ActivityScreen({super.key});
+
+  static const wideBreakpoint = MasterDetailShell.wideBreakpointDefault;
 
   @override
   State<ActivityScreen> createState() => _ActivityScreenState();
@@ -32,9 +60,18 @@ class ActivityScreen extends StatefulWidget {
 
 class _ActivityScreenState extends State<ActivityScreen> {
   ShellNavigationController? _shellNav;
+  ActivityNavSection? _section;
   String? _selectedProposalId;
   String? _filterPortfolioId;
   TradeProposalStatus? _filterStatus;
+
+  static const _statusFilters = <TradeProposalStatus?>[
+    null,
+    TradeProposalStatus.pending,
+    TradeProposalStatus.executed,
+    TradeProposalStatus.dismissed,
+    TradeProposalStatus.failed,
+  ];
 
   @override
   void didChangeDependencies() {
@@ -67,7 +104,37 @@ class _ActivityScreenState extends State<ActivityScreen> {
     }
     final proposalId = shellNav.takePendingActivityProposalId();
     if (proposalId == null || proposalId.isEmpty) return;
-    setState(() => _selectedProposalId = proposalId);
+
+    final proposals = context.read<TradeProposalRepository>();
+    final investInterest = context.read<InvestInterestProposalRepository>();
+    final trade = proposals.byId(proposalId);
+    final invest = investInterest.byId(proposalId);
+    final section = _sectionForProposal(trade: trade, invest: invest);
+
+    setState(() {
+      _selectedProposalId = proposalId;
+      if (section != null) _section = section;
+    });
+  }
+
+  ActivityNavSection? _sectionForProposal({
+    TradeProposal? trade,
+    InvestInterestProposal? invest,
+  }) {
+    if (invest != null) {
+      return invest.status == InvestInterestProposalStatus.pending
+          ? ActivityNavSection.pending
+          : ActivityNavSection.history;
+    }
+    if (trade != null) {
+      final pendingActionable = trade.status == TradeProposalStatus.pending &&
+          trade.side != TradeProposalSide.hold &&
+          trade.quantity > 0;
+      return pendingActionable
+          ? ActivityNavSection.pending
+          : ActivityNavSection.history;
+    }
+    return null;
   }
 
   TradeProposalActions _actions(BuildContext context) {
@@ -90,30 +157,43 @@ class _ActivityScreenState extends State<ActivityScreen> {
     return actions.portfolioDisplayName(exchangeId);
   }
 
-  Future<void> _openChat({
+  String _statusFilterLabel(TradeProposalStatus? s) {
+    if (s == null) return 'All status';
+    return s.dashboardLabel;
+  }
+
+  void _openChat({
     required String roleId,
     String? chatId,
     String? sourceMessageId,
-  }) async {
+  }) {
     final chats = context.read<AgentChatRepository>();
-    final shellNav = context.read<ShellNavigationController>();
     final existing = chats.findThread(
       chatId: chatId,
       sourceMessageId: sourceMessageId,
     );
-    if (existing != null) {
-      shellNav.goToAgentChat(
-        chatId: existing.chatId,
-        starterRoleId: roleId,
+    if (existing == null) {
+      showAppToast(
+        context,
+        description: 'That chat no longer exists on this device.',
       );
       return;
     }
-    final thread = await chats.createChat(title: roleId);
-    if (!mounted) return;
-    shellNav.goToAgentChat(
-      chatId: thread.chatId,
-      starterRoleId: roleId,
-    );
+    context.read<ShellNavigationController>().goToAgentChat(
+          chatId: existing.chatId,
+          starterRoleId: roleId,
+        );
+  }
+
+  /// Operation timeline only — exclude chat-message noise.
+  List<AgentActivityEvent> _operationEvents(
+    AgentActivityRepository activity,
+    String proposalId,
+  ) {
+    return [
+      for (final e in activity.forProposal(proposalId))
+        if (e.kind != AgentActivityKind.messageSent) e,
+    ];
   }
 
   bool _matchesFilters(TradeProposal p) {
@@ -177,13 +257,16 @@ class _ActivityScreenState extends State<ActivityScreen> {
             _matchesFilters(p))
           p,
     ];
-    final events = [
-      for (final e in activity.events)
-        if (_filterPortfolioId == null ||
-            e.exchangeId == null ||
-            e.exchangeId == _filterPortfolioId)
-          e,
-    ];
+    final historyTrades = [...history, ...pendingNonActionable];
+
+    final pendingCount = pending.length + pendingInvestInterest.length;
+    final historyCount =
+        historyTrades.length + investInterestHistory.length;
+    final hasPending = pendingCount > 0;
+    final section = _section ??
+        (hasPending
+            ? ActivityNavSection.pending
+            : ActivityNavSection.history);
 
     final selectedTrade = _selectedProposalId == null
         ? null
@@ -193,16 +276,17 @@ class _ActivityScreenState extends State<ActivityScreen> {
         : investInterest.byId(_selectedProposalId!);
     final hasSelection =
         selectedTrade != null || selectedInvestInterest != null;
-
     final showDetailOnly = !splitWide && hasSelection;
+    final hasAnyData = proposals.proposals.isNotEmpty ||
+        investInterest.proposals.isNotEmpty;
 
-    Widget detailForSelection() {
+    Widget detailForSelection({required bool withBack}) {
       if (selectedInvestInterest != null) {
         return _InvestInterestDetail(
           proposal: selectedInvestInterest,
-          events: activity.forProposal(selectedInvestInterest.id),
+          events: _operationEvents(activity, selectedInvestInterest.id),
           roleTitle: _roleTitle(agents, selectedInvestInterest.roleId),
-          onBack: showDetailOnly
+          onBack: withBack
               ? () => setState(() => _selectedProposalId = null)
               : null,
           onOpenChat: () => _openChat(
@@ -215,10 +299,10 @@ class _ActivityScreenState extends State<ActivityScreen> {
       final selected = selectedTrade!;
       return _ProposalDetail(
         proposal: selected,
-        events: activity.forProposal(selected.id),
+        events: _operationEvents(activity, selected.id),
         roleTitle: _roleTitle(agents, selected.roleId),
         portfolioLabel: _portfolioLabel(actions, selected.exchangeId),
-        onBack: showDetailOnly
+        onBack: withBack
             ? () => setState(() => _selectedProposalId = null)
             : null,
         onOpenChat: () => _openChat(
@@ -229,45 +313,100 @@ class _ActivityScreenState extends State<ActivityScreen> {
       );
     }
 
-    return InTabBackEffect(
-      onBack: showDetailOnly
-          ? () => setState(() => _selectedProposalId = null)
-          : null,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (!showDetailOnly)
-            const TabPageHeader(
-              title: 'Activity',
-              subtitle:
-                  'Archive of agent discoveries and operations. Open a chat '
-                  'to confirm pending suggestions.',
-              subtitleSpacing: 6,
+    return MasterDetailShell<ActivityNavSection>(
+      selected: section,
+      sidebarBuilder: (context, highlighted, {required closeNav}) {
+        final venues = actions.tradableVenues;
+        return MasterDetailNavList(
+          tiles: [
+            for (final dest in ActivityNavSection.values)
+              MasterDetailNavTile(
+                title: dest.title,
+                icon: dest.icon,
+                meta: switch (dest) {
+                  ActivityNavSection.pending => '$pendingCount',
+                  ActivityNavSection.history => '$historyCount',
+                },
+                selected: highlighted == dest,
+                onTap: () {
+                  setState(() {
+                    _section = dest;
+                    if (!splitWide) _selectedProposalId = null;
+                  });
+                  closeNav();
+                },
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 14, 4, 4),
+              child: Text(
+                'Status',
+                style: theme.textTheme.small.copyWith(
+                  color: theme.colorScheme.mutedForeground,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
-          Expanded(
-            child: showDetailOnly
-                ? detailForSelection()
-                : _buildSplitOrList(
-                    theme: theme,
-                    agents: agents,
-                    actions: actions,
-                    activity: activity,
-                    pending: pending,
-                    pendingInvestInterest: pendingInvestInterest,
-                    history: [...history, ...pendingNonActionable],
-                    investInterestHistory: investInterestHistory,
-                    events: events,
-                    selectedId: _selectedProposalId,
-                    selectedTrade: selectedTrade,
-                    selectedInvestInterest: selectedInvestInterest,
-                    splitWide: splitWide,
-                    hasAnyData: proposals.proposals.isNotEmpty ||
-                        investInterest.proposals.isNotEmpty ||
-                        activity.events.isNotEmpty,
-                  ),
+            for (final s in _statusFilters)
+              MasterDetailNavTile(
+                title: _statusFilterLabel(s),
+                selected: _filterStatus == s,
+                onTap: () => setState(() => _filterStatus = s),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 14, 4, 4),
+              child: Text(
+                'Portfolio',
+                style: theme.textTheme.small.copyWith(
+                  color: theme.colorScheme.mutedForeground,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            MasterDetailNavTile(
+              title: 'All portfolios',
+              selected: _filterPortfolioId == null,
+              onTap: () => setState(() => _filterPortfolioId = null),
+            ),
+            for (final v in venues)
+              MasterDetailNavTile(
+                title: v.displayName,
+                selected: _filterPortfolioId == v.id,
+                onTap: () => setState(() => _filterPortfolioId = v.id),
+              ),
+          ],
+        );
+      },
+      contentBuilder: (context, selectedSection, {required onOpenMenu}) {
+        if (showDetailOnly) {
+          return InTabBackEffect(
+            onBack: () => setState(() => _selectedProposalId = null),
+            child: detailForSelection(withBack: true),
+          );
+        }
+
+        return MasterDetailContentPane(
+          key: ValueKey(selectedSection),
+          title: selectedSection.title,
+          subtitle: selectedSection.subtitle,
+          onOpenMenu: onOpenMenu,
+          body: _buildSplitOrList(
+            theme: theme,
+            agents: agents,
+            actions: actions,
+            activity: activity,
+            section: selectedSection,
+            pending: pending,
+            pendingInvestInterest: pendingInvestInterest,
+            history: historyTrades,
+            investInterestHistory: investInterestHistory,
+            selectedId: _selectedProposalId,
+            selectedTrade: selectedTrade,
+            selectedInvestInterest: selectedInvestInterest,
+            splitWide: splitWide,
+            hasAnyData: hasAnyData,
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -276,11 +415,11 @@ class _ActivityScreenState extends State<ActivityScreen> {
     required AgentsRepository agents,
     required TradeProposalActions actions,
     required AgentActivityRepository activity,
+    required ActivityNavSection section,
     required List<TradeProposal> pending,
     required List<InvestInterestProposal> pendingInvestInterest,
     required List<TradeProposal> history,
     required List<InvestInterestProposal> investInterestHistory,
-    required List<AgentActivityEvent> events,
     required String? selectedId,
     required TradeProposal? selectedTrade,
     required InvestInterestProposal? selectedInvestInterest,
@@ -288,18 +427,13 @@ class _ActivityScreenState extends State<ActivityScreen> {
     required bool hasAnyData,
   }) {
     final list = _ActivityList(
-      actions: actions,
+      section: section,
       pending: pending,
       pendingInvestInterest: pendingInvestInterest,
       history: history,
       investInterestHistory: investInterestHistory,
-      events: events,
       selectedId: selectedId,
-      filterPortfolioId: _filterPortfolioId,
-      filterStatus: _filterStatus,
       hasAnyData: hasAnyData,
-      onFilterPortfolio: (id) => setState(() => _filterPortfolioId = id),
-      onFilterStatus: (s) => setState(() => _filterStatus = s),
       onSelect: (id) => setState(() => _selectedProposalId = id),
       roleTitle: (roleId) => _roleTitle(agents, roleId),
       portfolioLabel: (exchangeId) =>
@@ -312,7 +446,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
     if (selectedInvestInterest != null) {
       detail = _InvestInterestDetail(
         proposal: selectedInvestInterest,
-        events: activity.forProposal(selectedInvestInterest.id),
+        events: _operationEvents(activity, selectedInvestInterest.id),
         roleTitle: _roleTitle(agents, selectedInvestInterest.roleId),
         onOpenChat: () => _openChat(
           roleId: selectedInvestInterest.roleId,
@@ -323,7 +457,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
     } else if (selectedTrade != null) {
       detail = _ProposalDetail(
         proposal: selectedTrade,
-        events: activity.forProposal(selectedTrade.id),
+        events: _operationEvents(activity, selectedTrade.id),
         roleTitle: _roleTitle(agents, selectedTrade.roleId),
         portfolioLabel: _portfolioLabel(actions, selectedTrade.exchangeId),
         onOpenChat: () => _openChat(
@@ -354,120 +488,56 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
 class _ActivityList extends StatelessWidget {
   const _ActivityList({
-    required this.actions,
+    required this.section,
     required this.pending,
     required this.pendingInvestInterest,
     required this.history,
     required this.investInterestHistory,
-    required this.events,
     required this.selectedId,
-    required this.filterPortfolioId,
-    required this.filterStatus,
     required this.hasAnyData,
-    required this.onFilterPortfolio,
-    required this.onFilterStatus,
     required this.onSelect,
     required this.roleTitle,
     required this.portfolioLabel,
   });
 
-  final TradeProposalActions actions;
+  final ActivityNavSection section;
   final List<TradeProposal> pending;
   final List<InvestInterestProposal> pendingInvestInterest;
   final List<TradeProposal> history;
   final List<InvestInterestProposal> investInterestHistory;
-  final List<AgentActivityEvent> events;
   final String? selectedId;
-  final String? filterPortfolioId;
-  final TradeProposalStatus? filterStatus;
   final bool hasAnyData;
-  final ValueChanged<String?> onFilterPortfolio;
-  final ValueChanged<TradeProposalStatus?> onFilterStatus;
   final ValueChanged<String> onSelect;
   final String Function(String roleId) roleTitle;
   final String Function(String exchangeId) portfolioLabel;
 
-  static const _statusFilters = <TradeProposalStatus?>[
-    null,
-    TradeProposalStatus.pending,
-    TradeProposalStatus.executed,
-    TradeProposalStatus.dismissed,
-    TradeProposalStatus.failed,
-  ];
-
-  String _statusChipLabel(TradeProposalStatus? s) {
-    if (s == null) return 'All status';
-    return s.dashboardLabel;
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final venues = actions.tradableVenues;
 
     if (!hasAnyData) {
       return const AppEmptyView(
         'No agent operations yet. Start a chat on Agents and Run a symbol — '
-        'discoveries and trade history appear here.',
+        'pending and completed operations appear here.',
       );
     }
 
-    final pendingEmpty = pending.isEmpty && pendingInvestInterest.isEmpty;
-    final historyEmpty = history.isEmpty && investInterestHistory.isEmpty;
+    final showingPending = section == ActivityNavSection.pending;
+    final itemsEmpty = showingPending
+        ? pending.isEmpty && pendingInvestInterest.isEmpty
+        : history.isEmpty && investInterestHistory.isEmpty;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
       children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final s in _statusFilters)
-              _FilterChip(
-                label: _statusChipLabel(s),
-                selected: filterStatus == s,
-                onTap: () => onFilterStatus(s),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _FilterChip(
-              label: 'All portfolios',
-              selected: filterPortfolioId == null,
-              onTap: () => onFilterPortfolio(null),
-            ),
-            for (final v in venues)
-              _FilterChip(
-                label: v.displayName,
-                selected: filterPortfolioId == v.id,
-                onTap: () => onFilterPortfolio(v.id),
-              ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        Text(
-          'Awaiting chat confirmation',
-          style: theme.textTheme.large,
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Open the chat to Confirm or Dismiss.',
-          style: theme.textTheme.muted,
-        ),
-        const SizedBox(height: 8),
-        if (pendingEmpty)
+        if (itemsEmpty)
           Text(
-            filterStatus != null &&
-                    filterStatus != TradeProposalStatus.pending
-                ? 'No pending ops match these filters.'
-                : 'Nothing waiting for confirmation.',
+            showingPending
+                ? 'Nothing waiting for confirmation.'
+                : 'No past operations yet.',
             style: theme.textTheme.muted,
           )
-        else ...[
+        else if (showingPending) ...[
           for (final p in pendingInvestInterest) ...[
             _InvestInterestTile(
               proposal: p,
@@ -487,16 +557,7 @@ class _ActivityList extends StatelessWidget {
             ),
             const SizedBox(height: 8),
           ],
-        ],
-        const SizedBox(height: 16),
-        Text('History', style: theme.textTheme.large),
-        const SizedBox(height: 8),
-        if (historyEmpty)
-          Text(
-            'No past operations yet.',
-            style: theme.textTheme.muted,
-          )
-        else ...[
+        ] else ...[
           for (final p in investInterestHistory) ...[
             _InvestInterestTile(
               proposal: p,
@@ -517,69 +578,7 @@ class _ActivityList extends StatelessWidget {
             const SizedBox(height: 8),
           ],
         ],
-        const SizedBox(height: 16),
-        Text('Recent events', style: theme.textTheme.large),
-        const SizedBox(height: 8),
-        if (events.isEmpty)
-          Text(
-            'No events logged yet.',
-            style: theme.textTheme.muted,
-          )
-        else
-          for (final e in events.take(40)) ...[
-            _EventTile(
-              event: e,
-              roleTitle: roleTitle(e.roleId),
-              portfolioLabel: e.exchangeId == null
-                  ? null
-                  : portfolioLabel(e.exchangeId!),
-              onTap: e.proposalId == null
-                  ? null
-                  : () => onSelect(e.proposalId!),
-            ),
-            const SizedBox(height: 6),
-          ],
       ],
-    );
-  }
-}
-
-class _FilterChip extends StatelessWidget {
-  const _FilterChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 44, maxWidth: 220),
-      child: ShadButton.raw(
-        variant:
-            selected ? ShadButtonVariant.secondary : ShadButtonVariant.outline,
-        size: ShadButtonSize.sm,
-        onPressed: onTap,
-        // ShadButton's inner Row gives Text unbounded width; Flexible lets
-        // ellipsis kick in when the chip hits maxWidth.
-        child: Flexible(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.small.copyWith(
-              color: selected
-                  ? theme.colorScheme.secondaryForeground
-                  : theme.colorScheme.foreground,
-            ),
-          ),
-        ),
-      ),
     );
   }
 }

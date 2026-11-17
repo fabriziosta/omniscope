@@ -94,6 +94,22 @@ Uri? wikipediaUrl({required String symbol}) {
   );
 }
 
+/// Humanized Wikipedia title for search / labels, or null when unmapped.
+///
+/// Example: `Apple_Inc.` → `Apple Inc.`; drops parenthetical disambiguators.
+String? wikipediaDisplayName(String symbol) {
+  final key = symbol.trim().toUpperCase();
+  if (key.isEmpty) return null;
+  final title = _wikipediaTitles[key];
+  if (title == null || title.isEmpty) return null;
+  var label = title.replaceAll('_', ' ');
+  final paren = label.indexOf(' (');
+  if (paren > 0) {
+    label = label.substring(0, paren);
+  }
+  return label.trim().isEmpty ? null : label.trim();
+}
+
 /// Google Finance quote URL, or search fallback when mapping is unknown.
 Uri googleFinanceUrl({required String symbol, String? exchange}) {
   final sym = symbol.trim();

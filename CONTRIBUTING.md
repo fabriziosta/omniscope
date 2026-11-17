@@ -26,15 +26,16 @@ before larger changes (UI kit, market data, agents, portfolio).
 ```bash
 git clone https://github.com/fabriziosta/omniscope.git
 cd omniscope
-make get                 # flutter pub get + ensure .env from .env.example
+make get                 # flutter pub get
 make hooks               # install pre-commit + pre-push (recommended)
 make check               # analyze + test
 make run                 # DEVICE=linux by default
 # make run DEVICE=chrome
 ```
 
-Copy [`.env.example`](.env.example) → `.env` for local LLM / exchange keys.
-**Never commit `.env` or real secrets.**
+Add LLM / exchange keys in the app under **Settings → Connections** and
+**Settings → Data sources → Credentials** (saved in `omniscope.json`).
+**Never commit API keys or a filled config file.**
 
 ## Development norms
 

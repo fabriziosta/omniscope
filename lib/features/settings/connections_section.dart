@@ -41,7 +41,7 @@ class ConnectionsSectionBody extends StatelessWidget {
       children: [
         Text(
           'LLM keys, models, and exchange credentials stay on this '
-          'device only (and in the project .env when writable). Nothing is '
+          'device only (in your omniscope.json config). Nothing is '
           'sent to an Omniscope server.',
           style: theme.textTheme.muted,
         ),

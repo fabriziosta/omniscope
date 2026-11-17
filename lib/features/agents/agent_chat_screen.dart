@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../core/brand_colors.dart';
+import '../../core/fade_page_route.dart';
+import '../../core/material_compat.dart' show SelectionArea;
 import '../../core/shell_navigation.dart';
 import '../../data/agents/agent_activity_repository.dart';
 import '../../data/agents/agent_app_settings.dart';
@@ -11,6 +13,7 @@ import '../../data/agents/agent_chat_repository.dart';
 import '../../data/agents/agent_role_prompts.dart';
 import '../../data/agents/agents_repository.dart';
 import '../../data/agents/chat_models.dart';
+import '../../data/agents/models.dart';
 import '../../data/agents/genkit/genkit_agent_runner.dart';
 import '../../data/agents/invest_interest_proposal.dart';
 import '../../data/agents/invest_interest_proposal_repository.dart';
@@ -18,6 +21,7 @@ import '../../data/agents/llm_runtime_settings.dart';
 import '../../data/agents/trade_proposal.dart';
 import '../../data/agents/trade_proposal_repository.dart';
 import '../../data/crypto/crypto_exchange_registry.dart';
+import '../../data/market/known_app_symbols.dart';
 import '../../data/market/market_data_client.dart';
 import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/data_source_settings.dart';
@@ -28,13 +32,14 @@ import '../../data/settings/settings_listen_keys.dart';
 import '../../data/trading/broker_exchange_registry.dart';
 import '../../data/trading/trade_executor.dart';
 import '../../widgets/agent_markdown_body.dart';
-import '../../widgets/app_confirm_dialog.dart';
 import '../../widgets/app_empty_view.dart';
 import '../../widgets/app_progress.dart';
+import '../../widgets/app_text.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/app_tooltip.dart';
 import '../../widgets/portfolio_picker_dialog.dart';
 import '../../widgets/subscreen_app_bar.dart';
+import '../asset_detail/asset_detail_screen.dart';
 import 'agent_chat_controller.dart';
 
 class AgentChatScreen extends StatelessWidget {
@@ -47,9 +52,7 @@ class AgentChatScreen extends StatelessWidget {
     this.initialSide,
     this.initialQuantity,
     this.starterRoleId,
-    this.showBack = true,
-    this.onBack,
-    this.backLabel = 'Agents',
+    this.onOpenMenu,
   });
 
   final String chatId;
@@ -69,10 +72,8 @@ class AgentChatScreen extends StatelessWidget {
   /// Catalog role id for auto-run / preferred starter (optional).
   final String? starterRoleId;
 
-  /// When false, hide Back (wide master–detail). Narrow uses [onBack].
-  final bool showBack;
-  final VoidCallback? onBack;
-  final String backLabel;
+  /// Opens the Agents chat list overlay (master–detail embedding).
+  final VoidCallback? onOpenMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -106,9 +107,7 @@ class AgentChatScreen extends StatelessWidget {
         initialSide: initialSide,
         initialQuantity: initialQuantity,
         starterRoleId: starterRoleId,
-        showBack: showBack,
-        onBack: onBack,
-        backLabel: backLabel,
+        onOpenMenu: onOpenMenu,
       ),
     );
   }
@@ -123,9 +122,7 @@ class _AgentChatView extends StatefulWidget {
     this.initialSide,
     this.initialQuantity,
     this.starterRoleId,
-    this.showBack = true,
-    this.onBack,
-    this.backLabel = 'Agents',
+    this.onOpenMenu,
   });
 
   final String chatId;
@@ -135,9 +132,7 @@ class _AgentChatView extends StatefulWidget {
   final String? initialSide;
   final double? initialQuantity;
   final String? starterRoleId;
-  final bool showBack;
-  final VoidCallback? onBack;
-  final String backLabel;
+  final VoidCallback? onOpenMenu;
 
   @override
   State<_AgentChatView> createState() => _AgentChatViewState();
@@ -145,13 +140,18 @@ class _AgentChatView extends StatefulWidget {
 
 class _AgentChatViewState extends State<_AgentChatView> {
   final _composer = TextEditingController();
+  final _composerFocus = FocusNode();
   final _scrollController = ScrollController();
   var _autoRunStarted = false;
+  var _draftLaunchStarted = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeAutoRun());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _maybeAutoRun();
+      _maybeDraftLaunch();
+    });
   }
 
   Future<void> _maybeAutoRun() async {
@@ -174,9 +174,20 @@ class _AgentChatViewState extends State<_AgentChatView> {
     await _handleSendResult(result);
   }
 
+  /// Prefill the composer from a deep-link launch without sending.
+  void _maybeDraftLaunch() {
+    if (_draftLaunchStarted || !mounted) return;
+    if (widget.autoRun) return;
+    final roleId = widget.starterRoleId?.trim();
+    if (roleId == null || roleId.isEmpty) return;
+    _draftLaunchStarted = true;
+    _draftStarter(roleId);
+  }
+
   @override
   void dispose() {
     _composer.dispose();
+    _composerFocus.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -237,54 +248,18 @@ class _AgentChatViewState extends State<_AgentChatView> {
     await _handleSendResult(result);
   }
 
-  Future<void> _runStarter(String roleId) async {
-    final controller = context.read<AgentChatController>();
-    if (controller.sending) return;
-    if (roleId == 'intradayTrading' && !controller.hasTradableExchange) {
-      await _handleSendResult(const AgentChatSendBlockedNoExchange());
-      return;
-    }
-    if (AgentRolePrompts.allowsRunWithoutSymbol(roleId)) {
-      final sendResult = await controller.sendStarter(
-        roleId: roleId,
-        symbol: widget.initialSymbol?.trim() ?? '',
-        exchangeId: widget.initialExchangeId,
-        side: widget.initialSide,
-        quantity: widget.initialQuantity,
-      );
-      await _handleSendResult(sendResult);
-      return;
-    }
-    final result = await showShadDialog<_RunSheetResult>(
-      context: context,
-      builder: (context) => _RunAgentDialog(
-        roleId: roleId,
-        initialSymbol: widget.initialSymbol,
-      ),
-    );
-    if (result == null || !mounted) return;
-    final sendResult = await controller.sendStarter(
+  void _draftStarter(String roleId) {
+    final draft = AgentRolePrompts.runUserPromptDraft(
       roleId: roleId,
-      symbol: result.symbol,
-      exchangeId: widget.initialExchangeId,
-      side: result.side,
-      quantity: result.quantity,
+      symbol: widget.initialSymbol?.trim() ?? '',
+      side: widget.initialSide,
+      quantity: widget.initialQuantity,
     );
-    await _handleSendResult(sendResult);
-  }
-
-  Future<void> _confirmClear() async {
-    final ok = await confirmDestructiveAction(
-      context,
-      title: 'Clear this chat?',
-      description:
-          'Removes the saved conversation on this device. '
-          'This cannot be undone.',
-      confirmLabel: 'Clear',
+    _composer.value = TextEditingValue(
+      text: draft,
+      selection: TextSelection.collapsed(offset: draft.length),
     );
-    if (ok && mounted) {
-      await context.read<AgentChatController>().clearThread();
-    }
+    _composerFocus.requestFocus();
   }
 
   Future<void> _copyToClipboard(
@@ -395,14 +370,11 @@ class _AgentChatViewState extends State<_AgentChatView> {
           children: [
             SubscreenAppBar(
               title: thread.title,
-              showBack: widget.showBack,
-              onBack: widget.onBack,
-              backLabel: widget.backLabel,
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (thread.messages.isNotEmpty)
-                    AppTooltip(
+              showBack: false,
+              onOpenMenu: widget.onOpenMenu,
+              titleAlign: TextAlign.start,
+              trailing: thread.messages.isNotEmpty
+                  ? AppTooltip(
                       message: 'Copy chat',
                       child: ShadButton.ghost(
                         size: ShadButtonSize.sm,
@@ -412,14 +384,8 @@ class _AgentChatViewState extends State<_AgentChatView> {
                         onPressed: () => _copyChat(thread),
                         child: const Icon(LucideIcons.copy, size: 16),
                       ),
-                    ),
-                  ShadButton.ghost(
-                    size: ShadButtonSize.sm,
-                    onPressed: sending ? null : _confirmClear,
-                    child: const Text('Clear'),
-                  ),
-                ],
-              ),
+                    )
+                  : null,
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -433,105 +399,224 @@ class _AgentChatViewState extends State<_AgentChatView> {
             ),
             Expanded(
               child: thread.messages.isEmpty
-                  ? AppEmptyView(
-                      ready
-                          ? 'Start a conversation — ask anything, or tap a '
-                              'starter prompt below.'
-                          : 'Configure a provider key first, then come back.',
-                    )
-                  : ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                      itemCount: thread.messages.length,
-                      itemBuilder: (context, index) {
-                        final message = thread.messages[index];
-                        TradeProposal? tradeProposal;
-                        InvestInterestProposal? investProposal;
-                        final pid = message.proposalId;
-                        if (pid != null) {
-                          tradeProposal = proposals.byId(pid);
-                          investProposal = investInterest.byId(pid);
-                        }
-                        final tradePending = tradeProposal != null &&
-                            tradeProposal.status == TradeProposalStatus.pending;
-                        final investPending = investProposal != null &&
-                            investProposal.status ==
-                                InvestInterestProposalStatus.pending;
-                        return _ChatBubble(
-                          message: message,
-                          proposal: tradeProposal,
-                          investInterestProposal: investProposal,
-                          busy: controller.actingOnProposal,
-                          onConfirm: tradePending
-                              ? () => _confirmProposal(tradeProposal!)
-                              : investPending
-                                  ? () =>
-                                      _confirmInvestInterest(investProposal!)
-                                  : null,
-                          onDismiss: tradePending
-                              ? () => _dismissProposal(tradeProposal!)
-                              : investPending
-                                  ? () =>
-                                      _dismissInvestInterest(investProposal!)
-                                  : null,
-                        );
-                      },
+                  ? (ready && starters.isNotEmpty
+                      ? _StarterPromptList(
+                          roles: starters,
+                          enabled: !sending,
+                          initialSymbol: widget.initialSymbol,
+                          initialSide: widget.initialSide,
+                          initialQuantity: widget.initialQuantity,
+                          onSelect: _draftStarter,
+                        )
+                      : AppEmptyView(
+                          ready
+                              ? 'Start a conversation — ask anything below.'
+                              : 'Configure a provider key first, then come back.',
+                        ))
+                  // Own [SelectionArea] so message text stays selectable even
+                  // though the tab route also wraps chrome (composer / sidebar)
+                  // in a parent SelectionArea that competes for gestures.
+                  : SelectionArea(
+                      child: ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                        itemCount: thread.messages.length,
+                        itemBuilder: (context, index) {
+                          final message = thread.messages[index];
+                          TradeProposal? tradeProposal;
+                          InvestInterestProposal? investProposal;
+                          final pid = message.proposalId;
+                          if (pid != null) {
+                            tradeProposal = proposals.byId(pid);
+                            investProposal = investInterest.byId(pid);
+                          }
+                          final tradePending = tradeProposal != null &&
+                              tradeProposal.status ==
+                                  TradeProposalStatus.pending;
+                          final investPending = investProposal != null &&
+                              investProposal.status ==
+                                  InvestInterestProposalStatus.pending;
+                          return _ChatBubble(
+                            message: message,
+                            proposal: tradeProposal,
+                            investInterestProposal: investProposal,
+                            busy: controller.actingOnProposal,
+                            onConfirm: tradePending
+                                ? () => _confirmProposal(tradeProposal!)
+                                : investPending
+                                    ? () => _confirmInvestInterest(
+                                          investProposal!,
+                                        )
+                                    : null,
+                            onDismiss: tradePending
+                                ? () => _dismissProposal(tradeProposal!)
+                                : investPending
+                                    ? () => _dismissInvestInterest(
+                                          investProposal!,
+                                        )
+                                    : null,
+                          );
+                        },
+                      ),
                     ),
             ),
-            if (sending)
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: AppProgress(),
-              ),
-            if (ready &&
-                starters.isNotEmpty &&
-                thread.messages.isEmpty)
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Row(
-                  children: [
-                    for (var i = 0; i < starters.length; i++) ...[
-                      if (i > 0) const SizedBox(width: 8),
-                      ShadButton.outline(
-                        size: ShadButtonSize.sm,
-                        enabled: !sending,
-                        onPressed: () => _runStarter(starters[i].id),
-                        child: Text(
-                          AgentRolePrompts.runChipLabel(starters[i].id),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
+            // Keep composer out of the route-level SelectionArea so
+            // EditableText does not steal message selection.
+            SelectionContainer.disabled(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: ShadInput(
-                      controller: _composer,
-                      placeholder: const Text('Message…'),
-                      onSubmitted: (_) {
-                        if (!sending && ready) _sendFreeform();
-                      },
+                  if (sending)
+                    const Padding(
+                      padding:
+                          EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: AppProgress(),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    height: 44,
-                    child: ShadButton(
-                      enabled: !sending && ready,
-                      onPressed: _sendFreeform,
-                      child: const Text('Send'),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Expanded(
+                          child: ShadInput(
+                            controller: _composer,
+                            focusNode: _composerFocus,
+                            placeholder: const Text('Message…'),
+                            onSubmitted: (_) {
+                              if (!sending && ready) _sendFreeform();
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          height: 44,
+                          child: ShadButton(
+                            enabled: !sending && ready,
+                            onPressed: _sendFreeform,
+                            child: const Text('Send'),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Vertical starter cards for empty chats — tap drafts the composer.
+class _StarterPromptList extends StatelessWidget {
+  const _StarterPromptList({
+    required this.roles,
+    required this.enabled,
+    required this.onSelect,
+    this.initialSymbol,
+    this.initialSide,
+    this.initialQuantity,
+  });
+
+  final List<AgentRoleDefinition> roles;
+  final bool enabled;
+  final ValueChanged<String> onSelect;
+  final String? initialSymbol;
+  final String? initialSide;
+  final double? initialQuantity;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      children: [
+        Text(
+          'Tap a starter to edit it below, then Send. Replace SYMBOL (and other '
+          'placeholders) with the assets you care about.',
+          style: theme.textTheme.muted,
+        ),
+        const SizedBox(height: 12),
+        for (var i = 0; i < roles.length; i++) ...[
+          if (i > 0) const SizedBox(height: 8),
+          _StarterPromptCard(
+            roleId: roles[i].id,
+            enabled: enabled,
+            draft: AgentRolePrompts.runUserPromptDraft(
+              roleId: roles[i].id,
+              symbol: initialSymbol?.trim() ?? '',
+              side: initialSide,
+              quantity: initialQuantity,
+            ),
+            onSelect: () => onSelect(roles[i].id),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _StarterPromptCard extends StatelessWidget {
+  const _StarterPromptCard({
+    required this.roleId,
+    required this.draft,
+    required this.enabled,
+    required this.onSelect,
+  });
+
+  final String roleId;
+  final String draft;
+  final bool enabled;
+  final VoidCallback onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: AgentRolePrompts.runChipLabel(roleId),
+      child: MouseRegion(
+        cursor:
+            enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: enabled ? onSelect : null,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 44),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.secondary.withValues(alpha: 0.35),
+                borderRadius: theme.radius,
+                border: Border.all(color: theme.colorScheme.border),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      AgentRolePrompts.runChipLabel(roleId),
+                      style: theme.textTheme.large.copyWith(
+                        color: theme.colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      draft,
+                      style: theme.textTheme.small.copyWith(
+                        color: theme.colorScheme.foreground,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -567,6 +652,21 @@ class _ChatBubble extends StatelessWidget {
     );
   }
 
+  List<String> _matchedSymbols(BuildContext context) {
+    try {
+      final known = knownAppSymbols(
+        cryptoRegistry: context.read<CryptoExchangeRegistry>(),
+        favorites: context.read<FavoritesRepository>(),
+        portfolio: context.read<PortfolioRepository>(),
+        dataSources: context.read<DataSourceSettings>(),
+      );
+      return matchingKnownSymbolsInText(message.content, known: known);
+    } catch (_) {
+      // Providers may be absent in isolated tests.
+      return const [];
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
@@ -581,6 +681,8 @@ class _ChatBubble extends StatelessWidget {
     final showAssistantMeta = !isUser &&
         (message.content.trim().isNotEmpty ||
             message.generationMetaLabel != null);
+    final matchedSymbols = _matchedSymbols(context);
+    final showAssetLinks = matchedSymbols.isNotEmpty;
 
     return Align(
       alignment: align,
@@ -595,7 +697,7 @@ class _ChatBubble extends StatelessWidget {
             Container(
               margin: EdgeInsets.only(
                 top: 6,
-                bottom: showAssistantMeta ? 2 : 6,
+                bottom: (showAssistantMeta || showAssetLinks) ? 2 : 6,
               ),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
@@ -610,65 +712,98 @@ class _ChatBubble extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Column(
-                crossAxisAlignment:
-                    isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                children: [
-                  if (message.kind == AgentChatMessageKind.run && isUser)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Text(
-                        'Run',
-                        style: theme.textTheme.small.copyWith(
-                          color: fg.withValues(alpha: 0.8),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  if (isUser)
-                    Text(
-                      message.content,
-                      style: theme.textTheme.p.copyWith(color: fg),
-                    )
-                  else
-                    AgentMarkdownBody(
-                      data: message.content,
-                      style: theme.textTheme.p.copyWith(color: fg),
-                    ),
-                ],
-              ),
-            ),
-            if (showAssistantMeta)
-              Padding(
-                padding: const EdgeInsets.only(left: 2, bottom: 6),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (message.content.trim().isNotEmpty)
-                      AppTooltip(
-                        message: 'Copy answer',
-                        child: ShadButton.ghost(
-                          size: ShadButtonSize.sm,
-                          width: 28,
-                          height: 28,
-                          padding: EdgeInsets.zero,
-                          onPressed: () => _copyAnswer(context),
-                          child: Icon(
-                            LucideIcons.copy,
-                            size: 14,
-                            color: theme.colorScheme.mutedForeground,
+              child: DefaultSelectionStyle(
+                // Brand selection blends into secondary bubbles; tint with the
+                // bubble foreground so drag-select stays visible on both sides.
+                selectionColor: fg.withValues(alpha: 0.35),
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.text,
+                  child: Column(
+                    crossAxisAlignment: isUser
+                        ? CrossAxisAlignment.end
+                        : CrossAxisAlignment.start,
+                    children: [
+                      if (message.kind == AgentChatMessageKind.run && isUser)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            'Run',
+                            style: theme.textTheme.small.copyWith(
+                              color: fg.withValues(alpha: 0.8),
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
-                      ),
-                    if (message.generationMetaLabel != null) ...[
-                      if (message.content.trim().isNotEmpty)
-                        const SizedBox(width: 2),
-                      Text(
-                        message.generationMetaLabel!,
-                        style: theme.textTheme.muted.copyWith(fontSize: 11),
-                      ),
+                      if (isUser)
+                        Text(
+                          message.content,
+                          style: theme.textTheme.p.copyWith(color: fg),
+                        )
+                      else
+                        AgentMarkdownBody(
+                          data: message.content,
+                          style: theme.textTheme.p.copyWith(color: fg),
+                        ),
                     ],
-                  ],
+                  ),
+                ),
+              ),
+            ),
+            if (showAssetLinks)
+              SelectionContainer.disabled(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: isUser ? 0 : 2,
+                    right: isUser ? 2 : 0,
+                    bottom: showAssistantMeta ? 2 : 6,
+                  ),
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    alignment:
+                        isUser ? WrapAlignment.end : WrapAlignment.start,
+                    children: [
+                      for (final symbol in matchedSymbols)
+                        _ChatAssetLink(symbol: symbol),
+                    ],
+                  ),
+                ),
+              ),
+            if (showAssistantMeta)
+              SelectionContainer.disabled(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 2, bottom: 6),
+                  child: Row(
+                    children: [
+                      if (message.content.trim().isNotEmpty)
+                        AppTooltip(
+                          message: 'Copy answer',
+                          child: ShadButton.ghost(
+                            size: ShadButtonSize.sm,
+                            width: 28,
+                            height: 28,
+                            padding: EdgeInsets.zero,
+                            onPressed: () => _copyAnswer(context),
+                            child: Icon(
+                              LucideIcons.copy,
+                              size: 14,
+                              color: theme.colorScheme.mutedForeground,
+                            ),
+                          ),
+                        ),
+                      if (message.generationMetaLabel != null) ...[
+                        if (message.content.trim().isNotEmpty)
+                          const SizedBox(width: 2),
+                        Flexible(
+                          child: AppEllipsisText(
+                            message.generationMetaLabel!,
+                            maxLines: 1,
+                            style: theme.textTheme.muted.copyWith(fontSize: 11),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ),
             if (proposal != null)
@@ -685,6 +820,46 @@ class _ChatBubble extends StatelessWidget {
                 onDismiss: onDismiss,
                 busy: busy,
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatAssetLink extends StatelessWidget {
+  const _ChatAssetLink({required this.symbol});
+
+  final String symbol;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return AppTooltip(
+      message: 'Open $symbol details',
+      child: ShadButton.ghost(
+        size: ShadButtonSize.sm,
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        onPressed: () {
+          pushFadePage(context, AssetDetailScreen(symbol: symbol));
+        },
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              LucideIcons.lineChart,
+              size: 14,
+              color: theme.colorScheme.primary,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              symbol,
+              style: theme.textTheme.small.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
         ),
       ),
@@ -919,135 +1094,3 @@ class _InvestInterestProposalCard extends StatelessWidget {
   }
 }
 
-class _RunSheetResult {
-  const _RunSheetResult({
-    required this.symbol,
-    this.side,
-    this.quantity,
-  });
-
-  final String symbol;
-  final String? side;
-  final double? quantity;
-}
-
-class _RunAgentDialog extends StatefulWidget {
-  const _RunAgentDialog({
-    required this.roleId,
-    this.initialSymbol,
-  });
-
-  final String roleId;
-  final String? initialSymbol;
-
-  @override
-  State<_RunAgentDialog> createState() => _RunAgentDialogState();
-}
-
-class _RunAgentDialogState extends State<_RunAgentDialog> {
-  late final TextEditingController _symbol;
-  final _qty = TextEditingController();
-  String _side = 'buy';
-
-  bool get _isTrading =>
-      widget.roleId == 'intradayTrading';
-
-  @override
-  void initState() {
-    super.initState();
-    _symbol = TextEditingController(
-      text: widget.initialSymbol?.trim().toUpperCase() ?? '',
-    );
-  }
-
-  @override
-  void dispose() {
-    _symbol.dispose();
-    _qty.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final symbol = _symbol.text.trim().toUpperCase();
-    if (symbol.isEmpty) return;
-    double? qty;
-    if (_isTrading && _qty.text.trim().isNotEmpty) {
-      qty = double.tryParse(_qty.text.trim());
-    }
-    Navigator.of(context).pop(
-      _RunSheetResult(
-        symbol: symbol,
-        side: _isTrading ? _side : null,
-        quantity: qty,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    return ShadDialog(
-      title: Text(AgentRolePrompts.runChipLabel(widget.roleId)),
-      description: Text(
-        AgentRolePrompts.supportsTradeProposals(widget.roleId)
-            ? 'Enter a symbol. Suggestions can target Practice or a live '
-                'portfolio. Confirm in chat before any order.'
-            : 'Enter a symbol. Omniscope will add a market snapshot when available.',
-      ),
-      actions: [
-        ShadButton.outline(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        ShadButton(
-          onPressed: _submit,
-          child: const Text('Run'),
-        ),
-      ],
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Symbol', style: theme.textTheme.small),
-            const SizedBox(height: 6),
-            ShadInput(
-              controller: _symbol,
-              placeholder: const Text('e.g. BTC_USD'),
-              onSubmitted: (_) => _submit(),
-            ),
-            if (_isTrading) ...[
-              const SizedBox(height: 14),
-              Text('Side (optional)', style: theme.textTheme.small),
-              const SizedBox(height: 6),
-              ShadSelect<String>(
-                minWidth: double.infinity,
-                initialValue: _side,
-                options: const [
-                  ShadOption(value: 'buy', child: Text('Buy')),
-                  ShadOption(value: 'sell', child: Text('Sell')),
-                ],
-                selectedOptionBuilder: (context, value) =>
-                    Text(value == 'sell' ? 'Sell' : 'Buy'),
-                onChanged: (value) {
-                  if (value == null) return;
-                  setState(() => _side = value);
-                },
-              ),
-              const SizedBox(height: 14),
-              Text('Quantity (optional)', style: theme.textTheme.small),
-              const SizedBox(height: 6),
-              ShadInput(
-                controller: _qty,
-                placeholder: const Text('e.g. 0.01'),
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}

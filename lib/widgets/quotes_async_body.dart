@@ -1,6 +1,5 @@
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../core/app_copy.dart';
 import '../data/market/models.dart';
@@ -8,6 +7,7 @@ import '../features/quotes/quotes_list_controller.dart';
 import 'app_empty_view.dart';
 import 'app_error_view.dart';
 import 'app_progress.dart';
+import 'delayed_data_caption.dart';
 
 /// Loading / error / empty / data shell driven by [QuotesListController].
 class QuotesAsyncBody extends StatelessWidget {
@@ -52,23 +52,10 @@ class QuotesAsyncBody extends StatelessWidget {
       return body;
     }
 
-    final theme = ShadTheme.of(context);
-    final local = controller.fetchedAt!.toLocal();
-    final h = local.hour.toString().padLeft(2, '0');
-    final m = local.minute.toString().padLeft(2, '0');
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-          child: Text(
-            '${AppCopy.delayedDataCaption} As of $h:$m.',
-            style: theme.textTheme.small.copyWith(
-              color: theme.colorScheme.mutedForeground,
-            ),
-          ),
-        ),
+        DelayedDataCaption(fetchedAt: controller.fetchedAt),
         Expanded(child: body),
       ],
     );

@@ -31,7 +31,10 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Ensure .env
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Run venue canary
         env:
           OMNISCOPE_CRYPTO_COM_API_KEY: ${{ secrets.OMNISCOPE_CRYPTO_COM_API_KEY }}
           OMNISCOPE_CRYPTO_COM_API_SECRET: ${{ secrets.OMNISCOPE_CRYPTO_COM_API_SECRET }}
@@ -39,28 +42,6 @@ jobs:
           OMNISCOPE_ALPACA_API_KEY: ${{ secrets.OMNISCOPE_ALPACA_API_KEY }}
           OMNISCOPE_ALPACA_API_SECRET: ${{ secrets.OMNISCOPE_ALPACA_API_SECRET }}
           OMNISCOPE_ALPACA_TRADING_MODE: ${{ secrets.OMNISCOPE_ALPACA_TRADING_MODE }}
-        run: |
-          cp .env.example .env
-          # Optional private probes when secrets are set in the repo.
-          if [ -n "${OMNISCOPE_CRYPTO_COM_API_KEY:-}" ]; then
-            {
-              echo "OMNISCOPE_CRYPTO_COM_API_KEY=${OMNISCOPE_CRYPTO_COM_API_KEY}"
-              echo "OMNISCOPE_CRYPTO_COM_API_SECRET=${OMNISCOPE_CRYPTO_COM_API_SECRET}"
-              echo "OMNISCOPE_CRYPTO_COM_API_TOKEN=${OMNISCOPE_CRYPTO_COM_API_TOKEN}"
-            } >> .env
-          fi
-          if [ -n "${OMNISCOPE_ALPACA_API_KEY:-}" ]; then
-            {
-              echo "OMNISCOPE_ALPACA_API_KEY=${OMNISCOPE_ALPACA_API_KEY}"
-              echo "OMNISCOPE_ALPACA_API_SECRET=${OMNISCOPE_ALPACA_API_SECRET}"
-              echo "OMNISCOPE_ALPACA_TRADING_MODE=${OMNISCOPE_ALPACA_TRADING_MODE:-paper}"
-            } >> .env
-          fi
-
-      - name: Pub get
-        run: flutter pub get
-
-      - name: Run venue canary
         run: flutter test test/venue_canary_test.dart --tags live_canary --reporter expanded
 
       - name: Upload canary JSON

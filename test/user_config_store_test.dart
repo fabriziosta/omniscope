@@ -81,7 +81,7 @@ void main() {
     expect(doc[UserConfigKeys.mandate], isA<Map>());
 
     final display = doc[UserConfigKeys.display] as Map;
-    expect(display['listDensity'], 'comfortable');
+    expect(display['listDensity'], 'compact');
     expect(display['priceFormat'], 'full');
     expect(display['defaultChartRange'], '1mo');
 
@@ -125,5 +125,134 @@ void main() {
     expect(store.isReady, isTrue);
     expect(store.usesFilesystem, isFalse);
     expect(store.effectivePath, isNull);
+  });
+
+  test('invalid enum values are overwritten with defaults', () async {
+    final store = await memoryConfig();
+    await store.importJson(jsonEncode({
+      'version': 1,
+      'theme': {'mode': 'neon', 'palette': 'hotpink'},
+      'display': {
+        'listDensity': 'huge',
+        'priceFormat': 'scientific',
+        'defaultChartRange': '99y',
+      },
+      'mandate': {
+        'goal': 'yolo',
+        'horizon': 'forever',
+        'universe': 'nft',
+        'cadencePreference': 'everySecond',
+      },
+      'agentApp': {
+        'scheduleInterval': 'never',
+        'answerMood': 'screaming',
+      },
+      'favorites': {
+        'symbols': ['AAPL'],
+      },
+    }));
+
+    final theme = store.getSlice(UserConfigKeys.theme) as Map;
+    expect(theme['mode'], 'system');
+    expect(theme['palette'], 'teal');
+
+    final display = store.getSlice(UserConfigKeys.display) as Map;
+    expect(display['listDensity'], 'compact');
+    expect(display['priceFormat'], 'full');
+    expect(display['defaultChartRange'], '1mo');
+
+    final mandate = store.getSlice(UserConfigKeys.mandate) as Map;
+    expect(mandate['goal'], 'learn');
+    expect(mandate['horizon'], 'medium');
+    expect(mandate['universe'], 'both');
+    expect(mandate['cadencePreference'], 'hour1');
+
+    final agentApp = store.getSlice(UserConfigKeys.agentApp) as Map;
+    expect(agentApp['scheduleInterval'], 'hour1');
+    expect(agentApp['answerMood'], 'plain');
+
+    // Valid user data must survive sanitize.
+    final favorites = store.getSlice(UserConfigKeys.favorites) as Map;
+    expect(favorites['symbols'], ['AAPL']);
+  });
+
+  test('wrong-typed config values are overwritten with defaults', () async {
+    final store = await memoryConfig();
+    await store.importJson(jsonEncode({
+      'version': 1,
+      'theme': {'mode': 1, 'palette': true},
+      'display': {
+        'listDensity': false,
+        'priceFormat': 3,
+        'defaultChartRange': ['1mo'],
+      },
+      'agentApp': {
+        'autopilotEnabled': 'yes',
+        'scheduleSymbols': 'AAPL',
+      },
+      'paperPortfolio': {
+        'cash': 'lots',
+        'holdings': 'none',
+        'startingCash': 'tenk',
+      },
+      'favorites': {
+        'symbols': 'AAPL',
+      },
+    }));
+
+    final theme = store.getSlice(UserConfigKeys.theme) as Map;
+    expect(theme['mode'], 'system');
+    expect(theme['palette'], 'teal');
+
+    final display = store.getSlice(UserConfigKeys.display) as Map;
+    expect(display['listDensity'], 'compact');
+    expect(display['priceFormat'], 'full');
+    expect(display['defaultChartRange'], '1mo');
+
+    final agentApp = store.getSlice(UserConfigKeys.agentApp) as Map;
+    expect(agentApp['autopilotEnabled'], false);
+    expect(agentApp['scheduleSymbols'], isA<List>());
+
+    final paper = store.getSlice(UserConfigKeys.paperPortfolio) as Map;
+    expect(paper['cash'], 10000.0);
+    expect(paper['holdings'], isA<List>());
+    expect(paper['startingCash'], 10000.0);
+
+    final favorites = store.getSlice(UserConfigKeys.favorites) as Map;
+    expect(favorites['symbols'], isA<List>());
+  });
+
+  test('valid enum values are preserved', () async {
+    final store = await memoryConfig();
+    await store.importJson(jsonEncode({
+      'version': 1,
+      'theme': {'mode': 'dark', 'palette': 'ocean'},
+      'display': {
+        'listDensity': 'comfortable',
+        'priceFormat': 'compact',
+        'defaultChartRange': '1y',
+      },
+      'mandate': {
+        'goal': 'grow',
+        'horizon': 'long',
+        'universe': 'crypto',
+        'cadencePreference': 'daily',
+      },
+    }));
+
+    final theme = store.getSlice(UserConfigKeys.theme) as Map;
+    expect(theme['mode'], 'dark');
+    expect(theme['palette'], 'ocean');
+
+    final display = store.getSlice(UserConfigKeys.display) as Map;
+    expect(display['listDensity'], 'comfortable');
+    expect(display['priceFormat'], 'compact');
+    expect(display['defaultChartRange'], '1y');
+
+    final mandate = store.getSlice(UserConfigKeys.mandate) as Map;
+    expect(mandate['goal'], 'grow');
+    expect(mandate['horizon'], 'long');
+    expect(mandate['universe'], 'crypto');
+    expect(mandate['cadencePreference'], 'daily');
   });
 }

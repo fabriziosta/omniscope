@@ -44,7 +44,7 @@ Future<({
   );
   final appSettings = AgentAppSettings(store: store);
   await appSettings.load();
-  final secrets = EnvSecretsRepository(store: store, syncEnvFile: false);
+  final secrets = EnvSecretsRepository(store: store);
   await secrets.load();
   await secrets.setLlmApiKey(provider, apiKey);
   return (

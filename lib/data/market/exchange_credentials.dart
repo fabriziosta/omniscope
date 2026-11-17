@@ -1,11 +1,8 @@
-import 'package:flutter/services.dart';
-
-import '../../core/dotenv_asset.dart';
 import '../venues/venue_trading_mode.dart';
 
 /// API credentials for a market data venue, crypto exchange, or broker.
 ///
-/// Sourced from env secrets (`.env` bootstrap + Settings UI). Public market
+/// Sourced from the config `secrets` slice via Settings UI. Public market
 /// endpoints (Yahoo, Crypto.com public REST) work without these; keys enable
 /// authenticated / private APIs when a client supports them.
 class ExchangeCredentials {
@@ -60,7 +57,7 @@ class ExchangeCredentials {
 
 /// Exchange/market credentials keyed by venue id.
 ///
-/// Env names follow `OMNISCOPE_<EXCHANGE_ID>_API_{KEY|SECRET|TOKEN}` and
+/// Secrets-map names follow `OMNISCOPE_<EXCHANGE_ID>_API_{KEY|SECRET|TOKEN}` and
 /// optional `OMNISCOPE_<EXCHANGE_ID>_TRADING_MODE` (`paper` / `live`).
 /// `EXCHANGE_ID` is the venue id uppercased (`crypto_com` → `CRYPTO_COM`).
 ///
@@ -82,7 +79,7 @@ class ExchangeCredentialsConfig {
 
   bool get isEmpty => _byExchangeId.isEmpty;
 
-  /// Env prefix for an exchange id: `crypto_com` → `OMNISCOPE_CRYPTO_COM`.
+  /// Secrets-map prefix for an exchange id: `crypto_com` → `OMNISCOPE_CRYPTO_COM`.
   static String envPrefixFor(String exchangeId) {
     final suffix = exchangeId.trim().toUpperCase().replaceAll('-', '_');
     return 'OMNISCOPE_$suffix';
@@ -99,17 +96,6 @@ class ExchangeCredentialsConfig {
 
   static String tradingModeEnvName(String exchangeId) =>
       '${envPrefixFor(exchangeId)}_TRADING_MODE';
-
-  static Future<ExchangeCredentialsConfig> load({
-    AssetBundle? bundle,
-    List<String>? exchangeIds,
-  }) async {
-    final values = await DotEnvAsset.load(bundle: bundle);
-    return fromValues(
-      values,
-      exchangeIds: exchangeIds ?? defaultExchangeIds,
-    );
-  }
 
   static ExchangeCredentialsConfig fromValues(
     Map<String, String> values, {
@@ -128,7 +114,7 @@ class ExchangeCredentialsConfig {
     return ExchangeCredentialsConfig(byId);
   }
 
-  /// Read credentials for one exchange id from an already-parsed env map.
+  /// Read credentials for one exchange id from an already-parsed secrets map.
   static ExchangeCredentials read(
     String exchangeId,
     Map<String, String> values,

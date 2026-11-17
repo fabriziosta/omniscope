@@ -27,7 +27,7 @@ void main() {
     await llmRuntime.load();
     final agentApp = AgentAppSettings(store: store);
     await agentApp.load();
-    final secrets = EnvSecretsRepository(store: store, syncEnvFile: false);
+    final secrets = EnvSecretsRepository(store: store);
     await secrets.load();
     final shellNav = ShellNavigationController();
 

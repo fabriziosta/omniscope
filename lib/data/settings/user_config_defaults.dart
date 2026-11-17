@@ -1,12 +1,14 @@
 import '../../core/brand_colors.dart';
+import '../agents/models.dart';
 import '../portfolio/models.dart';
 import 'user_config_keys.dart';
 
 /// Canonical default shapes for every [UserConfigStore] slice.
 ///
 /// Used when creating `omniscope.json` and when backfilling keys added by new
-/// features. User-provided values always win; only missing (or null) keys are
-/// filled. When adding a field or slice, update the matching entry here so
+/// features. On load / Import, missing keys are filled and invalid values
+/// (wrong type or unknown enum) are overwritten with the default and written
+/// back. When adding a field or slice, update the matching entry here so
 /// existing configs pick it up on the next load.
 abstract final class UserConfigDefaults {
   static Map<String, dynamic> document() => _deepCopy(_document);
@@ -44,6 +46,28 @@ abstract final class UserConfigDefaults {
     return changed;
   }
 
+  /// Replace wrong-typed or unknown enum values with defaults.
+  ///
+  /// Call after [mergeInto]. Returns true if any value was overwritten.
+  static bool sanitizeInto(Map<String, dynamic> target) {
+    var changed = false;
+
+    // Legacy theme was a bare mode string — keep valid ones; reset junk.
+    final theme = target[UserConfigKeys.theme];
+    if (theme is String) {
+      if (!_themeModes.contains(theme)) {
+        target[UserConfigKeys.theme] = _cloneValue(_document[UserConfigKeys.theme]);
+        changed = true;
+      }
+    }
+
+    if (_sanitizeTree(target, _document, _enumAllowlists)) {
+      changed = true;
+    }
+
+    return changed;
+  }
+
   static final Map<String, dynamic> _document = {
     UserConfigKeys.version: UserConfigKeys.currentVersion,
     UserConfigKeys.theme: {
@@ -51,7 +75,7 @@ abstract final class UserConfigDefaults {
       'palette': BrandColors.defaultPaletteId,
     },
     UserConfigKeys.display: {
-      'listDensity': 'comfortable',
+      'listDensity': 'compact',
       'priceFormat': 'full',
       'defaultChartRange': '1mo',
     },
@@ -76,6 +100,7 @@ abstract final class UserConfigDefaults {
       'scheduleInterval': 'hour1',
       'scheduleSymbols': <String>[],
       'scheduleUseInvestInterest': true,
+      'answerMood': 'plain',
     },
     UserConfigKeys.agentChats: {
       'threads': <dynamic>[],
@@ -110,6 +135,123 @@ abstract final class UserConfigDefaults {
       'cadencePreference': 'hour1',
     },
   };
+
+  static final Set<String> _themeModes = {'light', 'dark', 'system'};
+
+  static final Set<String> _paletteIds = {
+    for (final p in BrandColors.all) p.id,
+  };
+
+  static final Set<String> _scheduleIntervals = {
+    for (final e in AgentScheduleInterval.values) e.name,
+  };
+
+  static final Set<String> _answerMoods = {
+    for (final e in AgentAnswerMood.values) e.name,
+  };
+
+  /// Nested allowlists parallel to [_document] string enum fields.
+  ///
+  /// Leaf values are [Set<String>] of allowed tokens; intermediate nodes are
+  /// maps keyed like the config document.
+  static final Map<String, dynamic> _enumAllowlists = {
+    UserConfigKeys.theme: <String, dynamic>{
+      'mode': _themeModes,
+      'palette': _paletteIds,
+    },
+    UserConfigKeys.display: <String, dynamic>{
+      // Keep in sync with ListDensity / PriceFormat / ChartRangePreset.
+      'listDensity': {'comfortable', 'compact'},
+      'priceFormat': {'full', 'compact'},
+      'defaultChartRange': {'1mo', '3mo', '1y'},
+    },
+    UserConfigKeys.agentApp: <String, dynamic>{
+      'scheduleInterval': _scheduleIntervals,
+      'answerMood': _answerMoods,
+    },
+    UserConfigKeys.mandate: <String, dynamic>{
+      // Keep in sync with MandateGoal / Horizon / Universe.
+      'goal': {'learn', 'preserve', 'grow'},
+      'horizon': {'short', 'medium', 'long'},
+      'universe': {'equities', 'crypto', 'both'},
+      'cadencePreference': _scheduleIntervals,
+    },
+  };
+
+  /// Walk [target] alongside [defaults]; fix type mismatches and bad enums.
+  static bool _sanitizeTree(
+    Map<String, dynamic> target,
+    Map<String, dynamic> defaults,
+    Map<String, dynamic>? allowlists,
+  ) {
+    var changed = false;
+    for (final entry in defaults.entries) {
+      final key = entry.key;
+      final def = entry.value;
+      final existing = target[key];
+      if (existing == null) continue;
+
+      final childAllow = allowlists?[key];
+
+      if (def is Map) {
+        if (existing is! Map) {
+          // Keep legacy bare theme mode strings (handled in [sanitizeInto]).
+          if (key == UserConfigKeys.theme && existing is String) {
+            continue;
+          }
+          target[key] = _cloneValue(def);
+          changed = true;
+          continue;
+        }
+        final child = existing is Map<String, dynamic>
+            ? existing
+            : Map<String, dynamic>.from(existing);
+        if (!identical(child, existing)) {
+          target[key] = child;
+        }
+        final nestedAllow = childAllow is Map
+            ? Map<String, dynamic>.from(childAllow)
+            : null;
+        if (_sanitizeTree(
+          child,
+          Map<String, dynamic>.from(def),
+          nestedAllow,
+        )) {
+          changed = true;
+        }
+        continue;
+      }
+
+      if (def is List) {
+        if (existing is! List) {
+          target[key] = _cloneValue(def);
+          changed = true;
+        }
+        continue;
+      }
+
+      if (!_sameScalarType(existing, def)) {
+        target[key] = _cloneValue(def);
+        changed = true;
+        continue;
+      }
+
+      if (def is String && existing is String) {
+        if (childAllow is Set && !childAllow.contains(existing)) {
+          target[key] = def;
+          changed = true;
+        }
+      }
+    }
+    return changed;
+  }
+
+  static bool _sameScalarType(Object existing, Object def) {
+    if (def is String) return existing is String;
+    if (def is bool) return existing is bool;
+    if (def is num) return existing is num;
+    return existing.runtimeType == def.runtimeType;
+  }
 
   static Map<String, dynamic> _deepCopy(Map<String, dynamic> source) {
     final out = <String, dynamic>{};

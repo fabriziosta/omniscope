@@ -19,6 +19,7 @@ import '../../widgets/app_error_view.dart';
 import '../../widgets/app_progress.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/app_tooltip.dart';
+import '../../widgets/delayed_data_caption.dart';
 import '../../widgets/metric_stat.dart';
 import '../../widgets/price_line_chart.dart';
 import '../../widgets/subscreen_app_bar.dart';
@@ -207,15 +208,9 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
                                     : BrandColors.lossOf(context),
                               ),
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              controller.fetchedAt == null
-                                  ? AppCopy.delayedDataCaption
-                                  : '${AppCopy.delayedDataCaption} '
-                                      'As of ${_formatAsOf(controller.fetchedAt!)}.',
-                              style: theme.textTheme.small.copyWith(
-                                color: theme.colorScheme.mutedForeground,
-                              ),
+                            DelayedDataCaption(
+                              fetchedAt: controller.fetchedAt,
+                              padding: const EdgeInsets.only(top: 10),
                             ),
                             if (_hasQuoteMeta(quote)) ...[
                               const SizedBox(height: 10),
@@ -236,8 +231,7 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
                                       label:
                                           'Prev ${formatDisplayMoney(quote.previousClose, priceFormat)}',
                                     ),
-                                  if (quote.dataSource != null &&
-                                      quote.dataSource!.trim().isNotEmpty)
+                                  if (_showDataSourceChip(quote))
                                     _MetaChip(label: quote.dataSource!),
                                 ],
                               ),
@@ -435,14 +429,19 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
     return (quote.exchange != null && quote.exchange!.trim().isNotEmpty) ||
         (quote.currency != null && quote.currency!.trim().isNotEmpty) ||
         quote.previousClose != null ||
-        (quote.dataSource != null && quote.dataSource!.trim().isNotEmpty);
+        _showDataSourceChip(quote);
   }
 
-  String _formatAsOf(DateTime time) {
-    final local = time.toLocal();
-    final h = local.hour.toString().padLeft(2, '0');
-    final m = local.minute.toString().padLeft(2, '0');
-    return '$h:$m';
+  /// Crypto venues set [Quote.exchange] and [Quote.dataSource] to the same
+  /// display name (e.g. both "Crypto.com"); skip the second pill.
+  bool _showDataSourceChip(Quote quote) {
+    final source = quote.dataSource?.trim();
+    if (source == null || source.isEmpty) return false;
+    final exchange = quote.exchange?.trim();
+    if (exchange == null || exchange.isEmpty) return true;
+    final sourceKey = source.toLowerCase();
+    return sourceKey != exchange.toLowerCase() &&
+        sourceKey != displayExchangeName(exchange).toLowerCase();
   }
 }
 

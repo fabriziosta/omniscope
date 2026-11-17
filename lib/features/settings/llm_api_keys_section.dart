@@ -114,7 +114,6 @@ class _ProviderKeyRow extends StatelessWidget {
         initialKey: initialKey,
         initialPrefs: existing,
         catalog: catalog,
-        canWriteEnvFile: secrets.canWriteEnvFile,
       ),
     );
     if (result == null || !context.mounted) return;
@@ -240,14 +239,12 @@ class _LlmApiKeyDialog extends StatefulWidget {
     required this.initialKey,
     required this.initialPrefs,
     required this.catalog,
-    required this.canWriteEnvFile,
   });
 
   final LlmProvider provider;
   final String initialKey;
   final LlmProviderRuntimePrefs initialPrefs;
   final LlmModelCatalog catalog;
-  final bool canWriteEnvFile;
 
   @override
   State<_LlmApiKeyDialog> createState() => _LlmApiKeyDialogState();
@@ -352,8 +349,7 @@ class _LlmApiKeyDialogState extends State<_LlmApiKeyDialog> {
     return ShadDialog(
       title: Text('${widget.provider.label} API key'),
       description: Text(
-        'Keys stay on this device only. '
-        '${widget.canWriteEnvFile ? 'Saving also updates the project .env file. ' : ''}'
+        'Keys stay on this device only in your omniscope.json config. '
         'Light models suit research; heavy models suit trading checks.',
       ),
       actions: [

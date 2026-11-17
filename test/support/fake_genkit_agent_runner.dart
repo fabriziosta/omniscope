@@ -9,6 +9,7 @@ GenkitAgentRunner fakeGenkitAgentRunner({
   String reply = 'Test agent reply.',
   String Function(String lastUser)? replyFor,
   Map<String, dynamic>? Function(String lastUser)? delegatedTradeJsonFor,
+  List<String> Function(String lastUser)? delegatedRoleIdsFor,
 }) {
   return GenkitAgentRunner(
     turnOverride: ({
@@ -22,11 +23,17 @@ GenkitAgentRunner fakeGenkitAgentRunner({
       final text = replyFor != null ? replyFor(last) : reply;
       final tradeJson =
           delegatedTradeJsonFor != null ? delegatedTradeJsonFor(last) : null;
+      final roleIds = delegatedRoleIdsFor != null
+          ? delegatedRoleIdsFor(last)
+          : (tradeJson != null
+              ? const ['intradayTrading']
+              : const <String>[]);
       return GenkitAgentTurnResult(
         reply: text,
         delegatedTradeJson: tradeJson,
         delegatedTradeRoleId:
             tradeJson != null ? 'intradayTrading' : null,
+        delegatedRoleIds: roleIds,
       );
     },
   );

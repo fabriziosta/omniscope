@@ -17,6 +17,7 @@ import 'package:omniscope/data/settings/env_secrets_repository.dart';
 import 'package:omniscope/data/trading/broker_exchange_registry.dart';
 import 'package:omniscope/data/trading/order_models.dart';
 import 'package:omniscope/features/portfolio/portfolio_screen.dart';
+import 'package:omniscope/widgets/master_detail_shell.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -105,8 +106,8 @@ Future<void> _pumpPortfolio(WidgetTester tester) async {
   await dataSources.load();
   final displaySettings = DisplaySettings(store: store);
   await displaySettings.load();
-  final envSecrets = EnvSecretsRepository(store: store, syncEnvFile: false);
-  await envSecrets.load(additionalBootstrap: const {});
+  final envSecrets = EnvSecretsRepository(store: store);
+  await envSecrets.load();
 
   await tester.pumpWidget(
     MultiProvider(
@@ -148,44 +149,60 @@ Future<void> _pumpPortfolio(WidgetTester tester) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('portfolio master-detail: wide and narrow', (tester) async {
-    // Wide: sidebar + Practice content share the viewport.
+  testWidgets('portfolio master-detail: overlay nav on wide and narrow',
+      (tester) async {
+    // Wide: content first; burger opens overlay nav.
     await tester.binding.setSurfaceSize(const Size(1024, 800));
     await _pumpPortfolio(tester);
 
+    expect(find.text('Practice portfolio'), findsOneWidget);
+    expect(find.byType(MasterDetailMenuButton), findsOneWidget);
+
+    await tester.tap(find.byType(MasterDetailMenuButton));
+    await tester.pumpAndSettle();
     expect(find.text('Practice'), findsWidgets);
     expect(find.text('Crypto.com'), findsOneWidget);
-    expect(find.text('Practice portfolio'), findsOneWidget);
 
     await tester.tap(find.text('Crypto.com'));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.text('Live · Crypto.com'), findsOneWidget);
     expect(find.text('BTC'), findsOneWidget);
 
-    // Narrow: list first, then one pane at a time.
+    // Narrow: same content + burger; selection is preserved across resize.
     await tester.binding.setSurfaceSize(const Size(390, 844));
-    await _pumpPortfolio(tester);
+    await tester.pumpAndSettle();
 
-    expect(find.text('Practice'), findsOneWidget);
-    expect(find.text('Paper'), findsOneWidget);
-    expect(find.text('Crypto.com'), findsOneWidget);
-    expect(find.text('Live'), findsOneWidget);
+    expect(find.text('Live · Crypto.com'), findsOneWidget);
     expect(find.text(AppCopy.connectLivePortfolioTitle), findsNothing);
-    expect(find.text('Practice portfolio'), findsNothing);
-    expect(find.text('Balances'), findsNothing);
 
-    await tester.tap(find.text('Practice'));
-    await tester.pump();
+    await tester.tap(find.byType(MasterDetailMenuButton));
+    await tester.pumpAndSettle();
+    expect(find.text('Practice'), findsWidgets);
+    expect(find.text('Paper'), findsOneWidget);
+    // Content title + nav tile while the drawer is open.
+    expect(find.text('Crypto.com'), findsWidgets);
+    expect(find.text('Live'), findsOneWidget);
 
+    await tester.tap(
+      find.ancestor(
+        of: find.text('Practice'),
+        matching: find.byType(MasterDetailNavTile),
+      ),
+    );
+    await tester.pumpAndSettle();
     expect(find.text('Practice portfolio'), findsOneWidget);
     expect(find.textContaining('Fake money for learning'), findsWidgets);
 
-    await tester.tap(find.text('Portfolio'));
-    await tester.pump();
-
-    await tester.tap(find.text('Crypto.com'));
-    await tester.pump();
+    await tester.tap(find.byType(MasterDetailMenuButton));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.ancestor(
+        of: find.text('Crypto.com'),
+        matching: find.byType(MasterDetailNavTile),
+      ),
+    );
+    await tester.pumpAndSettle();
 
     expect(find.text('Live · Crypto.com'), findsOneWidget);
     expect(find.textContaining('Real exchange balances'), findsOneWidget);

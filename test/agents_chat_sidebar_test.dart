@@ -6,6 +6,7 @@ import 'package:omniscope/data/agents/agent_activity_repository.dart';
 import 'package:omniscope/data/agents/agent_app_settings.dart';
 import 'package:omniscope/data/agents/agent_chat_repository.dart';
 import 'package:omniscope/data/agents/agent_role_catalog.dart';
+import 'package:omniscope/data/agents/agent_role_prompts.dart';
 import 'package:omniscope/data/agents/agents_repository.dart';
 import 'package:omniscope/data/agents/chat_models.dart';
 import 'package:omniscope/data/agents/genkit/genkit_agent_runner.dart';
@@ -23,6 +24,7 @@ import 'package:omniscope/data/trading/broker_exchange_registry.dart';
 import 'package:omniscope/data/trading/trade_executor.dart';
 import 'package:omniscope/features/agents/agent_chat_screen.dart';
 import 'package:omniscope/features/agents/agents_screen.dart';
+import 'package:omniscope/widgets/master_detail_shell.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -210,8 +212,10 @@ void main() {
       findsNothing,
     );
 
+    await tester.tap(find.byType(MasterDetailMenuButton));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Chat A').first);
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(
       find.descendant(
@@ -236,6 +240,16 @@ void main() {
       shellNav: shellNav,
     );
 
+    final other = await narrow.chats.createChat(title: 'Other chat');
+    await narrow.chats.append(
+      chatId: other.chatId,
+      message: AgentChatMessage(
+        id: AgentChatMessage.newId(),
+        role: AgentChatRole.user,
+        content: 'Not the pending chat',
+        createdAt: DateTime.utc(2026, 1, 2),
+      ),
+    );
     final thread = await narrow.chats.createChat(title: 'Pending chat');
     await narrow.chats.append(
       chatId: thread.chatId,
@@ -248,7 +262,8 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.byType(AgentChatScreen), findsNothing);
+    // Content-first: newest/first selected chat is already visible.
+    expect(find.byType(AgentChatScreen), findsOneWidget);
 
     shellNav.goToAgentChat(chatId: thread.chatId);
     await tester.pump();
@@ -278,7 +293,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(AgentChatScreen),
-        matching: find.text('Run research'),
+        matching: find.text('Market research'),
       ),
       findsOneWidget,
     );
@@ -304,9 +319,135 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(AgentChatScreen),
-        matching: find.text('Run research'),
+        matching: find.text('Market research'),
       ),
       findsNothing,
     );
+  });
+
+  testWidgets('tapping a starter drafts the composer without sending',
+      (tester) async {
+    final pumped = await _pumpAgents(
+      tester: tester,
+      surfaceSize: const Size(900, 844),
+    );
+    final chats = pumped.chats;
+
+    await chats.createChat(title: 'Draft thread');
+    await tester.pump();
+
+    expect(find.byType(AgentChatScreen), findsOneWidget);
+    expect(find.text('Market research'), findsOneWidget);
+
+    await tester.tap(find.text('Market research'));
+    await tester.pump();
+
+    final draft = AgentRolePrompts.runUserPromptDraft(
+      roleId: 'marketResearch',
+    );
+    expect(find.text(draft), findsWidgets);
+
+    final inputs = tester.widgetList<ShadInput>(find.byType(ShadInput));
+    final composer = inputs.cast<ShadInput?>().firstWhere(
+          (input) => input?.controller?.text == draft,
+          orElse: () => null,
+        );
+    expect(composer, isNotNull);
+    expect(composer!.controller!.text, draft);
+
+    final thread = chats.threads.firstWhere((t) => t.title == 'Draft thread');
+    expect(thread.messages, isEmpty);
+  });
+
+  testWidgets(
+      'goToAgentChat with starter drafts composer and does not auto-send',
+      (tester) async {
+    final shellNav = ShellNavigationController();
+    final pumped = await _pumpAgents(
+      tester: tester,
+      surfaceSize: const Size(390, 844),
+      shellNav: shellNav,
+    );
+
+    final thread = await pumped.chats.createChat(title: 'Launch draft');
+    await tester.pump();
+
+    shellNav.goToAgentChat(
+      chatId: thread.chatId,
+      starterRoleId: 'marketResearch',
+      symbol: 'AAPL',
+      autoRun: false,
+    );
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+
+    final draft = AgentRolePrompts.runUserPromptDraft(
+      roleId: 'marketResearch',
+      symbol: 'AAPL',
+    );
+    expect(find.byType(AgentChatScreen), findsOneWidget);
+    final inputs = tester.widgetList<ShadInput>(find.byType(ShadInput));
+    final composer = inputs.cast<ShadInput?>().firstWhere(
+          (input) => input?.controller?.text == draft,
+          orElse: () => null,
+        );
+    expect(composer, isNotNull);
+    expect(composer!.controller!.text, draft);
+    expect(pumped.chats.threadFor(thread.chatId).messages, isEmpty);
+  });
+
+  testWidgets(
+      'goToAgentChat Allocation / Coach drafts without sending',
+      (tester) async {
+    final shellNav = ShellNavigationController();
+    final pumped = await _pumpAgents(
+      tester: tester,
+      surfaceSize: const Size(390, 844),
+      shellNav: shellNav,
+    );
+
+    final thread = await pumped.chats.createChat(title: 'Portfolio draft');
+    await tester.pump();
+
+    shellNav.goToAgentChat(
+      chatId: thread.chatId,
+      starterRoleId: 'portfolioGuide',
+      autoRun: false,
+    );
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+
+    final draft = AgentRolePrompts.runUserPromptDraft(
+      roleId: 'portfolioGuide',
+    );
+    final inputs = tester.widgetList<ShadInput>(find.byType(ShadInput));
+    final composer = inputs.cast<ShadInput?>().firstWhere(
+          (input) => input?.controller?.text == draft,
+          orElse: () => null,
+        );
+    expect(composer, isNotNull);
+    expect(pumped.chats.threadFor(thread.chatId).messages, isEmpty);
+
+    shellNav.goToAgentChat(
+      chatId: thread.chatId,
+      starterRoleId: 'paperPortfolioCoach',
+      autoRun: false,
+    );
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+
+    final coachDraft = AgentRolePrompts.runUserPromptDraft(
+      roleId: 'paperPortfolioCoach',
+    );
+    final coachInputs = tester.widgetList<ShadInput>(find.byType(ShadInput));
+    final coachComposer = coachInputs.cast<ShadInput?>().firstWhere(
+          (input) => input?.controller?.text == coachDraft,
+          orElse: () => null,
+        );
+    expect(coachComposer, isNotNull);
+    expect(pumped.chats.threadFor(thread.chatId).messages, isEmpty);
   });
 }

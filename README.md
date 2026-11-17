@@ -9,7 +9,7 @@ Targets: **Linux**, **Windows**, **Android**, **Apple** (**iOS** / **macOS**), a
 
 ## Features (v0)
 
-- **Markets** — Favorites (one shared list), Indices, ETFs, Stocks, and enabled crypto exchanges (Spot pairs); star any symbol to save favorites
+- **Markets** — Favorites (one shared list), Indices, ETFs, Stocks, and enabled crypto exchanges (Spot pairs); star any symbol to save favorites; shell search finds curated symbols by ticker or name and opens asset detail
 - **Asset detail** — price, day change, short curated overview (default symbols), 1M / 3M / 1Y history chart, paper buy/sell, plus external research links opened in the system browser
 - **Portfolio** — practice paper trading (default $10,000 starting cash, configurable in Settings, local holdings, P&L, reset) plus **Live** balance subgroups when API credentials are configured (Crypto.com, Alpaca, …)
 - **Agents** — connect AI helpers with your own API key and model, then chat on-device via in-process Genkit agents (tools + Run); trading roles can Confirm into Practice or a live exchange. Keys and chat threads stay local.
@@ -42,7 +42,7 @@ Shared editor guidance also lives under [`.agents/skills/`](.agents/skills/) (Fl
 
 ## Market data
 
-Equities / indices use **Yahoo Finance** (keyless, unofficial). Crypto quotes use **Crypto.com Exchange** public REST first; brokers such as **Alpaca** power Live portfolio and agent orders, not Markets quotes. Optional credentials: [`.env`](.env.example) or **Settings → Data sources → Credentials**.
+Equities / indices use **Yahoo Finance** (keyless, unofficial). Crypto quotes use **Crypto.com Exchange** public REST first; brokers such as **Alpaca** power Live portfolio and agent orders, not Markets quotes. Optional credentials: **Settings → Data sources → Credentials** (stored in `omniscope.json`).
 
 - Data may be delayed; endpoints can change or rate-limit without notice.
 - For **educational / personal** use in this POC only. Check Yahoo’s, Crypto.com’s, and Alpaca’s terms before redistribution or commercial use.

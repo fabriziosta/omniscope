@@ -1,101 +1,221 @@
 import 'package:flutter/widgets.dart';
+import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import '../core/brand_colors.dart';
+import '../core/shell_navigation.dart';
+import 'app_text.dart';
 import 'app_tooltip.dart';
-import 'nav_back_button.dart';
+import 'in_tab_back.dart';
 
-/// Size-aware master–detail layout for shell tabs (Markets, Portfolio, Agents,
-/// Settings).
+/// Overlay master–detail layout for shell tabs (Markets, Portfolio, Activity,
+/// Agents, Settings).
 ///
-/// Wide (≥ [wideBreakpoint]): persistent sidebar + content pane.
-/// Narrow: nav list, then content with Back (in-tab; no route push).
+/// Content is always full-bleed. Switching to this shell's bottom tab opens
+/// the left nav drawer automatically; the burger also opens it. Tap barrier or
+/// pick a destination to close. System back closes the drawer when open.
 ///
 /// Only one content body should be mounted at a time — callers typically key
-/// the content widget on [selected] / [narrowSelected].
-class MasterDetailShell<T> extends StatelessWidget {
+/// the content widget on [selected].
+class MasterDetailShell<T> extends StatefulWidget {
   const MasterDetailShell({
     super.key,
     required this.selected,
-    required this.narrowSelected,
-    required this.onNarrowBack,
     required this.sidebarBuilder,
     required this.contentBuilder,
-    this.wideBreakpoint = wideBreakpointDefault,
     this.sidebarWidth = sidebarWidthDefault,
   });
 
   static const wideBreakpointDefault = 720.0;
   static const sidebarWidthDefault = 260.0;
 
-  /// Selection used in the wide layout (always non-null).
+  /// Current selection (always non-null when the shell is shown).
   final T selected;
 
-  /// Narrow selection; `null` shows the sidebar list only.
-  final T? narrowSelected;
-
-  final VoidCallback onNarrowBack;
-
-  /// [highlighted] is the current selection on wide, or `null` on the narrow
-  /// list (no row selected until the user opens a pane).
   final Widget Function(
     BuildContext context,
-    T? highlighted, {
-    required bool wide,
+    T highlighted, {
+    required VoidCallback closeNav,
   }) sidebarBuilder;
 
   final Widget Function(
     BuildContext context,
     T item, {
-    required bool showBack,
-    VoidCallback? onBack,
+    required VoidCallback onOpenMenu,
   }) contentBuilder;
 
-  final double wideBreakpoint;
   final double sidebarWidth;
+
+  @override
+  State<MasterDetailShell<T>> createState() => _MasterDetailShellState<T>();
+}
+
+class _MasterDetailShellState<T> extends State<MasterDetailShell<T>>
+    with SingleTickerProviderStateMixin {
+  static const _animDuration = Duration(milliseconds: 220);
+
+  late final AnimationController _controller;
+  late final Animation<Offset> _slide;
+  late final Animation<double> _fade;
+  bool _navOpen = false;
+
+  ShellNavigationController? _shellNav;
+  int? _myTabIndex;
+  bool _wasActiveTab = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: _animDuration);
+    _slide = Tween<Offset>(
+      begin: const Offset(-1, 0),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _myTabIndex = ShellTabIndex.maybeOf(context);
+    final shellNav = context.read<ShellNavigationController>();
+    if (!identical(_shellNav, shellNav)) {
+      _shellNav?.removeListener(_onShellNavChanged);
+      _shellNav = shellNav;
+      _shellNav!.addListener(_onShellNavChanged);
+    }
+    _syncNavForActiveTab();
+  }
+
+  @override
+  void dispose() {
+    _shellNav?.removeListener(_onShellNavChanged);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onShellNavChanged() => _syncNavForActiveTab();
+
+  /// Open the drawer when this shell's bottom tab becomes the selected one
+  /// (including the first time Markets is shown on launch).
+  ///
+  /// Skip auto-open when an Agents deep-link is pending so Investigate / Trade
+  /// check land on the chat with the sidebar closed.
+  void _syncNavForActiveTab() {
+    final myTab = _myTabIndex;
+    final shellNav = _shellNav;
+    if (myTab == null || shellNav == null) return;
+
+    final active = shellNav.tabIndex == myTab;
+    if (active && !_wasActiveTab) {
+      final skipOpen = myTab == ShellNavigationController.agentsTabIndex &&
+          shellNav.pendingAgentChatOpen != null;
+      if (!skipOpen) {
+        // Defer so the first frame can mount content before the slide starts.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _openNav();
+        });
+      }
+    }
+    _wasActiveTab = active;
+  }
+
+  void _openNav() {
+    if (_navOpen) return;
+    setState(() => _navOpen = true);
+    _controller.forward();
+  }
+
+  void _closeNav() {
+    if (!_navOpen) return;
+    setState(() => _navOpen = false);
+    _controller.reverse();
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = constraints.maxWidth >= wideBreakpoint;
-        if (wide) {
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+    return InTabBackEffect(
+      onBack: _navOpen ? _closeNav : null,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final panelWidth = widget.sidebarWidth.clamp(
+            0.0,
+            (constraints.maxWidth - 48).clamp(0.0, widget.sidebarWidth),
+          );
+
+          return Stack(
+            fit: StackFit.expand,
             children: [
-              SizedBox(
-                width: sidebarWidth,
-                child: sidebarBuilder(context, selected, wide: true),
+              widget.contentBuilder(
+                context,
+                widget.selected,
+                onOpenMenu: _openNav,
               ),
-              Container(
-                width: 1,
-                color: theme.colorScheme.border,
-              ),
-              Expanded(
-                child: contentBuilder(
-                  context,
-                  selected,
-                  showBack: false,
-                  onBack: null,
-                ),
+              AnimatedBuilder(
+                animation: _controller,
+                builder: (context, _) {
+                  if (_controller.isDismissed) {
+                    return const SizedBox.shrink();
+                  }
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      FadeTransition(
+                        opacity: _fade,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _closeNav,
+                          child: ColoredBox(
+                            color: theme.colorScheme.foreground
+                                .withValues(alpha: 0.32),
+                          ),
+                        ),
+                      ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: SlideTransition(
+                          position: _slide,
+                          child: SizedBox(
+                            width: panelWidth,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.background,
+                                border: Border(
+                                  right: BorderSide(
+                                    color: theme.colorScheme.border,
+                                  ),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: BrandColors.shadowOf(context),
+                                    blurRadius: 16,
+                                    offset: const Offset(4, 0),
+                                  ),
+                                ],
+                              ),
+                              child: SafeArea(
+                                right: false,
+                                child: widget.sidebarBuilder(
+                                  context,
+                                  widget.selected,
+                                  closeNav: _closeNav,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ],
           );
-        }
-
-        final narrowItem = narrowSelected;
-        if (narrowItem == null) {
-          return sidebarBuilder(context, null, wide: false);
-        }
-
-        return contentBuilder(
-          context,
-          narrowItem,
-          showBack: true,
-          onBack: onNarrowBack,
-        );
-      },
+        },
+      ),
     );
   }
 }
@@ -118,19 +238,19 @@ class MasterDetailNavList extends StatelessWidget {
   /// Optional content pinned under the scrollable tiles (e.g. app version).
   final Widget? footer;
 
-  static const tileGap = 6.0;
-  static const listPadding = EdgeInsets.fromLTRB(12, 8, 12, 24);
+  static const tileGap = 4.0;
+  static const listPadding = EdgeInsets.fromLTRB(10, 6, 10, 20);
 
   @override
   Widget build(BuildContext context) {
     final list = ListView(
       padding: footer == null
           ? listPadding
-          : const EdgeInsets.fromLTRB(12, 8, 12, 8),
+          : const EdgeInsets.fromLTRB(10, 6, 10, 6),
       children: [
         for (final child in leading) ...[
           child,
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
         ],
         for (var i = 0; i < tiles.length; i++) ...[
           if (i > 0) const SizedBox(height: tileGap),
@@ -147,7 +267,7 @@ class MasterDetailNavList extends StatelessWidget {
       children: [
         Expanded(child: list),
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+          padding: const EdgeInsets.fromLTRB(10, 6, 10, 12),
           child: footerWidget,
         ),
       ],
@@ -213,13 +333,13 @@ class MasterDetailNavTile extends StatelessWidget {
               ),
               child: Padding(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 child: Row(
                   children: [
                     if (icon != null) ...[
                       Container(
-                        width: 28,
-                        height: 28,
+                        width: 24,
+                        height: 24,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           color: selected
@@ -230,13 +350,13 @@ class MasterDetailNavTile extends StatelessWidget {
                         ),
                         child: Icon(
                           icon,
-                          size: 15,
+                          size: 13,
                           color: selected
                               ? theme.colorScheme.secondaryForeground
                               : theme.colorScheme.primary,
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 8),
                     ],
                     Expanded(
                       child: Column(
@@ -246,27 +366,26 @@ class MasterDetailNavTile extends StatelessWidget {
                           Row(
                             children: [
                               Flexible(
-                                child: Text(
+                                child: AppEllipsisText(
                                   title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.large.copyWith(
+                                  maxLines: 2,
+                                  style: theme.textTheme.p.copyWith(
                                     color: foreground,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ),
                               if (badge != null) ...[
-                                const SizedBox(width: 8),
+                                const SizedBox(width: 6),
                                 badge!,
                               ],
                             ],
                           ),
                           if (meta != null) ...[
-                            const SizedBox(height: 2),
-                            Text(
+                            const SizedBox(height: 1),
+                            AppEllipsisText(
                               meta!,
                               maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.small.copyWith(
                                 color: muted,
                               ),
@@ -277,7 +396,7 @@ class MasterDetailNavTile extends StatelessWidget {
                     ),
                     Icon(
                       LucideIcons.chevronRight,
-                      size: 16,
+                      size: 14,
                       color: muted,
                     ),
                   ],
@@ -291,87 +410,85 @@ class MasterDetailNavTile extends StatelessWidget {
   }
 }
 
-/// Content chrome: optional Back, title, subtitle, optional trailing, then body.
+/// Content chrome: burger menu, title, subtitle, optional trailing, then body.
 class MasterDetailContentPane extends StatelessWidget {
   const MasterDetailContentPane({
     super.key,
     required this.title,
     required this.subtitle,
     required this.body,
-    this.showBack = false,
-    this.onBack,
-    this.backLabel,
+    required this.onOpenMenu,
     this.trailing,
   });
 
   final String title;
   final String subtitle;
   final Widget body;
-  final bool showBack;
-  final VoidCallback? onBack;
-
-  /// Parent destination label when [showBack] (e.g. "Markets", exchange name).
-  final String? backLabel;
+  final VoidCallback onOpenMenu;
   final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final titleRow = Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: theme.textTheme.h4),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: theme.textTheme.small.copyWith(
-                  color: theme.colorScheme.mutedForeground,
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (trailing != null) ...[
-          const SizedBox(width: 8),
-          trailing!,
-        ],
-      ],
-    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(color: theme.colorScheme.border),
-            ),
-          ),
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(showBack ? 12 : 20, 8, 12, 12),
-            child: showBack
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: NavBackButton(
-                          label: backLabel ?? 'Back',
-                          onPressed: onBack,
-                        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 8, 12, 12),
+          child: Row(
+            children: [
+              MasterDetailMenuButton(onPressed: onOpenMenu),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: theme.textTheme.h4),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.small.copyWith(
+                        color: theme.colorScheme.mutedForeground,
                       ),
-                      const SizedBox(height: 4),
-                      titleRow,
-                    ],
-                  )
-                : titleRow,
+                    ),
+                  ],
+                ),
+              ),
+              if (trailing != null) ...[
+                const SizedBox(width: 8),
+                trailing!,
+              ],
+            ],
           ),
         ),
         Expanded(child: body),
       ],
+    );
+  }
+}
+
+/// Ghost burger control used by master–detail content chrome.
+class MasterDetailMenuButton extends StatelessWidget {
+  const MasterDetailMenuButton({
+    super.key,
+    required this.onPressed,
+  });
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Open menu',
+      child: ShadButton.ghost(
+        width: 44,
+        height: 44,
+        padding: EdgeInsets.zero,
+        onPressed: onPressed,
+        child: const Icon(LucideIcons.menu, size: 20),
+      ),
     );
   }
 }

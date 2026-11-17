@@ -1,12 +1,9 @@
-import 'package:flutter/services.dart';
-
-import '../../core/dotenv_asset.dart';
 import 'models.dart';
 
-/// API keys per [LlmProvider] from env secrets (`.env` + prefs).
+/// API keys per [LlmProvider] from the config `secrets` map.
 ///
-/// Settings → Connections reads/writes keys through [EnvSecretsRepository]
-/// (prefs + best-effort `.env`).
+/// Settings → Connections reads/writes keys through [EnvSecretsRepository].
+/// Map keys use [envNameFor] (`OMNISCOPE_*_API_KEY`).
 class LlmApiKeyConfig {
   LlmApiKeyConfig(this._keysByProvider);
 
@@ -23,7 +20,7 @@ class LlmApiKeyConfig {
 
   bool get isEmpty => _keysByProvider.isEmpty;
 
-  /// Env var name for a provider (e.g. [LlmProvider.openAi] → `OMNISCOPE_OPENAI_API_KEY`).
+  /// Secrets-map key for a provider (e.g. [LlmProvider.openAi] → `OMNISCOPE_OPENAI_API_KEY`).
   static String envNameFor(LlmProvider provider) {
     final suffix = switch (provider) {
       LlmProvider.gemini => 'GEMINI',
@@ -36,11 +33,6 @@ class LlmApiKeyConfig {
     return 'OMNISCOPE_${suffix}_API_KEY';
   }
 
-  static Future<LlmApiKeyConfig> load({AssetBundle? bundle}) async {
-    final values = await DotEnvAsset.load(bundle: bundle);
-    return fromValues(values);
-  }
-
   static LlmApiKeyConfig fromValues(Map<String, String> values) {
     final byProvider = <LlmProvider, String>{};
     for (final provider in LlmProvider.values) {
@@ -51,7 +43,4 @@ class LlmApiKeyConfig {
     }
     return LlmApiKeyConfig(byProvider);
   }
-
-  /// Parses a raw dotenv string (tests / one-off loads).
-  static LlmApiKeyConfig parse(String raw) => fromValues(DotEnvAsset.parse(raw));
 }

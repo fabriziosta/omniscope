@@ -50,6 +50,41 @@ abstract final class AgentPeerDelegation {
     return '$base$handoff';
   }
 
+  /// Role ids the orchestrator delegated to (order of first tool call).
+  ///
+  /// Parses `delegate_to_omniscope_<roleId>` tool names from Genkit `agents()`
+  /// middleware outputs. Dedupes while preserving first-seen order.
+  static List<String> extractDelegatedRoleIds(
+    Iterable<({String toolName, Object? output})> toolOutputs,
+  ) {
+    final ids = <String>[];
+    final seen = <String>{};
+    final prefix = '${delegateToolPrefix}_';
+    for (final item in toolOutputs) {
+      final name = item.toolName.trim();
+      if (!name.startsWith(prefix)) continue;
+      final agent = name.substring(prefix.length);
+      final roleId = roleIdFromAgentName(agent);
+      if (roleId == null || !seen.add(roleId)) continue;
+      ids.add(roleId);
+    }
+    return ids;
+  }
+
+  /// Compact label for chat message meta (footer under assistant bubbles).
+  static String chatMetaLabel(String roleId) {
+    final id = roleId.trim();
+    return switch (id) {
+      'marketResearch' => 'Market Research',
+      'liveBalanceExplainer' => 'Live Balance',
+      'portfolioGuide' => 'Portfolio Guide',
+      'paperPortfolioCoach' => 'Practice Coach',
+      'intradayTrading' => 'Intraday',
+      'orchestrator' => 'Orchestrator',
+      _ => id.isEmpty ? 'Orchestrator' : id,
+    };
+  }
+
   /// Pull trade JSON from `delegate_to_omniscope_intradayTrading` tool outputs.
   static Map<String, dynamic>? extractDelegatedTradeJson(
     Iterable<({String toolName, Object? output})> toolOutputs,

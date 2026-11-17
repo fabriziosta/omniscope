@@ -148,24 +148,38 @@ class AgentAppSettings extends ChangeNotifier {
       final o = AgentRoleOverride.fromJson(Map<String, dynamic>.from(item));
       if (o.roleId.isNotEmpty) _overrides[o.roleId] = o;
     }
-    _autopilotEnabled = json['autopilotEnabled'] as bool? ?? false;
-    _autopilotExchangeId = json['autopilotExchangeId'] as String?;
-    _autopilotMaxNotional = (json['autopilotMaxNotional'] as num?)?.toDouble();
-    _autopilotMaxOpenProposals =
-        (json['autopilotMaxOpenProposals'] as num?)?.toInt() ?? 3;
-    _scheduleEnabled = json['scheduleEnabled'] as bool? ?? false;
-    _scheduleInterval =
-        AgentScheduleIntervalX.parse(json['scheduleInterval'] as String?);
-    _scheduleSymbols = normalizeScheduleSymbols(
-      (json['scheduleSymbols'] as List? ?? const [])
-          .whereType<String>(),
+    _autopilotEnabled = json['autopilotEnabled'] is bool
+        ? json['autopilotEnabled'] as bool
+        : false;
+    _autopilotExchangeId = json['autopilotExchangeId'] is String
+        ? json['autopilotExchangeId'] as String
+        : null;
+    final maxNotional = json['autopilotMaxNotional'];
+    _autopilotMaxNotional =
+        maxNotional is num ? maxNotional.toDouble() : null;
+    final maxOpen = json['autopilotMaxOpenProposals'];
+    _autopilotMaxOpenProposals = maxOpen is num ? maxOpen.toInt() : 3;
+    _scheduleEnabled = json['scheduleEnabled'] is bool
+        ? json['scheduleEnabled'] as bool
+        : false;
+    final intervalRaw = json['scheduleInterval'];
+    _scheduleInterval = AgentScheduleIntervalX.parse(
+      intervalRaw is String ? intervalRaw : null,
     );
-    _scheduleUseInvestInterest =
-        json['scheduleUseInvestInterest'] as bool? ?? true;
-    final last = json['scheduleLastRunAt'] as String?;
-    _scheduleLastRunAt = last == null ? null : DateTime.tryParse(last);
-    _answerMood = AgentAnswerMoodX.parse(json['answerMood'] as String?);
-    _answerMoodNote = normalizeAnswerMoodNote(json['answerMoodNote'] as String?);
+    _scheduleSymbols = normalizeScheduleSymbols(
+      (json['scheduleSymbols'] as List? ?? const []).whereType<String>(),
+    );
+    _scheduleUseInvestInterest = json['scheduleUseInvestInterest'] is bool
+        ? json['scheduleUseInvestInterest'] as bool
+        : true;
+    final last = json['scheduleLastRunAt'];
+    _scheduleLastRunAt =
+        last is String ? DateTime.tryParse(last) : null;
+    final moodRaw = json['answerMood'];
+    _answerMood = AgentAnswerMoodX.parse(moodRaw is String ? moodRaw : null);
+    final noteRaw = json['answerMoodNote'];
+    _answerMoodNote =
+        normalizeAnswerMoodNote(noteRaw is String ? noteRaw : null);
   }
 
   Map<String, dynamic> toJson() => {
