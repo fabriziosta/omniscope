@@ -11,6 +11,7 @@ import 'package:omniscope/data/agents/agent_role_catalog.dart';
 import 'package:omniscope/data/agents/agents_repository.dart';
 import 'package:omniscope/data/agents/genkit/genkit_agent_runner.dart';
 import 'package:omniscope/data/agents/invest_interest_proposal_repository.dart';
+import 'package:omniscope/data/agents/llm_connection_status_store.dart';
 import 'package:omniscope/data/agents/llm_runtime_settings.dart';
 import 'package:omniscope/data/agents/trade_proposal_repository.dart';
 import 'package:omniscope/data/crypto/crypto_com/crypto_com_exchange_client.dart';
@@ -222,6 +223,7 @@ void main() {
     final llmRuntime = seeded.llmRuntime;
     final agentApp = seeded.appSettings;
     final envSecrets = seeded.secrets;
+    final llmConnectionStatus = LlmConnectionStatusStore();
     final agentSchedule = AgentScheduleCoordinator(
       agents: agents,
       chats: agentChats,
@@ -263,6 +265,9 @@ void main() {
           ChangeNotifierProvider<PortfolioRepository>.value(value: portfolio),
           ChangeNotifierProvider<AgentsRepository>.value(value: agents),
           ChangeNotifierProvider<LlmRuntimeSettings>.value(value: llmRuntime),
+          ChangeNotifierProvider<LlmConnectionStatusStore>.value(
+            value: llmConnectionStatus,
+          ),
           ChangeNotifierProvider<AgentAppSettings>.value(value: agentApp),
           ChangeNotifierProvider<AgentChatRepository>.value(value: agentChats),
           ChangeNotifierProvider<TradeProposalRepository>.value(
@@ -396,7 +401,8 @@ void main() {
         .toList();
     expect(roleTitles, contains('Intraday Execution & Risk Control'));
     expect(roleTitles, isNot(contains('Hedge Fund Desk')));
-    final tradeStarter = find.textContaining('Run a trade check for');
+    // Starter tiles show short labels; the full prompt is drafted on tap.
+    final tradeStarter = find.text('Trade check');
     await tester.scrollUntilVisible(
       tradeStarter,
       120,
@@ -408,7 +414,12 @@ void main() {
           .first,
     );
     expect(tradeStarter, findsOneWidget);
-    expect(find.text('Trade check'), findsOneWidget);
+    await tester.tap(tradeStarter);
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('Run a trade check for'),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('Settings').last);
     await tester.pump();
