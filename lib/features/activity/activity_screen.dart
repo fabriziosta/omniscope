@@ -704,13 +704,11 @@ class _EventTile extends StatelessWidget {
     required this.event,
     required this.roleTitle,
     this.portfolioLabel,
-    this.onTap,
   });
 
   final AgentActivityEvent event;
   final String roleTitle;
   final String? portfolioLabel;
-  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -722,30 +720,27 @@ class _EventTile extends StatelessWidget {
       ?portfolioLabel,
       timeLabel,
     ].join(' · ');
-    return GestureDetector(
-      onTap: onTap,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: theme.colorScheme.border),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                meta,
-                style: theme.textTheme.small.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: theme.colorScheme.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              meta,
+              style: theme.textTheme.small.copyWith(
+                fontWeight: FontWeight.w600,
               ),
-              if (event.summary.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(event.summary, style: theme.textTheme.muted),
-              ],
+            ),
+            if (event.summary.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(event.summary, style: theme.textTheme.muted),
             ],
-          ),
+          ],
         ),
       ),
     );

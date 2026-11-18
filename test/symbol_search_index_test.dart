@@ -13,18 +13,16 @@ import 'support/memory_config.dart';
 
 class _FakeCryptoClient extends CryptoExchangeClient {
   _FakeCryptoClient({
-    this.defaultSymbols = const ['BTC_USD', 'ETH_USD'],
     this.browse = const ['BTC_USD', 'ETH_USD', 'SOL_USD'],
   });
 
-  final List<String> defaultSymbols;
   final List<String> browse;
 
   @override
-  late final CryptoExchange exchange = CryptoExchange(
+  late final CryptoExchange exchange = const CryptoExchange(
     id: 'crypto_com',
     displayName: 'Crypto.com',
-    defaultSymbols: defaultSymbols,
+    defaultSymbols: ['BTC_USD', 'ETH_USD'],
   );
 
   @override

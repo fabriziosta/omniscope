@@ -159,7 +159,7 @@ void main() {
   });
 
   Future<({int Function() agentCallCount, ShellNavigationController shellNav})>
-      _pumpLaunchHarness(WidgetTester tester) async {
+      pumpLaunchHarness(WidgetTester tester) async {
     final store = await memoryConfig();
     final agentRoles = await AgentRoleCatalog.load();
     final agents = AgentsRepository(store: store, roleCatalog: agentRoles);
@@ -304,7 +304,7 @@ void main() {
     return (agentCallCount: () => agentCalls, shellNav: shellNav);
   }
 
-  Future<void> _expectComposerDraft(
+  Future<void> expectComposerDraft(
     WidgetTester tester, {
     required String roleId,
     String symbol = '',
@@ -367,12 +367,12 @@ void main() {
   testWidgets(
       'in-app launches draft composer without sending (research/trade/portfolio)',
       (tester) async {
-    final harness = await _pumpLaunchHarness(tester);
+    final harness = await pumpLaunchHarness(tester);
     final chats = tester.element(find.byType(AgentsScreen))
         .read<AgentChatRepository>();
 
     await tester.tap(find.text('Launch investigate'));
-    await _expectComposerDraft(
+    await expectComposerDraft(
       tester,
       roleId: 'marketResearch',
       symbol: 'AAPL',
@@ -382,7 +382,7 @@ void main() {
     expect(chats.threads.single.title, 'Investigate asset AAPL');
 
     await tester.tap(find.text('Launch trade'));
-    await _expectComposerDraft(
+    await expectComposerDraft(
       tester,
       roleId: 'intradayTrading',
       symbol: 'AAPL',
@@ -398,7 +398,7 @@ void main() {
     );
 
     await tester.tap(find.text('Launch portfolio review'));
-    await _expectComposerDraft(
+    await expectComposerDraft(
       tester,
       roleId: 'portfolioGuide',
       agentCallCount: harness.agentCallCount,
