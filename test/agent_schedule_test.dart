@@ -230,7 +230,7 @@ void main() {
         isTrue,
       );
       expect(
-        AgentRolePrompts.supportsInvestInterestProposals('paperPortfolioCoach'),
+        AgentRolePrompts.supportsInvestInterestProposals('liveBalanceExplainer'),
         isFalse,
       );
     });

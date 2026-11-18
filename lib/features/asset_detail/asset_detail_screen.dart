@@ -393,7 +393,7 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
                                 children: [
                                   AgentLaunchButton(
                                     symbol: widget.symbol,
-                                    intent: AgentLaunchIntent.paperReview,
+                                    intent: AgentLaunchIntent.explainPortfolio,
                                     outline: true,
                                     side: 'buy',
                                     quantity: double.tryParse(

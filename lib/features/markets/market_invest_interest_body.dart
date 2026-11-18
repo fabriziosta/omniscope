@@ -6,6 +6,7 @@ import '../../data/crypto/crypto_exchange_registry.dart';
 import '../../data/market/equity_data_source.dart';
 import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/favorites_repository.dart';
+import '../../data/settings/invest_interest_provenance.dart';
 import '../../widgets/favorites_quotes_pane.dart';
 
 /// Markets Invest interest content pane (agent-facing symbol list).
@@ -42,6 +43,9 @@ class MarketInvestInterestPane extends StatelessWidget {
       emptyMessage: AppCopy.noInvestInterest,
       blockedMessage: noSources ? AppCopy.noMarketSourcesEnabled : null,
       onOpenMenu: onOpenMenu,
+      sourceLabelFor: (symbol) => favorites.sourceFor(symbol).label,
+      sourceIsAgentFor: (symbol) =>
+          favorites.sourceFor(symbol) == InvestInterestSource.agent,
       onReorder: (oldIndex, newIndex) async {
         await favorites.reorderInvestInterest(oldIndex, newIndex);
         return favorites.investInterestSymbols;

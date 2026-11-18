@@ -5,6 +5,7 @@ import 'package:omniscope/data/agents/invest_interest_proposal.dart';
 import 'package:omniscope/data/agents/invest_interest_proposal_actions.dart';
 import 'package:omniscope/data/agents/invest_interest_proposal_repository.dart';
 import 'package:omniscope/data/settings/favorites_repository.dart';
+import 'package:omniscope/data/settings/invest_interest_provenance.dart';
 import 'package:omniscope/data/settings/mandate_settings.dart';
 import 'package:omniscope/data/settings/user_config_keys.dart';
 
@@ -106,6 +107,8 @@ Here is a watchlist tweak.
       expect(h.favorites.investInterestSymbols, ['SPY', 'AAPL']);
       expect(h.favorites.investInterestManagedByAgent, isTrue);
       expect(h.favorites.investInterestManagedByRoleId, 'marketResearch');
+      expect(h.favorites.sourceFor('SPY'), InvestInterestSource.user);
+      expect(h.favorites.sourceFor('AAPL'), InvestInterestSource.agent);
       expect(
         h.activity.events.any(
           (e) => e.kind == AgentActivityKind.investInterestConfirmed,
@@ -172,6 +175,77 @@ Here is a watchlist tweak.
 
       await h.favorites.toggleInvestInterest('MSFT');
       expect(h.favorites.investInterestManagedByAgent, isFalse);
+      expect(h.favorites.sourceFor('MSFT'), InvestInterestSource.user);
+    });
+
+    test('autopilot applies add-only investigation proposals', () async {
+      final h = await harness();
+      final proposal = InvestInterestProposal.fromToolInput(
+        {
+          'add': ['AAPL'],
+          'rationale': 'Autopilot add',
+        },
+        roleId: 'marketResearch',
+      );
+      await h.proposals.upsert(proposal);
+
+      final err = await h.actions.confirm(proposal.id, autopilot: true);
+      expect(err, isNull);
+      expect(
+        h.proposals.byId(proposal.id)!.status,
+        InvestInterestProposalStatus.confirmed,
+      );
+      expect(h.favorites.investInterestSymbols, ['MSFT', 'SPY', 'AAPL']);
+      expect(h.favorites.sourceFor('AAPL'), InvestInterestSource.agent);
+      expect(h.favorites.sourceFor('MSFT'), InvestInterestSource.user);
+      expect(
+        h.activity.events.any(
+          (e) => e.kind == AgentActivityKind.autopilotInvestInterestApplied,
+        ),
+        isTrue,
+      );
+    });
+
+    test('autopilot rejects remove/set proposals', () async {
+      final h = await harness();
+      final withRemove = InvestInterestProposal.fromToolInput(
+        {
+          'add': ['AAPL'],
+          'remove': ['MSFT'],
+          'rationale': 'Mixed',
+        },
+        roleId: 'marketResearch',
+      );
+      await h.proposals.upsert(withRemove);
+      final err = await h.actions.confirm(withRemove.id, autopilot: true);
+      expect(err, isNotNull);
+      expect(
+        h.proposals.byId(withRemove.id)!.status,
+        InvestInterestProposalStatus.pending,
+      );
+      expect(h.favorites.investInterestSymbols, ['MSFT', 'SPY']);
+    });
+
+    test('autopilot rejects trading-role invest interest', () async {
+      final h = await harness();
+      final proposal = InvestInterestProposal.fromToolInput(
+        {
+          'add': ['AAPL'],
+          'rationale': 'Trading role',
+        },
+        roleId: 'intradayTrading',
+      );
+      await h.proposals.upsert(proposal);
+      expect(
+        InvestInterestProposalActions.isAutopilotAddOnlyEligible(proposal),
+        isFalse,
+      );
+      final err = await h.actions.confirm(proposal.id, autopilot: true);
+      expect(err, isNotNull);
+      expect(
+        h.proposals.byId(proposal.id)!.status,
+        InvestInterestProposalStatus.pending,
+      );
     });
   });
 }

@@ -75,7 +75,9 @@ class AgentsAdvancedSectionBody extends StatelessWidget {
           'Autopilot',
           description:
               'When on, risk-approved trade proposals from the trading '
-              'specialty auto-submit to the default portfolio.',
+              'specialty auto-submit to the default portfolio, and '
+              'investigation agents may auto-add Invest interest symbols '
+              '(adds only — remove/set still need Confirm).',
         ),
         const SizedBox(height: 8),
         Row(
@@ -128,8 +130,9 @@ class AgentsAdvancedSectionBody extends StatelessWidget {
         const SettingsSubsectionLabel(
           'Schedule',
           description:
-              'While Omniscope is open, periodically Run research on '
-              'Invest interest (or typed symbols).',
+              'While Omniscope is open, periodically Run research or trade '
+              'checks on Invest interest (or typed symbols). Autopilot still '
+              'applies when enabled.',
         ),
         const SizedBox(height: 8),
         Row(

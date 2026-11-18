@@ -30,6 +30,8 @@ class FavoritesQuotesPane extends StatelessWidget {
     this.blockedMessage,
     this.title = 'Favorites',
     this.errorTitle = 'Could not load Favorites',
+    this.sourceLabelFor,
+    this.sourceIsAgentFor,
   });
 
   final List<String> symbols;
@@ -43,6 +45,12 @@ class FavoritesQuotesPane extends StatelessWidget {
 
   final String title;
   final String errorTitle;
+
+  /// Optional You/Agent label per symbol (Invest interest pane).
+  final String? Function(String symbol)? sourceLabelFor;
+
+  /// When [sourceLabelFor] is set, whether the chip uses Agent styling.
+  final bool Function(String symbol)? sourceIsAgentFor;
 
   @override
   Widget build(BuildContext context) {
@@ -63,6 +71,8 @@ class FavoritesQuotesPane extends StatelessWidget {
         onReorder: onReorder,
         onOpenMenu: onOpenMenu,
         blockedMessage: blockedMessage,
+        sourceLabelFor: sourceLabelFor,
+        sourceIsAgentFor: sourceIsAgentFor,
       ),
     );
   }
@@ -78,6 +88,8 @@ class _FavoritesQuotesPaneView extends StatelessWidget {
     required this.onReorder,
     required this.onOpenMenu,
     this.blockedMessage,
+    this.sourceLabelFor,
+    this.sourceIsAgentFor,
   });
 
   final String title;
@@ -88,6 +100,8 @@ class _FavoritesQuotesPaneView extends StatelessWidget {
   final Future<List<String>> Function(int oldIndex, int newIndex) onReorder;
   final VoidCallback onOpenMenu;
   final String? blockedMessage;
+  final String? Function(String symbol)? sourceLabelFor;
+  final bool Function(String symbol)? sourceIsAgentFor;
 
   void _openAsset(BuildContext context, String symbol) {
     pushFadePage(context, AssetDetailScreen(symbol: symbol));
@@ -143,6 +157,12 @@ class _FavoritesQuotesPaneView extends StatelessWidget {
                                   density: density,
                                   onTap: () =>
                                       _openAsset(context, quote.symbol),
+                                  sourceLabel:
+                                      sourceLabelFor?.call(quote.symbol),
+                                  sourceIsAgent: sourceIsAgentFor?.call(
+                                        quote.symbol,
+                                      ) ??
+                                      false,
                                 ),
                               ),
                               ReorderableDragStartListener(

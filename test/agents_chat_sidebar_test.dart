@@ -398,7 +398,7 @@ void main() {
   });
 
   testWidgets(
-      'goToAgentChat Allocation / Coach drafts without sending',
+      'goToAgentChat portfolio guide drafts without sending',
       (tester) async {
     final shellNav = ShellNavigationController();
     final pumped = await _pumpAgents(
@@ -428,26 +428,6 @@ void main() {
           orElse: () => null,
         );
     expect(composer, isNotNull);
-    expect(pumped.chats.threadFor(thread.chatId).messages, isEmpty);
-
-    shellNav.goToAgentChat(
-      chatId: thread.chatId,
-      starterRoleId: 'paperPortfolioCoach',
-      autoRun: false,
-    );
-    for (var i = 0; i < 20; i++) {
-      await tester.pump(const Duration(milliseconds: 50));
-    }
-
-    final coachDraft = AgentRolePrompts.runUserPromptDraft(
-      roleId: 'paperPortfolioCoach',
-    );
-    final coachInputs = tester.widgetList<ShadInput>(find.byType(ShadInput));
-    final coachComposer = coachInputs.cast<ShadInput?>().firstWhere(
-          (input) => input?.controller?.text == coachDraft,
-          orElse: () => null,
-        );
-    expect(coachComposer, isNotNull);
     expect(pumped.chats.threadFor(thread.chatId).messages, isEmpty);
   });
 }

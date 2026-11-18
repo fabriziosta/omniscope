@@ -16,6 +16,7 @@ enum AgentActivityKind {
   investInterestConfirmed,
   investInterestDismissed,
   investInterestFailed,
+  autopilotInvestInterestApplied,
 }
 
 extension AgentActivityKindX on AgentActivityKind {
@@ -33,6 +34,8 @@ extension AgentActivityKindX on AgentActivityKind {
         AgentActivityKind.investInterestConfirmed => 'Invest interest applied',
         AgentActivityKind.investInterestDismissed => 'Invest interest refused',
         AgentActivityKind.investInterestFailed => 'Invest interest failed',
+        AgentActivityKind.autopilotInvestInterestApplied =>
+          'Autopilot invest interest',
       };
 
   static AgentActivityKind parse(String? raw) {

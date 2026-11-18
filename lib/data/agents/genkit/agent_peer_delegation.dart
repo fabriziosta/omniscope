@@ -41,9 +41,8 @@ abstract final class AgentPeerDelegation {
       'liveBalanceExplainer' =>
         ' Use to explain live exchange balances and totals.',
       'portfolioGuide' =>
-        ' Use for allocation, concentration, and diversification reviews.',
-      'paperPortfolioCoach' =>
-        ' Use for practice (paper) portfolio coaching.',
+        ' Use for allocation, concentration, diversification, and '
+            'practice sizing reviews.',
       _ => ' Use for specialized help on this role\'s topic.',
     };
     if (base.isEmpty) return handoff.trim();
@@ -78,7 +77,6 @@ abstract final class AgentPeerDelegation {
       'marketResearch' => 'Market Research',
       'liveBalanceExplainer' => 'Live Balance',
       'portfolioGuide' => 'Portfolio Guide',
-      'paperPortfolioCoach' => 'Practice Coach',
       'intradayTrading' => 'Intraday',
       'orchestrator' => 'Orchestrator',
       _ => id.isEmpty ? 'Orchestrator' : id,

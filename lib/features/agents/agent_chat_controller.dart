@@ -14,6 +14,7 @@ import '../../data/agents/genkit/omniscope_agent_tools.dart';
 import '../../data/agents/invest_interest_proposal.dart';
 import '../../data/agents/invest_interest_proposal_actions.dart';
 import '../../data/agents/invest_interest_proposal_repository.dart';
+import '../../data/agents/llm_connection_health.dart';
 import '../../data/agents/llm_model_router.dart';
 import '../../data/agents/llm_runtime_settings.dart';
 import '../../data/agents/market_context_builder.dart';
@@ -46,9 +47,18 @@ class AgentChatSendOk extends AgentChatSendResult {
 }
 
 class AgentChatSendFailed extends AgentChatSendResult {
-  const AgentChatSendFailed(this.message);
+  const AgentChatSendFailed(
+    this.message, {
+    this.connectionKind,
+  });
 
   final String message;
+
+  /// When set, UI can nudge Settings → Connections for auth failures.
+  final LlmConnectionKind? connectionKind;
+
+  bool get suggestConnections =>
+      connectionKind == LlmConnectionKind.invalidKey;
 }
 
 class AgentChatSendBlockedNoExchange extends AgentChatSendResult {
@@ -331,6 +341,7 @@ class AgentChatController extends ChangeNotifier {
         mandate: _mandate,
         answerMood: _appSettings.answerMood,
         answerMoodNote: _appSettings.answerMoodNote,
+        autopilotEnabled: _appSettings.autopilotEnabled,
         proposeInvestInterest: investInterestRepo != null
             ? ({
                 required List<String> add,
@@ -360,10 +371,18 @@ class AgentChatController extends ChangeNotifier {
                     summary: proposal.summaryLabel,
                   ),
                 );
-                return 'Proposed Invest interest change '
-                    '(pending Confirm in this chat): '
-                    '${proposal.summaryLabel}. '
-                    'Do not claim the list already changed.';
+                final mayAutopilot = _appSettings.autopilotEnabled &&
+                    InvestInterestProposalActions.isAutopilotAddOnlyEligible(
+                      proposal,
+                    );
+                return mayAutopilot
+                    ? 'Proposed Invest interest add '
+                        '(Autopilot may apply without Confirm): '
+                        '${proposal.summaryLabel}.'
+                    : 'Proposed Invest interest change '
+                        '(pending Confirm in this chat): '
+                        '${proposal.summaryLabel}. '
+                        'Do not claim the list already changed.';
               }
             : null,
       );
@@ -487,16 +506,36 @@ class AgentChatController extends ChangeNotifier {
         proposal = _proposals.byId(proposal.id) ?? proposal;
       }
 
+      if (pendingInvestInterest != null &&
+          _appSettings.autopilotEnabled &&
+          InvestInterestProposalActions.isAutopilotAddOnlyEligible(
+            pendingInvestInterest!,
+          )) {
+        await _maybeAutopilotInvestInterest(pendingInvestInterest!);
+        pendingInvestInterest =
+            _investInterestProposals?.byId(pendingInvestInterest!.id) ??
+                pendingInvestInterest;
+      }
+
       return AgentChatSendOk(
         proposal: proposal,
         investInterestProposal: pendingInvestInterest,
       );
     } on GenkitAgentException catch (e) {
-      return AgentChatSendFailed(e.message);
+      return AgentChatSendFailed(
+        e.message,
+        connectionKind: e.connectionKind ??
+            LlmConnectionHealth.classify(
+              statusCode: e.statusCode,
+              message: e.message,
+            ),
+      );
     } catch (e, st) {
       debugPrint('Agent chat send failed: $e\n$st');
-      return const AgentChatSendFailed(
-        'Could not reach the model. Try again.',
+      final classified = LlmConnectionHealth.fromError(e);
+      return AgentChatSendFailed(
+        classified.message,
+        connectionKind: classified.kind,
       );
     } finally {
       _sending = false;
@@ -540,6 +579,14 @@ class AgentChatController extends ChangeNotifier {
     );
   }
 
+  Future<void> _maybeAutopilotInvestInterest(
+    InvestInterestProposal proposal,
+  ) async {
+    final actions = _investInterestActions;
+    if (actions == null) return;
+    await actions.confirm(proposal.id, autopilot: true);
+  }
+
   Future<String?> confirmProposal(
     String proposalId, {
     bool autopilot = false,
@@ -570,7 +617,10 @@ class AgentChatController extends ChangeNotifier {
     }
   }
 
-  Future<String?> confirmInvestInterestProposal(String proposalId) async {
+  Future<String?> confirmInvestInterestProposal(
+    String proposalId, {
+    bool autopilot = false,
+  }) async {
     final actions = _investInterestActions;
     if (actions == null) {
       return 'Invest interest is not available.';
@@ -578,7 +628,7 @@ class AgentChatController extends ChangeNotifier {
     _actingOnProposal = true;
     notifyListeners();
     try {
-      return await actions.confirm(proposalId);
+      return await actions.confirm(proposalId, autopilot: autopilot);
     } finally {
       _actingOnProposal = false;
       notifyListeners();

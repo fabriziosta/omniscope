@@ -312,7 +312,7 @@ void main() {
       );
       expect(
         AgentRolePrompts.runUserPrompt(
-          roleId: 'paperPortfolioCoach',
+          roleId: 'portfolioGuide',
           symbol: 'AAPL',
           side: 'buy',
           quantity: 2,
@@ -334,11 +334,7 @@ void main() {
       );
       expect(
         AgentRolePrompts.runChipLabel('portfolioGuide'),
-        'Review allocation',
-      );
-      expect(
-        AgentRolePrompts.runChipLabel('paperPortfolioCoach'),
-        'Practice coach',
+        'Review portfolio',
       );
       expect(
         AgentRolePrompts.runChipLabel('marketResearch'),
@@ -370,13 +366,8 @@ void main() {
       expect(AgentRolePrompts.usesLiveBalanceContext('liveBalanceExplainer'), isTrue);
       expect(AgentRolePrompts.usesLiveBalanceContext('portfolioGuide'), isTrue);
       expect(AgentRolePrompts.usesPracticePortfolioContext('portfolioGuide'), isTrue);
-      expect(
-        AgentRolePrompts.usesPracticePortfolioContext('paperPortfolioCoach'),
-        isTrue,
-      );
       expect(AgentRolePrompts.allowsRunWithoutSymbol('liveBalanceExplainer'), isTrue);
       expect(AgentRolePrompts.allowsRunWithoutSymbol('portfolioGuide'), isTrue);
-      expect(AgentRolePrompts.allowsRunWithoutSymbol('paperPortfolioCoach'), isTrue);
     });
   });
 

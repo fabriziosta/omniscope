@@ -4,6 +4,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../core/brand_colors.dart';
 import '../../data/agents/llm_api_key_config.dart';
+import '../../data/agents/llm_connection_health.dart';
+import '../../data/agents/llm_connection_status_store.dart';
 import '../../data/agents/llm_model_catalog.dart';
 import '../../data/agents/llm_runtime_settings.dart';
 import '../../data/agents/models.dart';
@@ -35,6 +37,7 @@ class _LlmApiKeysSectionBodyState extends State<LlmApiKeysSectionBody> {
   Widget build(BuildContext context) {
     final secrets = context.watch<EnvSecretsRepository>();
     final runtime = context.watch<LlmRuntimeSettings>();
+    final statusStore = context.watch<LlmConnectionStatusStore>();
     final catalog = _catalog;
     final providers = providersOrderedByConfiguredKey(
       (p) => secrets.llmKeyFor(p) != null,
@@ -47,8 +50,8 @@ class _LlmApiKeysSectionBodyState extends State<LlmApiKeysSectionBody> {
           'LLM API keys & models',
           description:
               'Add keys for each provider you use. Pick a light model '
-              '(research) and a heavy model (trading). Agents share these '
-              'keys — no per-agent Connect.',
+              '(research) and a heavy model (trading). Save or Test connection '
+              'to verify the key still works — Agents share these keys.',
         ),
         const SizedBox(height: 12),
         for (var i = 0; i < providers.length; i++) ...[
@@ -58,6 +61,8 @@ class _LlmApiKeysSectionBodyState extends State<LlmApiKeysSectionBody> {
             hasKey: secrets.llmKeyFor(providers[i]) != null,
             prefs: runtime.prefsFor(providers[i]),
             catalog: catalog,
+            probeResult: statusStore.resultFor(providers[i]),
+            probing: statusStore.isProbing(providers[i]),
           ),
         ],
       ],
@@ -89,16 +94,21 @@ class _ProviderKeyRow extends StatelessWidget {
     required this.hasKey,
     required this.prefs,
     required this.catalog,
+    required this.probeResult,
+    required this.probing,
   });
 
   final LlmProvider provider;
   final bool hasKey;
   final LlmProviderRuntimePrefs? prefs;
   final LlmModelCatalog? catalog;
+  final LlmConnectionResult? probeResult;
+  final bool probing;
 
   Future<void> _openEditor(BuildContext context) async {
     final secrets = context.read<EnvSecretsRepository>();
     final runtime = context.read<LlmRuntimeSettings>();
+    final statusStore = context.read<LlmConnectionStatusStore>();
     final catalog = this.catalog ?? await LlmModelCatalog.load();
     if (!context.mounted) return;
     final initialKey = secrets.llmKeyFor(provider) ?? '';
@@ -121,6 +131,7 @@ class _ProviderKeyRow extends StatelessWidget {
     if (result.clear) {
       await secrets.setLlmApiKey(provider, '');
       await runtime.clearProvider(provider);
+      statusStore.clear(provider);
       if (!context.mounted) return;
       showAppToast(
         context,
@@ -136,23 +147,91 @@ class _ProviderKeyRow extends StatelessWidget {
     showAppToast(
       context,
       title: '${provider.label} saved',
-      description: 'Key and models stored only on this device.',
+      description: 'Checking connection…',
     );
+    await _runProbe(
+      context,
+      apiKey: result.apiKey,
+      prefs: result.prefs,
+      announce: true,
+    );
+  }
+
+  Future<void> _runProbe(
+    BuildContext context, {
+    required String apiKey,
+    required LlmProviderRuntimePrefs? prefs,
+    required bool announce,
+  }) async {
+    final statusStore = context.read<LlmConnectionStatusStore>();
+    final result = await statusStore.probeProvider(
+      provider: provider,
+      apiKey: apiKey,
+      prefs: prefs,
+    );
+    if (!context.mounted || !announce) return;
+    if (result.isOk) {
+      showAppToast(
+        context,
+        title: '${provider.label} connected',
+        description: 'Key works for listing models.',
+      );
+    } else {
+      showAppToast(
+        context,
+        title: '${provider.label} needs attention',
+        description: result.message,
+        destructive: true,
+      );
+    }
+  }
+
+  Future<void> _testConnection(BuildContext context) async {
+    final secrets = context.read<EnvSecretsRepository>();
+    final key = secrets.llmKeyFor(provider);
+    if (key == null || key.isEmpty) return;
+    await _runProbe(
+      context,
+      apiKey: key,
+      prefs: prefs,
+      announce: true,
+    );
+  }
+
+  Color _statusColor(BuildContext context) {
+    if (!hasKey) return BrandColors.lossOf(context);
+    if (probing) return ShadTheme.of(context).colorScheme.primary;
+    final kind = probeResult?.kind;
+    if (kind == LlmConnectionKind.ok) return BrandColors.gainOf(context);
+    if (kind != null && kind != LlmConnectionKind.ok) {
+      return BrandColors.lossOf(context);
+    }
+    // Saved, not checked this session.
+    return BrandColors.gainOf(context);
+  }
+
+  String _statusSubtitle() {
+    if (!hasKey) return 'No key yet — Agents need one to chat';
+    if (probing) return 'Checking connection…';
+    final probe = probeResult;
+    if (probe != null) {
+      return LlmConnectionHealth.statusLabel(probe.kind);
+    }
+    final light = prefs?.lightModelId.trim() ?? '';
+    final heavy = prefs?.heavyModelId.trim() ?? '';
+    final models = [
+      if (light.isNotEmpty) 'Light: $light',
+      if (heavy.isNotEmpty) 'Heavy: $heavy',
+    ].join(' · ');
+    if (models.isEmpty) return 'Saved — not checked yet';
+    return '$models · Not checked yet';
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final statusColor =
-        hasKey ? BrandColors.gainOf(context) : BrandColors.lossOf(context);
-    final light = prefs?.lightModelId.trim() ?? '';
-    final heavy = prefs?.heavyModelId.trim() ?? '';
-    final subtitle = !hasKey
-        ? 'No key yet — Agents need one to chat'
-        : [
-            if (light.isNotEmpty) 'Light: $light',
-            if (heavy.isNotEmpty) 'Heavy: $heavy',
-          ].join(' · ');
+    final statusColor = _statusColor(context);
+    final subtitle = _statusSubtitle();
 
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 44),
@@ -191,17 +270,31 @@ class _ProviderKeyRow extends StatelessWidget {
                     Text(provider.label, style: theme.textTheme.large),
                     const SizedBox(height: 2),
                     Text(
-                      subtitle.isEmpty ? 'Key saved locally' : subtitle,
+                      subtitle,
                       style: theme.textTheme.muted,
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              ShadButton.outline(
-                size: ShadButtonSize.sm,
-                onPressed: () => _openEditor(context),
-                child: Text(hasKey ? 'Edit' : 'Add'),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                alignment: WrapAlignment.end,
+                children: [
+                  if (hasKey)
+                    ShadButton.outline(
+                      size: ShadButtonSize.sm,
+                      onPressed:
+                          probing ? null : () => _testConnection(context),
+                      child: Text(probing ? 'Testing…' : 'Test'),
+                    ),
+                  ShadButton.outline(
+                    size: ShadButtonSize.sm,
+                    onPressed: probing ? null : () => _openEditor(context),
+                    child: Text(hasKey ? 'Edit' : 'Add'),
+                  ),
+                ],
               ),
             ],
           ),
@@ -350,7 +443,8 @@ class _LlmApiKeyDialogState extends State<_LlmApiKeyDialog> {
       title: Text('${widget.provider.label} API key'),
       description: Text(
         'Keys stay on this device only in your omniscope.json config. '
-        'Light models suit research; heavy models suit trading checks.',
+        'Light models suit research; heavy models suit trading checks. '
+        'Saving checks that the key can list models.',
       ),
       actions: [
         if (hasExisting)

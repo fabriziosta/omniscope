@@ -5,6 +5,7 @@ import 'package:genkit_middleware/agents.dart';
 import 'package:genkit_openai/genkit_openai.dart';
 import 'package:http/http.dart' as http;
 
+import '../llm_connection_health.dart';
 import '../llm_model_router.dart';
 import '../models.dart';
 
@@ -91,11 +92,49 @@ class GenkitRuntimeFactory {
 
 /// Thrown when Genkit agent setup or a turn fails in a user-visible way.
 class GenkitAgentException implements Exception {
-  GenkitAgentException(this.message, {this.statusCode});
+  GenkitAgentException(
+    this.message, {
+    this.statusCode,
+    this.connectionKind,
+  });
+
+  /// Map a provider / Genkit failure to plain copy + [connectionKind].
+  factory GenkitAgentException.fromProviderError(Object error) {
+    final raw = error.toString();
+    final statusCode = _statusCodeFromError(error);
+    final classified = LlmConnectionHealth.fromError(
+      error,
+      statusCode: statusCode,
+    );
+    final kind = classified.kind;
+    // Prefer curated copy for auth / network / rate-limit; keep truncated
+    // provider text otherwise so unusual errors stay diagnosable.
+    final message = switch (kind) {
+      LlmConnectionKind.invalidKey ||
+      LlmConnectionKind.unreachable ||
+      LlmConnectionKind.rateLimited =>
+        LlmConnectionHealth.userMessage(kind),
+      _ => raw.length > 240 ? '${raw.substring(0, 237)}…' : raw,
+    };
+    return GenkitAgentException(
+      message,
+      statusCode: classified.statusCode ?? statusCode,
+      connectionKind: kind,
+    );
+  }
 
   final String message;
   final int? statusCode;
+  final LlmConnectionKind? connectionKind;
 
   @override
   String toString() => 'GenkitAgentException($statusCode): $message';
+}
+
+int? _statusCodeFromError(Object error) {
+  if (error is GenkitException) {
+    return error.status.httpStatus;
+  }
+  final match = RegExp(r'\b([45]\d{2})\b').firstMatch(error.toString());
+  return match == null ? null : int.tryParse(match.group(1)!);
 }

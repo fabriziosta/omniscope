@@ -42,7 +42,9 @@ class ConnectionsSectionBody extends StatelessWidget {
         Text(
           'LLM keys, models, and exchange credentials stay on this '
           'device only (in your omniscope.json config). Nothing is '
-          'sent to an Omniscope server.',
+          'sent to an Omniscope server. Saving or Test checks that a '
+          'provider key still works (list models) — keys are never '
+          'removed automatically.',
           style: theme.textTheme.muted,
         ),
         const SizedBox(height: 16),

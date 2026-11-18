@@ -13,7 +13,7 @@ Targets: **Linux**, **Windows**, **Android**, **Apple** (**iOS** / **macOS**), a
 - **Asset detail** — price, day change, short curated overview (default symbols), 1M / 3M / 1Y history chart, paper buy/sell, plus external research links opened in the system browser
 - **Portfolio** — practice paper trading (default $10,000 starting cash, configurable in Settings, local holdings, P&L, reset) plus **Live** balance subgroups when API credentials are configured (Crypto.com, Alpaca, …)
 - **Agents** — connect AI helpers with your own API key and model, then chat on-device via in-process Genkit agents (tools + Run); trading roles can Confirm into Practice or a live exchange. Keys and chat threads stay local.
-- **Settings** — appearance, data sources & credentials, practice cash, connections, data & privacy, and About
+- **Settings** — appearance, data sources & credentials, practice cash, Connections (Save/Test verifies LLM keys via list-models; expired keys are flagged, never auto-deleted), data & privacy, and About
 - **No accounts** — everything stays on device in one `omniscope.json` config (Web: browser storage + import/export)
 
 ## Quick start

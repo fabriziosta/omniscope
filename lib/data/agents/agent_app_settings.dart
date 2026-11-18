@@ -135,18 +135,39 @@ class AgentAppSettings extends ChangeNotifier {
     _answerMoodNote = null;
   }
 
+  /// Retired specialty ids dropped from the catalog (prefs may still mention them).
+  static const _retiredRoleIds = {'paperPortfolioCoach'};
+
+  /// Surviving specialty that absorbs a retired role's prefs.
+  static const _retiredRoleMigrations = {
+    'paperPortfolioCoach': 'portfolioGuide',
+  };
+
   void _readJson(Map<String, dynamic> json) {
     final disabled = json['disabledRoleIds'] as List? ?? const [];
     _disabledRoleIds = {
       for (final id in disabled)
-        if (id is String && id.isNotEmpty) id,
+        if (id is String &&
+            id.isNotEmpty &&
+            !_retiredRoleIds.contains(id))
+          id,
     };
     _overrides.clear();
     final rawOverrides = json['overrides'] as List? ?? const [];
     for (final item in rawOverrides) {
       if (item is! Map) continue;
       final o = AgentRoleOverride.fromJson(Map<String, dynamic>.from(item));
-      if (o.roleId.isNotEmpty) _overrides[o.roleId] = o;
+      if (o.roleId.isEmpty) continue;
+      final migratedId = _retiredRoleMigrations[o.roleId] ?? o.roleId;
+      if (_retiredRoleIds.contains(o.roleId) &&
+          _overrides.containsKey(migratedId)) {
+        continue;
+      }
+      _overrides[migratedId] = AgentRoleOverride(
+        roleId: migratedId,
+        provider: o.provider,
+        modelId: o.modelId,
+      );
     }
     _autopilotEnabled = json['autopilotEnabled'] is bool
         ? json['autopilotEnabled'] as bool

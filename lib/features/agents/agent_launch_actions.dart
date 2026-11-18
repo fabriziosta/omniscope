@@ -8,7 +8,11 @@ import '../../data/agents/agent_launch.dart';
 import '../../data/agents/agents_repository.dart';
 import '../../data/agents/llm_model_router.dart';
 import '../../data/agents/llm_runtime_settings.dart';
+import '../../data/crypto/crypto_exchange_registry.dart';
+import '../../data/portfolio/portfolio_catalog.dart';
 import '../../data/settings/env_secrets_repository.dart';
+import '../../data/trading/broker_exchange_registry.dart';
+import '../../data/trading/trade_executor.dart';
 import '../../widgets/app_toast.dart';
 
 /// Shared navigation for opening orchestrator chat from any screen.
@@ -16,9 +20,12 @@ class AgentLaunchActions {
   AgentLaunchActions._();
 
   /// Create/open a chat on the Agents tab (master–detail), optionally auto-run.
+  ///
+  /// In-app CTAs should omit [chatId] so a **new** chat is always created.
   static Future<void> openAgentChat(
     BuildContext context, {
     String? chatId,
+    String? title,
     String? starterRoleId,
     String? initialSymbol,
     String? initialExchangeId,
@@ -29,9 +36,10 @@ class AgentLaunchActions {
     final chats = context.read<AgentChatRepository>();
     final id = chatId ??
         (await chats.createChat(
-          title: initialSymbol?.trim().isNotEmpty == true
-              ? initialSymbol!.trim()
-              : null,
+          title: _resolveCreateTitle(
+            title: title,
+            initialSymbol: initialSymbol,
+          ),
         ))
             .chatId;
     if (!context.mounted) return;
@@ -46,7 +54,7 @@ class AgentLaunchActions {
         );
   }
 
-  /// Resolve intent → starter role and open orchestrator chat.
+  /// Resolve intent → starter role and open a **new** orchestrator chat.
   static Future<void> launch(
     BuildContext context, {
     required AgentLaunchIntent intent,
@@ -95,9 +103,16 @@ class AgentLaunchActions {
 
     final preferred = enabled.first;
     final sym = symbol?.trim();
-    // All in-app CTAs draft the composer; the user decides when to send.
+    final portfolioLabel = intent.isPortfolioLevel
+        ? _portfolioLabel(context, exchangeId)
+        : null;
+    // Always a fresh chat; draft the composer — the user decides when to send.
     await openAgentChat(
       context,
+      title: intent.chatTitle(
+        symbol: sym,
+        portfolioLabel: portfolioLabel,
+      ),
       starterRoleId: preferred.id,
       initialSymbol: sym,
       initialExchangeId: exchangeId,
@@ -105,5 +120,40 @@ class AgentLaunchActions {
       side: side,
       quantity: quantity,
     );
+  }
+
+  static String? _resolveCreateTitle({
+    String? title,
+    String? initialSymbol,
+  }) {
+    final explicit = title?.trim();
+    if (explicit != null && explicit.isNotEmpty) return explicit;
+    final sym = initialSymbol?.trim();
+    if (sym != null && sym.isNotEmpty) return sym;
+    return null;
+  }
+
+  static String _portfolioLabel(BuildContext context, String? exchangeId) {
+    final id = exchangeId?.trim();
+    if (id == null ||
+        id.isEmpty ||
+        id == PortfolioDescriptor.practiceId) {
+      return 'Practice';
+    }
+    try {
+      final venue = context.read<TradeExecutor>().venueForId(id);
+      if (venue != null) return venue.displayName;
+    } catch (_) {
+      // Provider may be absent in isolated tests.
+    }
+    try {
+      final crypto = context.read<CryptoExchangeRegistry>().clientForId(id);
+      if (crypto != null) return crypto.displayName;
+    } catch (_) {}
+    try {
+      final broker = context.read<BrokerExchangeRegistry>().clientForId(id);
+      if (broker != null) return broker.displayName;
+    } catch (_) {}
+    return id;
   }
 }

@@ -125,6 +125,7 @@ abstract final class UserConfigDefaults {
     UserConfigKeys.favorites: {
       'symbols': <String>[],
       'investInterest': <String>[],
+      'investInterestProvenance': <String, dynamic>{},
     },
     UserConfigKeys.mandate: {
       'goal': 'learn',

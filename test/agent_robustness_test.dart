@@ -52,16 +52,6 @@ void main() {
         ),
         46,
       );
-      expect(
-        AgentRobustness.score(
-          _role(
-            id: 'paperPortfolioCoach',
-            framework: AgentFramework.genkit,
-            workload: AgentWorkload.investigation,
-          ),
-        ),
-        46,
-      );
       // W20 + F14 + D14 + G20 + T10 = 78
       expect(
         AgentRobustness.score(

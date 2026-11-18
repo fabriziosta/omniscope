@@ -96,11 +96,6 @@ class AgentRobustness {
       riskGates: AgentRiskGates.none,
       contextTools: AgentContextTools.portfolioSnapshot,
     ),
-    'paperPortfolioCoach': AgentArchitectureProfile(
-      depth: AgentPipelineDepth.twoToThree,
-      riskGates: AgentRiskGates.none,
-      contextTools: AgentContextTools.portfolioSnapshot,
-    ),
     'intradayTrading': AgentArchitectureProfile(
       depth: AgentPipelineDepth.twoToThree,
       riskGates: AgentRiskGates.hardVeto,

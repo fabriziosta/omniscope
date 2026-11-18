@@ -28,6 +28,7 @@ class OmniscopeAgentToolDeps {
     this.mandate,
     this.answerMood = AgentAnswerMood.plain,
     this.answerMoodNote,
+    this.autopilotEnabled = false,
     this.proposeInvestInterest,
   });
 
@@ -47,6 +48,9 @@ class OmniscopeAgentToolDeps {
 
   /// Optional short style note from Settings → Agents.
   final String? answerMoodNote;
+
+  /// Settings → Agents Autopilot (add-only Invest interest + trades).
+  final bool autopilotEnabled;
 
   /// When set, [proposeInvestInterestDiff] creates a pending proposal.
   final ProposeInvestInterestFn? proposeInvestInterest;
@@ -238,11 +242,16 @@ class OmniscopeAgentTools {
     final proposeInvestInterestDiff = ai.defineTool(
       name: 'proposeInvestInterestDiff',
       description:
-          'Propose a Confirm-gated change to Markets → Invest interest. '
-          'Does NOT apply immediately — the user Confirms in Activity. '
+          'Propose a change to Markets → Invest interest. '
           'Input: {"add":["AAPL"],"remove":["MSFT"],"rationale":"why"} '
           'or {"set":["AAPL","SPY"],"rationale":"why"} for a full replace. '
-          'Respect getMandate maxSymbols and universe.',
+          'Respect getMandate maxSymbols and universe. '
+          '${deps.autopilotEnabled ? 'Autopilot is ON: add-only proposals '
+              '(non-empty add, empty remove, no set) from investigation '
+              'roles may apply without Confirm; remove/set still need '
+              'Confirm. Prefer add-only when suggesting new symbols. ' : ''}'
+          'Otherwise the user Confirms in chat / Activity — do not claim '
+          'the list already changed unless Autopilot applied an add.',
       inputSchema: _symbolInput,
       fn: (input, _) async {
         final propose = deps.proposeInvestInterest;
@@ -354,12 +363,6 @@ class OmniscopeAgentTools {
           'getInvestInterest',
           'getMandate',
           'proposeInvestInterestDiff',
-        ],
-      'paperPortfolioCoach' => const [
-          'getPracticePortfolio',
-          'getQuotes',
-          'getInvestInterest',
-          'getMandate',
         ],
       'intradayTrading' => const [
           'getQuotes',

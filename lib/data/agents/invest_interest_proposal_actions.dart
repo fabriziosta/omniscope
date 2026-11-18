@@ -5,7 +5,7 @@ import 'agent_activity_repository.dart';
 import 'invest_interest_proposal.dart';
 import 'invest_interest_proposal_repository.dart';
 
-/// Confirm / Dismiss for agent Invest interest diffs.
+/// Confirm / Dismiss / Autopilot for agent Invest interest diffs.
 class InvestInterestProposalActions {
   InvestInterestProposalActions({
     required this._proposals,
@@ -20,7 +20,7 @@ class InvestInterestProposalActions {
   final MandateSettings _mandate;
 
   /// Apply a pending proposal to Markets → Invest interest.
-  Future<String?> confirm(String proposalId) async {
+  Future<String?> confirm(String proposalId, {bool autopilot = false}) async {
     final proposal = _proposals.byId(proposalId);
     if (proposal == null) return 'Proposal not found.';
     if (proposal.status != InvestInterestProposalStatus.pending) {
@@ -30,12 +30,23 @@ class InvestInterestProposalActions {
       return 'Nothing to apply in this proposal.';
     }
 
+    if (autopilot && !isAutopilotAddOnlyEligible(proposal)) {
+      return 'Autopilot only applies add-only Invest interest proposals.';
+    }
+
     try {
-      final next = _resolveNextList(proposal);
-      await _favorites.applyInvestInterest(
-        next,
-        managedByRoleId: proposal.roleId,
-      );
+      if (autopilot) {
+        await _applyAddOnly(proposal);
+      } else if (proposal.setSymbols != null) {
+        final next = _capUnique(proposal.setSymbols!, _mandate.maxSymbolCount);
+        await _favorites.applyInvestInterest(
+          next,
+          managedByRoleId: proposal.roleId,
+        );
+      } else {
+        await _applyAddRemove(proposal);
+      }
+
       await _proposals.upsert(
         proposal.copyWith(
           status: InvestInterestProposalStatus.confirmed,
@@ -45,11 +56,15 @@ class InvestInterestProposalActions {
       await _activity.add(
         AgentActivityEvent(
           id: AgentActivityEvent.newId(),
-          kind: AgentActivityKind.investInterestConfirmed,
+          kind: autopilot
+              ? AgentActivityKind.autopilotInvestInterestApplied
+              : AgentActivityKind.investInterestConfirmed,
           roleId: proposal.roleId,
           createdAt: DateTime.now().toUtc(),
           proposalId: proposal.id,
-          summary: 'Confirmed invest interest · ${proposal.summaryLabel}',
+          summary: autopilot
+              ? 'Autopilot · ${proposal.summaryLabel}'
+              : 'Confirmed invest interest · ${proposal.summaryLabel}',
         ),
       );
       return null;
@@ -97,25 +112,58 @@ class InvestInterestProposalActions {
     return null;
   }
 
-  List<String> _resolveNextList(InvestInterestProposal proposal) {
+  /// True when Autopilot may auto-apply: investigation II roles, add-only.
+  static bool isAutopilotAddOnlyEligible(InvestInterestProposal proposal) {
+    if (!supportsInvestigationAutopilot(proposal.roleId)) return false;
+    if (proposal.setSymbols != null) return false;
+    if (proposal.remove.isNotEmpty) return false;
+    return proposal.add.isNotEmpty;
+  }
+
+  /// Investigation roles that may Autopilot-apply Invest interest adds.
+  static bool supportsInvestigationAutopilot(String roleId) {
+    return roleId == 'marketResearch' || roleId == 'portfolioGuide';
+  }
+
+  Future<void> _applyAddOnly(InvestInterestProposal proposal) async {
     final maxSymbols = _mandate.maxSymbolCount;
-    if (proposal.setSymbols != null) {
-      return _capUnique(proposal.setSymbols!, maxSymbols);
-    }
+    final currentCount = _favorites.investInterestSymbols.length;
+    final room = maxSymbols - currentCount;
+    if (room <= 0) return;
+    final toAdd = _capUnique(proposal.add, room);
+    if (toAdd.isEmpty) return;
+    await _favorites.applyInvestInterestDiff(
+      add: toAdd,
+      managedByRoleId: proposal.roleId,
+    );
+  }
+
+  Future<void> _applyAddRemove(InvestInterestProposal proposal) async {
+    final maxSymbols = _mandate.maxSymbolCount;
+    final remove = _normalizeList(proposal.remove);
     final current = List<String>.from(_favorites.investInterestSymbols);
-    final remove = {for (final s in proposal.remove) s.trim().toUpperCase()};
     final kept = [
       for (final s in current)
         if (!remove.contains(s.trim().toUpperCase())) s,
     ];
-    final seen = {for (final s in kept) s.trim().toUpperCase()};
-    for (final raw in proposal.add) {
+    final room = maxSymbols - kept.length;
+    final toAdd = room > 0 ? _capUnique(proposal.add, room) : <String>[];
+    await _favorites.applyInvestInterestDiff(
+      add: toAdd,
+      remove: remove,
+      managedByRoleId: proposal.roleId,
+    );
+  }
+
+  static List<String> _normalizeList(List<String> symbols) {
+    final out = <String>[];
+    final seen = <String>{};
+    for (final raw in symbols) {
       final s = raw.trim().toUpperCase();
-      if (s.isEmpty || seen.contains(s)) continue;
-      kept.add(s);
-      seen.add(s);
+      if (s.isEmpty || !seen.add(s)) continue;
+      out.add(s);
     }
-    return _capUnique(kept, maxSymbols);
+    return out;
   }
 
   static List<String> _capUnique(List<String> symbols, int maxSymbols) {

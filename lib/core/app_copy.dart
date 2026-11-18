@@ -53,17 +53,18 @@ abstract final class AppCopy {
 
   static const noInvestInterest =
       'No invest-interest symbols yet. Tap the target icon on a quote to '
-      'mark assets you want agents to focus on, or let a connected agent '
-      'propose a list for you to Confirm.';
+      'mark assets you want agents to focus on, or let investigation agents '
+      'add symbols (Confirm, or Autopilot for adds only).';
 
   static const investInterestManagedByAgent =
-      'Managed by agent — last update came from a confirmed proposal. '
-      'Manual edits clear this badge.';
+      'Agent recently updated this list. Rows are labeled You or Agent by '
+      'who added each symbol. Manual edits clear the managed badge.';
 
   static const mandateIntro =
       'Set your investing policy once. Connected agents read this mandate '
-      'and may propose Invest interest changes for you to Confirm — they '
-      'never edit the list silently.';
+      'and may propose Invest interest changes. With Autopilot off, you '
+      'Confirm every change; with Autopilot on, investigation agents may '
+      'auto-add symbols (remove/set still need Confirm).';
 
   static const mandateRiskRailsSaved =
       'Agents will respect these caps on Confirm and Autopilot.';

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscope/data/settings/favorites_repository.dart';
+import 'package:omniscope/data/settings/invest_interest_provenance.dart';
 import 'package:omniscope/data/settings/user_config_keys.dart';
 
 import 'support/memory_config.dart';
@@ -138,5 +139,88 @@ void main() {
     await repo.load();
     expect(repo.symbols, ['AAPL']);
     expect(repo.investInterestSymbols, ['MSFT', 'BTC_USD']);
+    // Missing provenance → treat as You.
+    expect(repo.sourceFor('MSFT'), InvestInterestSource.user);
+  });
+
+  test('toggleInvestInterest marks user provenance', () async {
+    final store = await memoryConfig();
+    final repo = FavoritesRepository(store: store);
+    await repo.load();
+    await repo.toggleInvestInterest('AAPL');
+    expect(repo.sourceFor('AAPL'), InvestInterestSource.user);
+
+    final slice = store.getSlice(UserConfigKeys.favorites) as Map;
+    final provenance = slice['investInterestProvenance'] as Map;
+    expect(provenance['AAPL'], isA<Map>());
+    expect((provenance['AAPL'] as Map)['source'], 'user');
+  });
+
+  test('applyInvestInterestDiff marks agent adds and preserves user', () async {
+    final store = await memoryConfig();
+    final repo = FavoritesRepository(store: store);
+    await repo.load();
+    await repo.toggleInvestInterest('MSFT');
+    expect(repo.sourceFor('MSFT'), InvestInterestSource.user);
+
+    await repo.applyInvestInterestDiff(
+      add: ['AAPL'],
+      managedByRoleId: 'marketResearch',
+    );
+    expect(repo.investInterestSymbols, ['MSFT', 'AAPL']);
+    expect(repo.sourceFor('MSFT'), InvestInterestSource.user);
+    expect(repo.sourceFor('AAPL'), InvestInterestSource.agent);
+    expect(repo.provenanceFor('AAPL').roleId, 'marketResearch');
+    expect(repo.investInterestManagedByAgent, isTrue);
+
+    await repo.applyInvestInterestDiff(remove: ['MSFT']);
+    expect(repo.investInterestSymbols, ['AAPL']);
+    expect(repo.investInterestProvenance.containsKey('MSFT'), isFalse);
+  });
+
+  test('applyInvestInterest set marks all agent', () async {
+    final store = await memoryConfig();
+    final repo = FavoritesRepository(store: store);
+    await repo.load();
+    await repo.toggleInvestInterest('MSFT');
+    await repo.applyInvestInterest(
+      ['AAPL', 'SPY'],
+      managedByRoleId: 'portfolioGuide',
+    );
+    expect(repo.investInterestSymbols, ['AAPL', 'SPY']);
+    expect(repo.sourceFor('AAPL'), InvestInterestSource.agent);
+    expect(repo.sourceFor('SPY'), InvestInterestSource.agent);
+    expect(repo.investInterestProvenance.containsKey('MSFT'), isFalse);
+  });
+
+  test('loads investInterestProvenance from slice', () async {
+    final store = await memoryConfig();
+    await store.setSlice(UserConfigKeys.favorites, {
+      'symbols': <String>[],
+      'investInterest': ['AAPL', 'MSFT'],
+      'investInterestProvenance': {
+        'AAPL': {'source': 'agent', 'roleId': 'marketResearch'},
+        'MSFT': {'source': 'user'},
+      },
+    });
+    final repo = FavoritesRepository(store: store);
+    await repo.load();
+    expect(repo.sourceFor('AAPL'), InvestInterestSource.agent);
+    expect(repo.sourceFor('MSFT'), InvestInterestSource.user);
+  });
+
+  test('reorderInvestInterest keeps provenance', () async {
+    final store = await memoryConfig();
+    final repo = FavoritesRepository(store: store);
+    await repo.load();
+    await repo.toggleInvestInterest('AAPL');
+    await repo.applyInvestInterestDiff(
+      add: ['MSFT'],
+      managedByRoleId: 'marketResearch',
+    );
+    await repo.reorderInvestInterest(0, 1);
+    expect(repo.investInterestSymbols, ['MSFT', 'AAPL']);
+    expect(repo.sourceFor('AAPL'), InvestInterestSource.user);
+    expect(repo.sourceFor('MSFT'), InvestInterestSource.agent);
   });
 }

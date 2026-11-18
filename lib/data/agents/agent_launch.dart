@@ -11,11 +11,8 @@ enum AgentLaunchIntent {
   /// Plain-language walkthrough of live exchange balances.
   explainLive,
 
-  /// Allocation / diversification review (Practice and/or Live).
+  /// Allocation / diversification / practice sizing review (Practice and/or Live).
   explainPortfolio,
-
-  /// Practice portfolio coaching (cash, size, avg cost).
-  paperReview,
 }
 
 extension AgentLaunchIntentX on AgentLaunchIntent {
@@ -33,16 +30,12 @@ extension AgentLaunchIntentX on AgentLaunchIntent {
         AgentLaunchIntent.explainPortfolio => const [
             'portfolioGuide',
           ],
-        AgentLaunchIntent.paperReview => const [
-            'paperPortfolioCoach',
-          ],
       };
 
   /// True when this intent can auto-run without a symbol.
   bool get isPortfolioLevel => switch (this) {
         AgentLaunchIntent.explainLive ||
-        AgentLaunchIntent.explainPortfolio ||
-        AgentLaunchIntent.paperReview =>
+        AgentLaunchIntent.explainPortfolio =>
           true,
         _ => false,
       };
@@ -52,9 +45,29 @@ extension AgentLaunchIntentX on AgentLaunchIntent {
         AgentLaunchIntent.investigate => 'Investigate',
         AgentLaunchIntent.tradeCheck => 'Trade check',
         AgentLaunchIntent.explainLive => 'Explain balances',
-        AgentLaunchIntent.explainPortfolio => 'Review allocation',
-        AgentLaunchIntent.paperReview => 'Practice coach',
+        AgentLaunchIntent.explainPortfolio => 'Review portfolio',
       };
+
+  /// Title for the new chat created when this intent is launched from a CTA.
+  ///
+  /// [symbol] is used for asset-scoped intents; [portfolioLabel] for portfolio
+  /// intents (defaults to `Practice` when omitted).
+  String chatTitle({String? symbol, String? portfolioLabel}) {
+    final asset = symbol?.trim() ?? '';
+    final portfolio = () {
+      final label = portfolioLabel?.trim() ?? '';
+      return label.isNotEmpty ? label : 'Practice';
+    }();
+    return switch (this) {
+      AgentLaunchIntent.investigate =>
+        asset.isNotEmpty ? 'Investigate asset $asset' : 'Investigate asset',
+      AgentLaunchIntent.tradeCheck =>
+        asset.isNotEmpty ? 'Trade check for $asset' : 'Trade check',
+      AgentLaunchIntent.explainLive => 'Explain balances for $portfolio',
+      AgentLaunchIntent.explainPortfolio =>
+        'Portfolio review for $portfolio',
+    };
+  }
 }
 
 /// Resolves which catalog roles apply to an in-app launch intent.

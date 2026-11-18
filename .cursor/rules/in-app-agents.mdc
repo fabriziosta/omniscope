@@ -16,10 +16,10 @@ When designing or changing Omniscope UI, **proactively suggest** where an AI age
 
 ## How to wire it
 
-- Use [`AgentLaunchIntent`](lib/data/agents/agent_launch.dart): `investigate` (research), `tradeCheck` (intraday), `explainLive` (live balances), `explainPortfolio` (allocation guide), or `paperReview` (practice coach).
+- Use [`AgentLaunchIntent`](lib/data/agents/agent_launch.dart): `investigate` (research), `tradeCheck` (intraday), `explainLive` (live balances), or `explainPortfolio` (allocation / practice sizing).
 - Launch via [`AgentLaunchActions.launch`](lib/features/agents/agent_launch_actions.dart) or [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart) — do not push `AgentChatScreen` with a hard-coded role unless intentional.
 - Pass the **symbol**; set `autoRun` through the shared helper so chat runs the Genkit orchestrator (tools + specialty prompts).
-- Mobile-first: with an LLM key configured, open Agents → ensure a chat → auto-send the matching starter. Without a key, send the user to Settings → Connections (`goToSettings(sectionId: 'connections')`).
+- Mobile-first: with an LLM key configured, open Agents → **create a new chat** with an intent title (e.g. `Investigate asset AAPL`) → draft the matching starter into the composer (user sends; do not auto-send). Without a key, send the user to Settings → Connections (`goToSettings(sectionId: 'connections')`).
 - Brand / shadcn only — no ad-hoc Material menus.
 
 ```dart

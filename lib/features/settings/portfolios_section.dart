@@ -120,12 +120,7 @@ class _PortfoliosSectionBodyState extends State<PortfoliosSectionBody> {
               AgentLaunchButton(
                 intent: AgentLaunchIntent.explainPortfolio,
                 outline: true,
-                label: 'Allocation',
-              ),
-              AgentLaunchButton(
-                intent: AgentLaunchIntent.paperReview,
-                outline: true,
-                label: 'Coach',
+                label: 'Review',
               ),
               AppTooltip(
                 message: 'Paper — practice money only',

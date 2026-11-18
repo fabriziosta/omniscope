@@ -18,9 +18,9 @@ class AgentRolePrompts {
       'provided, treat it as the latest known figures for this conversation '
       'and cite those figures. Never claim an order was already filled '
       'unless the user confirms it in the app. Call getMandate when sizing '
-      'lists or trades and respect goal, universe, and risk rails. Never '
-      'claim Invest interest changed unless the user Confirms a '
-      'proposeInvestInterestDiff proposal in Activity.';
+      'lists or trades and respect goal, universe, and risk rails. For '
+      'Invest interest, call proposeInvestInterestDiff; do not invent that '
+      'the list already changed unless Autopilot add-only applied it.';
 
   static const _tradeJsonFooter =
       'End your reply with a single fenced JSON block (and nothing after it) '
@@ -42,8 +42,8 @@ class AgentRolePrompts {
             'beginner might watch next. Prefer shorter answers with clear '
             'sections. Call getQuotes, getHistory, getInvestInterest, and '
             'getMandate when helpful. When the watch universe should change, '
-            'call proposeInvestInterestDiff (user Confirms — do not invent '
-            'that the list already changed). When a discovered symbol warrants '
+            'call proposeInvestInterestDiff (prefer add-only when Autopilot '
+            'is on; remove/set still need Confirm). When a discovered symbol warrants '
             'a trade check and a trading peer is listed under <sub-agents>, '
             'delegate a focused task (symbol + thesis) instead of inventing '
             'orders yourself. Do not invent precise fundamentals you were not '
@@ -61,26 +61,20 @@ class AgentRolePrompts {
     'portfolioGuide':
         '$_sharedGuardrails Your role is Portfolio & Allocation Guide. '
             'Review the user\'s Practice and/or Live portfolio snapshot: '
-            'cash vs holdings, concentration, diversification, and cash drag '
-            'in plain language. Prefer short sections with concrete figures. '
-            'Call getPracticePortfolio, getLiveBalances, getInvestInterest, '
-            'and getMandate when helpful. Propose Invest interest updates '
-            'with proposeInvestInterestDiff when diversification suggests a '
-            'different watch list (user Confirms). When a rebalance idea '
-            'needs a concrete trade check and a trading peer is listed under '
-            '<sub-agents>, delegate a focused task (symbol + thesis) instead '
-            'of inventing orders yourself. '
+            'cash vs holdings, concentration, diversification, cash drag, '
+            'and (for Practice) proposed size vs cash and average cost. '
+            'Emphasize that Practice money is fake and for learning. '
+            'Prefer short sections with concrete figures. '
+            'Call getPracticePortfolio, getLiveBalances, getQuotes, '
+            'getInvestInterest, and getMandate when helpful. Propose Invest '
+            'interest updates with proposeInvestInterestDiff when '
+            'diversification suggests a different watch list (prefer '
+            'add-only under Autopilot; remove/set still need Confirm). When '
+            'a rebalance idea needs a concrete trade check and a trading '
+            'peer is listed under <sub-agents>, delegate a focused task '
+            '(symbol + thesis) instead of inventing orders yourself. '
             'Do not invent positions. Do not emit executable buy/sell JSON '
             'yourself.',
-    'paperPortfolioCoach':
-        '$_sharedGuardrails Your role is Practice Portfolio Coach. '
-            'Coach the user on practice (paper) cash, holdings, proposed '
-            'buy/sell size, and average cost. Emphasize that Practice money '
-            'is fake and for learning. Prefer short sections. '
-            'Call getPracticePortfolio, getQuotes, getInvestInterest, and '
-            'getMandate if helpful. '
-            'Do not invent positions you were not given. '
-            'Do not suggest executable buy/sell JSON.',
     'intradayTrading':
         '$_sharedGuardrails Your role is Intraday Execution & Risk Control. '
             'Help the user think through size, side, and risk gates for a '
@@ -101,6 +95,7 @@ class AgentRolePrompts {
     String? mandateSummary,
     AgentAnswerMood answerMood = AgentAnswerMood.plain,
     String? answerMoodNote,
+    bool autopilotEnabled = false,
   }) {
     final base = _byRoleId[roleId] ??
         '$_sharedGuardrails Help the user learn investing. Answer clearly '
@@ -108,7 +103,8 @@ class AgentRolePrompts {
     return '$base'
         '${moodPreamble(mood: answerMood, note: answerMoodNote)}'
         '${mandatePreamble(mandateSummary)}'
-        '${investInterestPreamble(investInterestSymbols)}';
+        '${investInterestPreamble(investInterestSymbols, autopilotEnabled: autopilotEnabled)}'
+        '${autopilotPreamble(autopilotEnabled)}';
   }
 
   /// System prompt for the in-process orchestrator (routes to specialties).
@@ -118,6 +114,7 @@ class AgentRolePrompts {
     List<String> specialtyRoleIds = const [],
     AgentAnswerMood answerMood = AgentAnswerMood.plain,
     String? answerMoodNote,
+    bool autopilotEnabled = false,
   }) {
     final names = specialtyRoleIds.isEmpty
         ? 'the available specialty agents'
@@ -128,12 +125,14 @@ class AgentRolePrompts {
         'If research and a trade check are both needed, call them in order. '
         'Synthesize a clear final answer for the user. '
         'Never invent fills. Do not claim Invest interest or orders changed '
-        'without Confirm. When a trading specialty returns trade JSON, you may '
+        'without Confirm (except Autopilot add-only Invest interest when '
+        'enabled). When a trading specialty returns trade JSON, you may '
         'include that fenced JSON block at the end of your reply so the app '
         'can create a Confirm-gated proposal.'
         '${moodPreamble(mood: answerMood, note: answerMoodNote)}'
         '${mandatePreamble(mandateSummary)}'
-        '${investInterestPreamble(investInterestSymbols)}';
+        '${investInterestPreamble(investInterestSymbols, autopilotEnabled: autopilotEnabled)}'
+        '${autopilotPreamble(autopilotEnabled)}';
   }
 
   /// Appended from Settings → Agents answer mood (delivery only).
@@ -159,18 +158,39 @@ class AgentRolePrompts {
     return ' $text Call getMandate if you need to re-read policy.';
   }
 
+  /// Appended when Autopilot is enabled (add-only Invest interest + trades).
+  static String autopilotPreamble(bool enabled) {
+    if (!enabled) return '';
+    return ' Autopilot is ON: investigation add-only Invest interest '
+        'proposals (add with empty remove, no set) from marketResearch / '
+        'portfolioGuide may apply without Confirm. Prefer add-only diffs. '
+        'remove/set still need Confirm. Risk-approved trade proposals may '
+        'auto-submit to the default portfolio.';
+  }
+
   /// Appended to the system prompt when the user has invest-interest symbols.
-  static String investInterestPreamble(List<String> symbols) {
+  static String investInterestPreamble(
+    List<String> symbols, {
+    bool autopilotEnabled = false,
+  }) {
     final cleaned = [
       for (final s in symbols)
         if (s.trim().isNotEmpty) s.trim().toUpperCase(),
     ];
-    if (cleaned.isEmpty) return '';
+    if (cleaned.isEmpty) {
+      if (!autopilotEnabled) return '';
+      return ' Invest interest list is empty. To add symbols, call '
+          'proposeInvestInterestDiff with add-only (Autopilot may apply).';
+    }
+    final gate = autopilotEnabled
+        ? 'prefer add-only proposeInvestInterestDiff (Autopilot may apply '
+            'adds; remove/set need Confirm)'
+        : 'call proposeInvestInterestDiff — never claim it changed without '
+            'Confirm';
     return ' User invest interest list (symbols they want to consider '
         'investing in): ${cleaned.join(', ')}. Prefer these when relevant; '
         'still answer other symbols if asked. Call getInvestInterest if you '
-        'need to re-read the list. To change the list, call '
-        'proposeInvestInterestDiff — never claim it changed without Confirm.';
+        'need to re-read the list. To change the list, $gate.';
   }
 
   /// Roles that may emit a structured live trade proposal.
@@ -192,7 +212,7 @@ class AgentRolePrompts {
 
   /// Roles that inject Practice portfolio cash / holdings.
   static bool usesPracticePortfolioContext(String roleId) {
-    return roleId == 'paperPortfolioCoach' || roleId == 'portfolioGuide';
+    return roleId == 'portfolioGuide';
   }
 
   /// Roles that prefer mark-to-market weights in Practice context.
@@ -202,18 +222,16 @@ class AgentRolePrompts {
 
   /// Roles that can Run without a symbol (portfolio / venue-level).
   static bool allowsRunWithoutSymbol(String roleId) {
-    return roleId == 'liveBalanceExplainer' ||
-        roleId == 'portfolioGuide' ||
-        roleId == 'paperPortfolioCoach';
+    return roleId == 'liveBalanceExplainer' || roleId == 'portfolioGuide';
   }
 
   /// Placeholder ticker shown in editable starter drafts for the user to replace.
   static const draftSymbolPlaceholder = 'SYMBOL';
 
-  /// Placeholder side shown in trading / practice coach drafts.
+  /// Placeholder side shown in trading / portfolio-review drafts.
   static const draftSidePlaceholder = 'buy|sell';
 
-  /// Placeholder quantity shown in trading / practice coach drafts.
+  /// Placeholder quantity shown in trading / portfolio-review drafts.
   static const draftQuantityPlaceholder = 'QUANTITY';
 
   /// Short title for a starter card / auto-run label.
@@ -221,10 +239,21 @@ class AgentRolePrompts {
     return switch (roleId) {
       'marketResearch' => 'Market research',
       'liveBalanceExplainer' => 'Explain balances',
-      'portfolioGuide' => 'Review allocation',
-      'paperPortfolioCoach' => 'Practice coach',
+      'portfolioGuide' => 'Review portfolio',
       'intradayTrading' => 'Trade check',
       _ => 'Starter',
+    };
+  }
+
+  /// One-line blurb under [runChipLabel] on selectable starter tiles.
+  static String runChipDescription(String roleId) {
+    return switch (roleId) {
+      'marketResearch' => 'Plain-language brief for a symbol or topic',
+      'liveBalanceExplainer' => 'Walk through live totals and balances',
+      'portfolioGuide' =>
+          'Allocation, concentration, and practice sizing',
+      'intradayTrading' => 'Size, side, and risk before you Confirm',
+      _ => 'Draft a prompt into the composer',
     };
   }
 
@@ -240,8 +269,13 @@ class AgentRolePrompts {
   }) {
     final trimmed = symbol.trim();
     final needsSymbol = !allowsRunWithoutSymbol(roleId);
-    final withTradeExtras =
-        roleId == 'intradayTrading' || roleId == 'paperPortfolioCoach';
+    // Intraday always drafts side/qty placeholders; portfolio guide only when
+    // the launch already carries a proposed side or quantity (e.g. practice
+    // trade card).
+    final hasTradeHints = (side != null && side.trim().isNotEmpty) ||
+        (quantity != null && quantity > 0);
+    final withTradeExtras = roleId == 'intradayTrading' ||
+        (roleId == 'portfolioGuide' && hasTradeHints);
     final sym = trimmed.isNotEmpty
         ? trimmed.toUpperCase()
         : (needsSymbol ? draftSymbolPlaceholder : '');
@@ -303,22 +337,6 @@ class AgentRolePrompts {
             '(or delete this sentence).',
           );
         }
-        buf.write(
-          ' Cover cash vs holdings, concentration, diversification, and cash '
-          'drag. Do not emit trade JSON.',
-        );
-        return buf.toString();
-      case 'paperPortfolioCoach':
-        final buf = StringBuffer(
-          'Coach me on my practice portfolio in plain language.',
-        );
-        if (sym.isNotEmpty) {
-          buf.write(' Focus on $sym.');
-        } else if (forceOptionalSymbolPlaceholder) {
-          buf.write(
-            ' Focus on $draftSymbolPlaceholder (or delete this sentence).',
-          );
-        }
         if (side != null && side.trim().isNotEmpty) {
           buf.write(' Proposed side: ${side.trim().toLowerCase()}.');
         }
@@ -328,8 +346,9 @@ class AgentRolePrompts {
           buf.write(' Proposed quantity: $quantityPlaceholder.');
         }
         buf.write(
-          ' Cover practice cash, holdings, size vs cash, and average cost. '
-          'Remind me Practice is fake money. Do not emit trade JSON.',
+          ' Cover cash vs holdings, concentration, diversification, cash '
+          'drag, and (for Practice) size vs cash and average cost. Remind '
+          'me Practice is fake money. Do not emit trade JSON.',
         );
         return buf.toString();
       case 'intradayTrading':

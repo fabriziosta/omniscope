@@ -144,14 +144,22 @@ class _AgentChatViewState extends State<_AgentChatView> {
   final _scrollController = ScrollController();
   var _autoRunStarted = false;
   var _draftLaunchStarted = false;
+  String? _selectedStarterRoleId;
 
   @override
   void initState() {
     super.initState();
+    _composer.addListener(_onComposerChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _maybeAutoRun();
       _maybeDraftLaunch();
     });
+  }
+
+  void _onComposerChanged() {
+    if (_selectedStarterRoleId == null) return;
+    if (_composer.text.trim().isNotEmpty) return;
+    setState(() => _selectedStarterRoleId = null);
   }
 
   Future<void> _maybeAutoRun() async {
@@ -186,6 +194,7 @@ class _AgentChatViewState extends State<_AgentChatView> {
 
   @override
   void dispose() {
+    _composer.removeListener(_onComposerChanged);
     _composer.dispose();
     _composerFocus.dispose();
     _scrollController.dispose();
@@ -209,9 +218,15 @@ class _AgentChatViewState extends State<_AgentChatView> {
     if (result is AgentChatSendFailed) {
       showAppToast(
         context,
+        title: result.suggestConnections ? 'LLM connection issue' : null,
         description: result.message,
         destructive: true,
       );
+      if (result.suggestConnections) {
+        context.read<ShellNavigationController>().goToSettings(
+              sectionId: 'connections',
+            );
+      }
     } else if (result is AgentChatSendBlockedNoExchange) {
       showAppToast(
         context,
@@ -255,6 +270,7 @@ class _AgentChatViewState extends State<_AgentChatView> {
       side: widget.initialSide,
       quantity: widget.initialQuantity,
     );
+    setState(() => _selectedStarterRoleId = roleId);
     _composer.value = TextEditingValue(
       text: draft,
       selection: TextSelection.collapsed(offset: draft.length),
@@ -403,9 +419,7 @@ class _AgentChatViewState extends State<_AgentChatView> {
                       ? _StarterPromptList(
                           roles: starters,
                           enabled: !sending,
-                          initialSymbol: widget.initialSymbol,
-                          initialSide: widget.initialSide,
-                          initialQuantity: widget.initialQuantity,
+                          selectedRoleId: _selectedStarterRoleId,
                           onSelect: _draftStarter,
                         )
                       : AppEmptyView(
@@ -476,13 +490,15 @@ class _AgentChatViewState extends State<_AgentChatView> {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Expanded(
                           child: ShadInput(
                             controller: _composer,
                             focusNode: _composerFocus,
                             placeholder: const Text('Message…'),
+                            minLines: 2,
+                            maxLines: 5,
                             onSubmitted: (_) {
                               if (!sending && ready) _sendFreeform();
                             },
@@ -510,109 +526,190 @@ class _AgentChatViewState extends State<_AgentChatView> {
   }
 }
 
-/// Vertical starter cards for empty chats — tap drafts the composer.
+/// Selectable starter options for empty chats — tap drafts the composer.
 class _StarterPromptList extends StatelessWidget {
   const _StarterPromptList({
     required this.roles,
     required this.enabled,
+    required this.selectedRoleId,
     required this.onSelect,
-    this.initialSymbol,
-    this.initialSide,
-    this.initialQuantity,
   });
 
   final List<AgentRoleDefinition> roles;
   final bool enabled;
+  final String? selectedRoleId;
   final ValueChanged<String> onSelect;
-  final String? initialSymbol;
-  final String? initialSide;
-  final double? initialQuantity;
 
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      children: [
-        Text(
-          'Tap a starter to edit it below, then Send. Replace SYMBOL (and other '
-          'placeholders) with the assets you care about.',
-          style: theme.textTheme.muted,
-        ),
-        const SizedBox(height: 12),
-        for (var i = 0; i < roles.length; i++) ...[
-          if (i > 0) const SizedBox(height: 8),
-          _StarterPromptCard(
-            roleId: roles[i].id,
-            enabled: enabled,
-            draft: AgentRolePrompts.runUserPromptDraft(
-              roleId: roles[i].id,
-              symbol: initialSymbol?.trim() ?? '',
-              side: initialSide,
-              quantity: initialQuantity,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth =
+            constraints.maxWidth >= 720 ? 520.0 : double.infinity;
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          children: [
+            Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxWidth),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Choose a starter',
+                      style: theme.textTheme.small.copyWith(
+                        color: theme.colorScheme.mutedForeground,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Edit the draft below, then Send. Replace placeholders '
+                      'like SYMBOL with what you care about.',
+                      style: theme.textTheme.muted,
+                    ),
+                    const SizedBox(height: 12),
+                    for (var i = 0; i < roles.length; i++) ...[
+                      if (i > 0) const SizedBox(height: 6),
+                      _StarterPromptOption(
+                        roleId: roles[i].id,
+                        enabled: enabled,
+                        selected: selectedRoleId == roles[i].id,
+                        onSelect: () => onSelect(roles[i].id),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
-            onSelect: () => onSelect(roles[i].id),
-          ),
-        ],
-      ],
+          ],
+        );
+      },
     );
   }
 }
 
-class _StarterPromptCard extends StatelessWidget {
-  const _StarterPromptCard({
+class _StarterPromptOption extends StatelessWidget {
+  const _StarterPromptOption({
     required this.roleId,
-    required this.draft,
     required this.enabled,
+    required this.selected,
     required this.onSelect,
   });
 
   final String roleId;
-  final String draft;
   final bool enabled;
+  final bool selected;
   final VoidCallback onSelect;
+
+  IconData get _icon => switch (roleId) {
+        'marketResearch' => LucideIcons.search,
+        'liveBalanceExplainer' => LucideIcons.wallet,
+        'portfolioGuide' => LucideIcons.pieChart,
+        'intradayTrading' => LucideIcons.activity,
+        _ => LucideIcons.messageSquare,
+      };
 
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
+    final label = AgentRolePrompts.runChipLabel(roleId);
+    final description = AgentRolePrompts.runChipDescription(roleId);
+    final foreground = selected
+        ? theme.colorScheme.secondaryForeground
+        : theme.colorScheme.foreground;
+    final muted = selected
+        ? theme.colorScheme.secondaryForeground.withValues(alpha: 0.8)
+        : theme.colorScheme.mutedForeground;
+
     return Semantics(
       button: true,
       enabled: enabled,
-      label: AgentRolePrompts.runChipLabel(roleId),
+      selected: selected,
+      label: label,
+      hint: description,
       child: MouseRegion(
         cursor:
             enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: enabled ? onSelect : null,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 44),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: theme.colorScheme.secondary.withValues(alpha: 0.35),
-                borderRadius: theme.radius,
-                border: Border.all(color: theme.colorScheme.border),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      AgentRolePrompts.runChipLabel(roleId),
-                      style: theme.textTheme.large.copyWith(
-                        color: theme.colorScheme.primary,
-                        fontWeight: FontWeight.w600,
+        child: Opacity(
+          opacity: enabled ? 1 : 0.55,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: enabled ? onSelect : null,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 44),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: selected ? theme.colorScheme.secondary : null,
+                  borderRadius: theme.radius,
+                  border: Border.all(
+                    color: selected
+                        ? theme.colorScheme.secondary
+                        : theme.colorScheme.border,
+                  ),
+                ),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 28,
+                        height: 28,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? theme.colorScheme.secondaryForeground
+                                  .withValues(alpha: 0.12)
+                              : theme.colorScheme.secondary,
+                          borderRadius: theme.radius,
+                        ),
+                        child: Icon(
+                          _icon,
+                          size: 14,
+                          color: selected
+                              ? theme.colorScheme.secondaryForeground
+                              : theme.colorScheme.primary,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      draft,
-                      style: theme.textTheme.small.copyWith(
-                        color: theme.colorScheme.foreground,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              label,
+                              style: theme.textTheme.p.copyWith(
+                                color: foreground,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 1),
+                            Text(
+                              description,
+                              style: theme.textTheme.small.copyWith(
+                                color: muted,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Icon(
+                        selected
+                            ? LucideIcons.check
+                            : LucideIcons.chevronRight,
+                        size: 16,
+                        color: selected
+                            ? theme.colorScheme.secondaryForeground
+                            : theme.colorScheme.primary,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1093,4 +1190,3 @@ class _InvestInterestProposalCard extends StatelessWidget {
     );
   }
 }
-

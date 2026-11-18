@@ -30,6 +30,8 @@ class QuoteListTile extends StatelessWidget {
     this.showFavorite = true,
     this.showInvestInterest = true,
     this.showInvestigate = true,
+    this.sourceLabel,
+    this.sourceIsAgent = false,
   });
 
   final Quote quote;
@@ -48,6 +50,12 @@ class QuoteListTile extends StatelessWidget {
 
   /// Sparkles control that deep-links into Investigate for this symbol.
   final bool showInvestigate;
+
+  /// Optional You/Agent chip (Invest interest pane).
+  final String? sourceLabel;
+
+  /// When [sourceLabel] is set, styles Agent with primary and You muted.
+  final bool sourceIsAgent;
 
   @override
   Widget build(BuildContext context) {
@@ -143,14 +151,50 @@ class QuoteListTile extends StatelessWidget {
         ),
     ];
 
+    final sourceChip = sourceLabel == null
+        ? null
+        : Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: sourceIsAgent
+                  ? theme.colorScheme.primary.withValues(alpha: 0.12)
+                  : theme.colorScheme.secondary.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: sourceIsAgent
+                    ? theme.colorScheme.primary.withValues(alpha: 0.35)
+                    : theme.colorScheme.border,
+              ),
+            ),
+            child: Text(
+              sourceLabel!,
+              style: theme.textTheme.small.copyWith(
+                color: sourceIsAgent
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.mutedForeground,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          );
+
     final leading = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        AppEllipsisText(
-          quote.symbol,
-          maxLines: 2,
-          style: theme.textTheme.large,
+        Row(
+          children: [
+            Flexible(
+              child: AppEllipsisText(
+                quote.symbol,
+                maxLines: 2,
+                style: theme.textTheme.large,
+              ),
+            ),
+            if (sourceChip != null) ...[
+              const SizedBox(width: 6),
+              sourceChip,
+            ],
+          ],
         ),
         if (subtitle != null) ...[
           SizedBox(height: compact ? 1 : 2),

@@ -381,12 +381,7 @@ class _PracticeBody extends StatelessWidget {
               const AgentLaunchButton(
                 intent: AgentLaunchIntent.explainPortfolio,
                 outline: true,
-                label: 'Allocation',
-              ),
-              const AgentLaunchButton(
-                intent: AgentLaunchIntent.paperReview,
-                outline: true,
-                label: 'Coach',
+                label: 'Review',
               ),
               ShadButton.outline(
                 size: ShadButtonSize.sm,

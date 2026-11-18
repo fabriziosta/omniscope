@@ -35,7 +35,7 @@
     {
       "id": "portfolioGuide",
       "title": "Portfolio & Allocation Guide",
-      "description": "Plain-language review of diversification, concentration, and cash drag across Practice and Live.",
+      "description": "Plain-language review of diversification, concentration, cash drag, and practice sizing across Practice and Live.",
       "framework": "genkit",
       "workload": "investigation",
       "suggestedModels": {
@@ -46,21 +46,6 @@
         "grok": "grok-4.3"
       },
       "suggestionNote": "Prefer a lighter model for allocation explainers — faster and cheaper for portfolio narration."
-    },
-    {
-      "id": "paperPortfolioCoach",
-      "title": "Practice Portfolio Coach",
-      "description": "Plain-language coaching on practice cash, holdings, size, and avg cost — educational only.",
-      "framework": "genkit",
-      "workload": "investigation",
-      "suggestedModels": {
-        "gemini": "gemini-3.5-flash-lite",
-        "openAi": "gpt-6-luna",
-        "anthropic": "claude-haiku-5-5",
-        "deepSeek": "deepseek-flash",
-        "grok": "grok-4.3"
-      },
-      "suggestionNote": "Prefer a lighter model for practice coaching — faster and cheaper for learning turns."
     },
     {
       "id": "intradayTrading",

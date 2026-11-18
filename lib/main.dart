@@ -13,6 +13,7 @@ import 'data/agents/agent_role_catalog.dart';
 import 'data/agents/agents_repository.dart';
 import 'data/agents/genkit/genkit_agent_runner.dart';
 import 'data/agents/invest_interest_proposal_repository.dart';
+import 'data/agents/llm_connection_status_store.dart';
 import 'data/agents/llm_model_catalog.dart';
 import 'data/agents/llm_runtime_settings.dart';
 import 'data/agents/trade_proposal_repository.dart';
@@ -99,6 +100,7 @@ Future<void> main() async {
   await appNotifications.load();
 
   final agentRunner = GenkitAgentRunner();
+  final llmConnectionStatus = LlmConnectionStatusStore();
 
   ExchangeCredentialsConfig.defaultExchangeIds =
       VenueCatalog.knownCredentialVenueIds;
@@ -178,6 +180,9 @@ Future<void> main() async {
         ChangeNotifierProvider<PortfolioRepository>.value(value: portfolio),
         ChangeNotifierProvider<AgentsRepository>.value(value: agents),
         ChangeNotifierProvider<LlmRuntimeSettings>.value(value: llmRuntime),
+        ChangeNotifierProvider<LlmConnectionStatusStore>.value(
+          value: llmConnectionStatus,
+        ),
         ChangeNotifierProvider<AgentAppSettings>.value(value: agentApp),
         ChangeNotifierProvider<AgentChatRepository>.value(value: agentChats),
         ChangeNotifierProvider<TradeProposalRepository>.value(

@@ -144,6 +144,7 @@ class GenkitAgentRunner {
           mandateSummary: toolDeps.mandate?.toAgentSummary(),
           answerMood: toolDeps.answerMood,
           answerMoodNote: toolDeps.answerMoodNote,
+          autopilotEnabled: toolDeps.autopilotEnabled,
         ),
         tools: peerTools,
         model: _factory.specialtyModel(
@@ -178,6 +179,7 @@ class GenkitAgentRunner {
         specialtyRoleIds: [for (final s in specialties) s.roleId],
         answerMood: toolDeps.answerMood,
         answerMoodNote: toolDeps.answerMoodNote,
+        autopilotEnabled: toolDeps.autopilotEnabled,
       ),
       tools: const [],
       model: primaryModel,
@@ -223,10 +225,7 @@ class GenkitAgentRunner {
     } on GenkitAgentException {
       rethrow;
     } catch (e) {
-      final msg = e.toString();
-      throw GenkitAgentException(
-        msg.length > 240 ? '${msg.substring(0, 237)}…' : msg,
-      );
+      throw GenkitAgentException.fromProviderError(e);
     }
   }
 

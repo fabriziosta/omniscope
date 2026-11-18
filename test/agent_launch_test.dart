@@ -87,14 +87,6 @@ void main() {
       suggestedModels: {},
     ),
     const AgentRoleDefinition(
-      id: 'paperPortfolioCoach',
-      title: 'Practice Portfolio Coach',
-      description: 'Practice coach',
-      framework: AgentFramework.genkit,
-      workload: AgentWorkload.investigation,
-      suggestedModels: {},
-    ),
-    const AgentRoleDefinition(
       id: 'intradayTrading',
       title: 'Intraday Execution & Risk Control',
       description: 'Trade check',
@@ -142,19 +134,28 @@ void main() {
         intent: AgentLaunchIntent.explainPortfolio,
       );
       expect(roles.map((r) => r.id).toList(), ['portfolioGuide']);
-      expect(AgentLaunchIntent.explainPortfolio.ctaLabel, 'Review allocation');
+      expect(AgentLaunchIntent.explainPortfolio.ctaLabel, 'Review portfolio');
       expect(AgentLaunchIntent.explainPortfolio.isPortfolioLevel, isTrue);
     });
 
-    test('maps paperReview to practice portfolio coach', () {
-      final roles = AgentLaunchResolver.rolesForIntent(
-        availableRoles: sampleRoles,
-        intent: AgentLaunchIntent.paperReview,
+    test('chatTitle uses asset and portfolio labels', () {
+      expect(
+        AgentLaunchIntent.investigate.chatTitle(symbol: 'AAPL'),
+        'Investigate asset AAPL',
       );
-      expect(roles.map((r) => r.id).toList(), ['paperPortfolioCoach']);
-      expect(AgentLaunchIntent.paperReview.ctaLabel, 'Practice coach');
+      expect(
+        AgentLaunchIntent.tradeCheck.chatTitle(symbol: 'BTC_USD'),
+        'Trade check for BTC_USD',
+      );
+      expect(
+        AgentLaunchIntent.explainLive.chatTitle(portfolioLabel: 'Crypto.com'),
+        'Explain balances for Crypto.com',
+      );
+      expect(
+        AgentLaunchIntent.explainPortfolio.chatTitle(),
+        'Portfolio review for Practice',
+      );
     });
-
   });
 
   Future<({int Function() agentCallCount, ShellNavigationController shellNav})>
@@ -282,16 +283,7 @@ void main() {
                                 intent: AgentLaunchIntent.explainPortfolio,
                               );
                             },
-                            child: const Text('Launch allocation'),
-                          ),
-                          ShadButton(
-                            onPressed: () {
-                              AgentLaunchActions.launch(
-                                context,
-                                intent: AgentLaunchIntent.paperReview,
-                              );
-                            },
-                            child: const Text('Launch coach'),
+                            child: const Text('Launch portfolio review'),
                           ),
                         ],
                       ),
@@ -373,9 +365,11 @@ void main() {
   });
 
   testWidgets(
-      'in-app launches draft composer without sending (research/trade/allocation/coach)',
+      'in-app launches draft composer without sending (research/trade/portfolio)',
       (tester) async {
     final harness = await _pumpLaunchHarness(tester);
+    final chats = tester.element(find.byType(AgentsScreen))
+        .read<AgentChatRepository>();
 
     await tester.tap(find.text('Launch investigate'));
     await _expectComposerDraft(
@@ -384,6 +378,8 @@ void main() {
       symbol: 'AAPL',
       agentCallCount: harness.agentCallCount,
     );
+    expect(chats.threads.length, 1);
+    expect(chats.threads.single.title, 'Investigate asset AAPL');
 
     await tester.tap(find.text('Launch trade'));
     await _expectComposerDraft(
@@ -392,19 +388,25 @@ void main() {
       symbol: 'AAPL',
       agentCallCount: harness.agentCallCount,
     );
+    expect(chats.threads.length, 2);
+    expect(
+      chats.threads.map((t) => t.title),
+      containsAll([
+        'Investigate asset AAPL',
+        'Trade check for AAPL',
+      ]),
+    );
 
-    await tester.tap(find.text('Launch allocation'));
+    await tester.tap(find.text('Launch portfolio review'));
     await _expectComposerDraft(
       tester,
       roleId: 'portfolioGuide',
       agentCallCount: harness.agentCallCount,
     );
-
-    await tester.tap(find.text('Launch coach'));
-    await _expectComposerDraft(
-      tester,
-      roleId: 'paperPortfolioCoach',
-      agentCallCount: harness.agentCallCount,
+    expect(chats.threads.length, 3);
+    expect(
+      chats.threads.map((t) => t.title),
+      contains('Portfolio review for Practice'),
     );
   });
 }
