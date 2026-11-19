@@ -436,10 +436,8 @@ void main() {
     expect(find.text('Charts'), findsOneWidget);
     expect(find.text('Market providers'), findsNothing);
 
-    // Hit-testing the burger can miss under overlays; invoke directly.
-    tester
-        .widget<MasterDetailMenuButton>(find.byType(MasterDetailMenuButton))
-        .onPressed();
+    // Switching to Settings auto-opens the nav drawer — do not toggle the
+    // burger here (that would close it). Wait for the open animation.
     await tester.pumpAndSettle();
     expect(find.text('v${AppInfo.version}'), findsOneWidget);
     expect(find.text('Appearance'), findsWidgets);
