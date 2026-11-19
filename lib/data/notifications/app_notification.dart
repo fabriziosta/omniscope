@@ -4,6 +4,7 @@ enum AppNotificationKind {
   scheduledProposalPending,
   scheduledAutopilotDone,
   scheduledRunFailed,
+  autopilotRiskHalt,
 }
 
 extension AppNotificationKindX on AppNotificationKind {
@@ -12,6 +13,7 @@ extension AppNotificationKindX on AppNotificationKind {
         AppNotificationKind.scheduledProposalPending => 'Needs confirm',
         AppNotificationKind.scheduledAutopilotDone => 'Autopilot',
         AppNotificationKind.scheduledRunFailed => 'Scheduled failed',
+        AppNotificationKind.autopilotRiskHalt => 'Autopilot halted',
       };
 
   static AppNotificationKind parse(String? raw) {

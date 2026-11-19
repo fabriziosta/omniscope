@@ -10,6 +10,7 @@ import '../../core/shell_navigation.dart';
 import '../../data/agents/agent_activity_repository.dart';
 import '../../data/agents/agent_app_settings.dart';
 import '../../data/agents/agent_chat_repository.dart';
+import '../../data/agents/agent_pnl_service.dart';
 import '../../data/agents/agent_role_prompts.dart';
 import '../../data/agents/agents_repository.dart';
 import '../../data/agents/chat_models.dart';
@@ -32,12 +33,15 @@ import '../../data/settings/settings_listen_keys.dart';
 import '../../data/trading/broker_exchange_registry.dart';
 import '../../data/trading/trade_executor.dart';
 import '../../widgets/agent_markdown_body.dart';
+import '../../widgets/agent_pnl_strip.dart';
 import '../../widgets/app_empty_view.dart';
 import '../../widgets/app_progress.dart';
 import '../../widgets/app_text.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/app_tooltip.dart';
+import '../../widgets/autopilot_status_pill.dart';
 import '../../widgets/portfolio_picker_dialog.dart';
+import '../../widgets/schedule_status_pill.dart';
 import '../../widgets/subscreen_app_bar.dart';
 import '../asset_detail/asset_detail_screen.dart';
 import 'agent_chat_controller.dart';
@@ -250,11 +254,39 @@ class _AgentChatViewState extends State<_AgentChatView> {
     }
   }
 
-  Future<void> _sendFreeform() async {
+  Future<void> _sendComposer() async {
     final text = _composer.text.trim();
     if (text.isEmpty) return;
     final controller = context.read<AgentChatController>();
     if (controller.sending) return;
+    final roleId = _selectedStarterRoleId;
+    if (roleId != null) {
+      final placeholderError =
+          AgentRolePrompts.unresolvedDraftPlaceholderMessage(
+        roleId: roleId,
+        text: text,
+      );
+      if (placeholderError != null) {
+        showAppToast(
+          context,
+          description: placeholderError,
+          destructive: true,
+        );
+        return;
+      }
+      _composer.clear();
+      setState(() => _selectedStarterRoleId = null);
+      final result = await controller.sendStarter(
+        roleId: roleId,
+        content: text,
+        symbol: widget.initialSymbol?.trim() ?? '',
+        exchangeId: widget.initialExchangeId,
+        side: widget.initialSide,
+        quantity: widget.initialQuantity,
+      );
+      await _handleSendResult(result);
+      return;
+    }
     _composer.clear();
     final result = await controller.sendFreeform(
       text,
@@ -297,6 +329,26 @@ class _AgentChatViewState extends State<_AgentChatView> {
     await _copyToClipboard(
       thread.plainTextExchange,
       description: 'Full chat copied to clipboard.',
+    );
+  }
+
+  Future<void> _toggleAutopilot(AgentChatThread thread) async {
+    final next = !thread.autopilotEnabled;
+    final chats = context.read<AgentChatRepository>();
+    if (next) {
+      final block = chats.autopilotEnableBlockReason(thread.chatId);
+      if (block != null) {
+        showAppToast(context, description: block);
+        return;
+      }
+    }
+    await chats.setAutopilotEnabled(thread.chatId, enabled: next);
+    if (!mounted) return;
+    showAppToast(
+      context,
+      description: next
+          ? 'Autopilot on for this chat'
+          : 'Autopilot off for this chat',
     );
   }
 
@@ -389,8 +441,22 @@ class _AgentChatViewState extends State<_AgentChatView> {
               showBack: false,
               onOpenMenu: widget.onOpenMenu,
               titleAlign: TextAlign.start,
-              trailing: thread.messages.isNotEmpty
-                  ? AppTooltip(
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ScheduleStatusPill(chatId: widget.chatId),
+                  AppTooltip(
+                    message: thread.autopilotEnabled
+                        ? 'Autopilot on — tap to require Confirm'
+                        : 'Autopilot off — tap to auto-apply in this chat',
+                    child: AutopilotStatusPill(
+                      enabled: thread.autopilotEnabled,
+                      onTap: () => _toggleAutopilot(thread),
+                    ),
+                  ),
+                  if (thread.messages.isNotEmpty) ...[
+                    const SizedBox(width: 4),
+                    AppTooltip(
                       message: 'Copy chat',
                       child: ShadButton.ghost(
                         size: ShadButtonSize.sm,
@@ -400,18 +466,52 @@ class _AgentChatViewState extends State<_AgentChatView> {
                         onPressed: () => _copyChat(thread),
                         child: const Icon(LucideIcons.copy, size: 16),
                       ),
-                    )
-                  : null,
+                    ),
+                  ],
+                ],
+              ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Text(
                 ready
-                    ? 'Omniscope routes specialists for you. Confirm still '
-                        'gates trade and Invest interest suggestions.'
+                    ? (context.watch<AgentAppSettings>().isScheduleChat(
+                            widget.chatId,
+                          )
+                        ? 'Scheduled research reports here · Confirm still '
+                            'gates fills. Turn on Autopilot on this chat to '
+                            'auto-apply risk-approved suggestions.'
+                        : (thread.autopilotEnabled
+                            ? 'Autopilot is on for this chat: risk-approved '
+                                'trades and add-only Invest interest may apply '
+                                'without Confirm. Other chats still need Confirm.'
+                            : 'Omniscope routes specialists for you. Confirm still '
+                                'gates trade and Invest interest suggestions.'))
                     : 'Add an LLM API key under Settings → Connections to chat.',
                 style: theme.textTheme.muted,
               ),
+            ),
+            Builder(
+              builder: (context) {
+                final symbol = AgentPnlService.latestFilledSymbolForChat(
+                  proposals: proposals.proposals,
+                  chatId: widget.chatId,
+                );
+                if (symbol == null) return const SizedBox.shrink();
+                final summary = AgentPnlService.summaryForChatSymbol(
+                  proposals: proposals.proposals,
+                  chatId: widget.chatId,
+                  symbol: symbol,
+                );
+                if (!summary.hasActivity) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: AgentPnlStrip(
+                    summary: summary,
+                    leading: 'This chat',
+                  ),
+                );
+              },
             ),
             Expanded(
               child: thread.messages.isEmpty
@@ -500,7 +600,7 @@ class _AgentChatViewState extends State<_AgentChatView> {
                             minLines: 2,
                             maxLines: 5,
                             onSubmitted: (_) {
-                              if (!sending && ready) _sendFreeform();
+                              if (!sending && ready) _sendComposer();
                             },
                           ),
                         ),
@@ -509,7 +609,7 @@ class _AgentChatViewState extends State<_AgentChatView> {
                           height: 44,
                           child: ShadButton(
                             enabled: !sending && ready,
-                            onPressed: _sendFreeform,
+                            onPressed: _sendComposer,
                             child: const Text('Send'),
                           ),
                         ),
@@ -567,8 +667,8 @@ class _StarterPromptList extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Edit the draft below, then Send. Replace placeholders '
-                      'like SYMBOL with what you care about.',
+                      'Tap a starter, replace placeholders like SYMBOL, then '
+                      'Send.',
                       style: theme.textTheme.muted,
                     ),
                     const SizedBox(height: 12),

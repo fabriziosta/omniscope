@@ -187,6 +187,139 @@ class _SettingsChoiceChip extends StatelessWidget {
   }
 }
 
+/// Muted one-line hint under exclusive chips for the current selection.
+class SettingsSelectedHint extends StatelessWidget {
+  const SettingsSelectedHint(this.text, {super.key});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    if (text.isEmpty) return const SizedBox.shrink();
+    final theme = ShadTheme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Text(
+        text,
+        style: theme.textTheme.small.copyWith(
+          color: theme.colorScheme.mutedForeground,
+        ),
+      ),
+    );
+  }
+}
+
+/// Exclusive chips with an optional dynamic hint for the selected value.
+///
+/// Omit [hintFor] for Appearance-style chips where the subsection description
+/// already carries the detail.
+class SettingsExclusiveChips<T> extends StatelessWidget {
+  const SettingsExclusiveChips({
+    super.key,
+    required this.options,
+    required this.value,
+    required this.onChanged,
+    this.hintFor,
+  });
+
+  final List<(T value, String label)> options;
+  final T value;
+  final ValueChanged<T> onChanged;
+  final String Function(T value)? hintFor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SettingsChoiceChips<T>(
+          options: options,
+          value: value,
+          onChanged: onChanged,
+        ),
+        if (hintFor != null) SettingsSelectedHint(hintFor!(value)),
+      ],
+    );
+  }
+}
+
+/// Label above a [ShadInput] — presentational only (no save control).
+class SettingsLabeledInput extends StatelessWidget {
+  const SettingsLabeledInput({
+    super.key,
+    required this.label,
+    required this.controller,
+    this.keyboardType,
+    this.placeholder,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final TextInputType? keyboardType;
+  final Widget? placeholder;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(label, style: theme.textTheme.small),
+        const SizedBox(height: 6),
+        ShadInput(
+          controller: controller,
+          keyboardType: keyboardType,
+          placeholder: placeholder,
+        ),
+      ],
+    );
+  }
+}
+
+/// Two children side-by-side when width ≥ 480, otherwise stacked.
+class SettingsWidePair extends StatelessWidget {
+  const SettingsWidePair({
+    super.key,
+    required this.first,
+    required this.second,
+    this.gap = 12,
+    this.stackGap = 8,
+  });
+
+  final Widget first;
+  final Widget second;
+  final double gap;
+  final double stackGap;
+
+  static const double breakpoint = 480;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < breakpoint) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              first,
+              SizedBox(height: stackGap),
+              second,
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: first),
+            SizedBox(width: gap),
+            Expanded(child: second),
+          ],
+        );
+      },
+    );
+  }
+}
+
 /// Enable/disable data source row.
 class SettingsDataSourceToggleTile extends StatelessWidget {
   const SettingsDataSourceToggleTile({

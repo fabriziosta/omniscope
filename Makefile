@@ -23,7 +23,7 @@ help:
 	@echo "  make get              flutter pub get"
 	@echo "  make analyze          tool/flutter_checks.sh analyze"
 	@echo "  make test             tool/flutter_checks.sh test"
-	@echo "  make check            analyze + test (same as pre-push)"
+	@echo "  make check            analyze + test + linux release (same as pre-push / CI)"
 	@echo "  make venue-canary     live venue API probes (not part of check)"
 	@echo "  make run              flutter run -d \$$(DEVICE)  (default: linux)"
 	@echo "  make run DEVICE=chrome"

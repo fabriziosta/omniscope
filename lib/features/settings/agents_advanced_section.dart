@@ -3,8 +3,10 @@ import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../data/agents/agent_app_settings.dart';
+import '../../data/agents/agent_chat_repository.dart';
 import '../../data/agents/agents_repository.dart';
 import '../../data/agents/models.dart';
+import '../../data/agents/schedule_chat_binding.dart';
 import '../../data/settings/favorites_repository.dart';
 import '../../data/trading/trade_executor.dart';
 import '../../widgets/app_toast.dart';
@@ -13,6 +15,15 @@ import 'settings_option_tiles.dart';
 /// Settings → Agents (advanced): mood, role enable, Autopilot, Schedule.
 class AgentsAdvancedSectionBody extends StatelessWidget {
   const AgentsAdvancedSectionBody({super.key});
+
+  static final _moodOptions = [
+    for (final mood in AgentAnswerMood.values) (mood, mood.label),
+  ];
+
+  static final _intervalOptions = [
+    for (final interval in AgentScheduleInterval.values)
+      (interval, interval.shortLabel),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -37,16 +48,12 @@ class AgentsAdvancedSectionBody extends StatelessWidget {
               'How agents phrase answers. Does not change Mandate risk rails.',
         ),
         const SizedBox(height: 8),
-        for (final mood in AgentAnswerMood.values) ...[
-          if (mood != AgentAnswerMood.values.first)
-            const SizedBox(height: settingsOptionGap),
-          SettingsSelectableOptionTile(
-            title: mood.label,
-            subtitle: mood.description,
-            selected: app.answerMood == mood,
-            onTap: () => app.setAnswerMood(mood),
-          ),
-        ],
+        SettingsExclusiveChips<AgentAnswerMood>(
+          options: _moodOptions,
+          value: app.answerMood,
+          onChanged: app.setAnswerMood,
+          hintFor: (mood) => mood.description,
+        ),
         const SizedBox(height: 10),
         Text('Optional style note', style: theme.textTheme.small),
         const SizedBox(height: 6),
@@ -72,31 +79,12 @@ class AgentsAdvancedSectionBody extends StatelessWidget {
         ],
         const SizedBox(height: 16),
         const SettingsSubsectionLabel(
-          'Autopilot',
+          'Autopilot portfolio',
           description:
-              'When on, risk-approved trade proposals from the trading '
-              'specialty auto-submit to the default portfolio, and '
-              'investigation agents may auto-add Invest interest symbols '
-              '(adds only — remove/set still need Confirm).',
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: Text('Enable Autopilot', style: theme.textTheme.large),
-            ),
-            ShadSwitch(
-              value: app.autopilotEnabled,
-              onChanged: (v) async {
-                await app.setAutopilot(enabled: v);
-                if (!context.mounted) return;
-                showAppToast(
-                  context,
-                  description: v ? 'Autopilot on' : 'Autopilot off',
-                );
-              },
-            ),
-          ],
+              'Default target when a chat has Autopilot on (risk-approved '
+              'trades auto-submit; investigation may auto-add Invest interest). '
+              'Enable Autopilot per chat from the Agents list or chat header. '
+              'Notional and daily fill/loss rails live under Settings → Mandate.',
         ),
         const SizedBox(height: 8),
         Text(
@@ -109,7 +97,7 @@ class AgentsAdvancedSectionBody extends StatelessWidget {
           ShadSelect<String>(
             minWidth: double.infinity,
             initialValue: app.autopilotExchangeId,
-            placeholder: const Text('Autopilot portfolio'),
+            placeholder: const Text('Default portfolio'),
             options: [
               for (final v in tradeExecutor.tradableVenues)
                 ShadOption(value: v.id, child: Text(v.displayName)),
@@ -122,7 +110,10 @@ class AgentsAdvancedSectionBody extends StatelessWidget {
             },
             onChanged: (value) async {
               if (value == null) return;
-              await app.setAutopilot(enabled: app.autopilotEnabled, exchangeId: value);
+              await app.setAutopilot(
+                enabled: app.autopilotEnabled,
+                exchangeId: value,
+              );
             },
           ),
         ],
@@ -130,9 +121,10 @@ class AgentsAdvancedSectionBody extends StatelessWidget {
         const SettingsSubsectionLabel(
           'Schedule',
           description:
-              'While Omniscope is open, periodically Run research or trade '
-              'checks on Invest interest (or typed symbols). Autopilot still '
-              'applies when enabled.',
+              'While Omniscope is open, periodically Run research on Invest '
+              'interest (or typed symbols) into one pinned Schedule chat. '
+              'Deleting that chat stops Schedule. Confirm still gates fills; '
+              'turn on Autopilot on the chat to auto-apply there.',
         ),
         const SizedBox(height: 8),
         Row(
@@ -142,30 +134,39 @@ class AgentsAdvancedSectionBody extends StatelessWidget {
             ),
             ShadSwitch(
               value: app.scheduleEnabled,
-              onChanged: (v) => app.setSchedule(enabled: v),
+              onChanged: (v) async {
+                if (v) {
+                  await app.setSchedule(enabled: true);
+                  final chats = context.read<AgentChatRepository>();
+                  await ScheduleChatBinding.ensureChat(
+                    app: app,
+                    chats: chats,
+                  );
+                  if (!context.mounted) return;
+                  showAppToast(
+                    context,
+                    description:
+                        'Schedule on — results go to the Scheduled run chat',
+                  );
+                } else {
+                  await app.setSchedule(enabled: false);
+                }
+              },
             ),
           ],
         ),
         const SizedBox(height: 8),
         Text('Interval', style: theme.textTheme.small),
         const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final interval in AgentScheduleInterval.values)
-              ShadButton.outline(
-                size: ShadButtonSize.sm,
-                onPressed: () => app.setSchedule(
-                  enabled: app.scheduleEnabled,
-                  interval: interval,
-                ),
-                child: Text(
-                  interval.shortLabel +
-                      (app.scheduleInterval == interval ? ' ✓' : ''),
-                ),
-              ),
-          ],
+        SettingsExclusiveChips<AgentScheduleInterval>(
+          options: _intervalOptions,
+          value: app.scheduleInterval,
+          onChanged: (interval) => app.setSchedule(
+            enabled: app.scheduleEnabled,
+            interval: interval,
+          ),
+          hintFor: (interval) =>
+              'About every ${interval.label.toLowerCase()}',
         ),
         const SizedBox(height: 12),
         Row(

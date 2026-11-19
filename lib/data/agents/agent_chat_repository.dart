@@ -2,16 +2,24 @@ import 'package:flutter/foundation.dart';
 
 import '../settings/user_config_keys.dart';
 import '../settings/user_config_store.dart';
+import 'agent_app_settings.dart';
 import 'chat_models.dart';
+import 'schedule_chat_binding.dart';
 
 /// Persists agent-agnostic chat threads on device.
 class AgentChatRepository extends ChangeNotifier {
-  AgentChatRepository({this.store});
+  AgentChatRepository({this.store, this.appSettings});
 
   /// Soft cap so the config file stays small on all platforms.
   static const maxMessagesPerThread = 100;
 
+  /// Hard product cap on how many chats may have Autopilot on at once.
+  static const maxAutopilotEnabledChats = 5;
+
   UserConfigStore? store;
+
+  /// Optional so deleting the schedule home chat can stop Schedule.
+  AgentAppSettings? appSettings;
   AgentChatsState _state = AgentChatsState.empty;
   bool _ready = false;
 
@@ -21,6 +29,24 @@ class AgentChatRepository extends ChangeNotifier {
   List<AgentChatThread> get threads => _state.sortedByUpdated;
 
   AgentChatThread threadFor(String chatId) => _state.threadFor(chatId);
+
+  /// How many threads currently have Autopilot enabled.
+  int get autopilotEnabledCount =>
+      _state.threads.where((t) => t.autopilotEnabled).length;
+
+  /// True when another chat may turn Autopilot on (under [maxAutopilotEnabledChats]).
+  bool get canEnableAutopilot =>
+      autopilotEnabledCount < maxAutopilotEnabledChats;
+
+  /// Null when [chatId] may enable Autopilot; otherwise a short UI message.
+  String? autopilotEnableBlockReason(String chatId) {
+    final existing = _state.byId(chatId);
+    if (existing == null) return null;
+    if (existing.autopilotEnabled) return null;
+    if (canEnableAutopilot) return null;
+    return 'Autopilot limit: at most $maxAutopilotEnabledChats chats. '
+        'Turn one off first.';
+  }
 
   /// Prefer [chatId], else the thread that contains [sourceMessageId].
   AgentChatThread? findThread({
@@ -78,15 +104,41 @@ class AgentChatRepository extends ChangeNotifier {
   }
 
   /// Creates an empty chat and returns it.
-  Future<AgentChatThread> createChat({String? title}) async {
+  Future<AgentChatThread> createChat({
+    String? title,
+    bool autopilotEnabled = false,
+  }) async {
     final thread = AgentChatThread.empty(
       chatId: AgentChatThread.newChatId(),
       title: title?.trim().isNotEmpty == true ? title!.trim() : 'New chat',
+      autopilotEnabled: autopilotEnabled,
     ).copyWith(updatedAt: DateTime.now().toUtc());
     _state = _state.withThread(thread);
     await _persist();
     notifyListeners();
     return thread;
+  }
+
+  /// One-shot: if legacy global Autopilot was ON, enable it on every existing
+  /// thread and clear the global flag so it does not re-apply.
+  Future<void> migrateGlobalAutopilotIfNeeded(AgentAppSettings app) async {
+    if (!app.autopilotEnabled) return;
+    final migrated = <AgentChatThread>[];
+    var anyThreadUpdated = false;
+    for (final thread in _state.threads) {
+      if (thread.autopilotEnabled) {
+        migrated.add(thread);
+      } else {
+        migrated.add(thread.copyWith(autopilotEnabled: true));
+        anyThreadUpdated = true;
+      }
+    }
+    if (anyThreadUpdated) {
+      _state = AgentChatsState(threads: migrated);
+      await _persist();
+      notifyListeners();
+    }
+    await app.setAutopilot(enabled: false);
   }
 
   Future<AgentChatThread> renameChat(String chatId, String title) async {
@@ -121,6 +173,37 @@ class AgentChatRepository extends ChangeNotifier {
     return setPinned(chatId, pinned: !existing.pinned);
   }
 
+  /// Enables or disables Autopilot for one chat. Does not bump [updatedAt].
+  ///
+  /// Enabling is refused when [autopilotEnabledCount] is already at
+  /// [maxAutopilotEnabledChats] (returns the unchanged thread). A successful
+  /// enable also sets [AgentChatThread.pinned] so the chat stays at the top of
+  /// the list; disable leaves [pinned] unchanged.
+  Future<AgentChatThread> setAutopilotEnabled(
+    String chatId, {
+    required bool enabled,
+  }) async {
+    final existing = _state.byId(chatId);
+    if (existing == null) {
+      return _state.threadFor(chatId);
+    }
+    if (existing.autopilotEnabled == enabled) return existing;
+    if (enabled && !canEnableAutopilot) return existing;
+    final next = enabled
+        ? existing.copyWith(autopilotEnabled: true, pinned: true)
+        : existing.copyWith(autopilotEnabled: false);
+    _state = _state.withThread(next);
+    await _persist();
+    notifyListeners();
+    return next;
+  }
+
+  Future<AgentChatThread> toggleAutopilotEnabled(String chatId) async {
+    final existing = _state.byId(chatId);
+    if (existing == null) return _state.threadFor(chatId);
+    return setAutopilotEnabled(chatId, enabled: !existing.autopilotEnabled);
+  }
+
   Future<AgentChatThread> append({
     required String chatId,
     required AgentChatMessage message,
@@ -148,6 +231,7 @@ class AgentChatRepository extends ChangeNotifier {
       messages: messages,
       updatedAt: DateTime.now().toUtc(),
       pinned: existing.pinned,
+      autopilotEnabled: existing.autopilotEnabled,
       legacyRoleId: existing.legacyRoleId,
     );
     _state = _state.withThread(thread);
@@ -179,6 +263,13 @@ class AgentChatRepository extends ChangeNotifier {
     _state = _state.withoutThread(chatId);
     await _persist();
     notifyListeners();
+    final app = appSettings;
+    if (app != null) {
+      await ScheduleChatBinding.stopIfLinkedChatDeleted(
+        app: app,
+        chatId: chatId,
+      );
+    }
   }
 
   /// Clears every persisted agent chat thread on this device.
@@ -186,5 +277,9 @@ class AgentChatRepository extends ChangeNotifier {
     _state = AgentChatsState.empty;
     await _persist();
     notifyListeners();
+    final app = appSettings;
+    if (app != null) {
+      await ScheduleChatBinding.stopAfterClearAllChats(app);
+    }
   }
 }

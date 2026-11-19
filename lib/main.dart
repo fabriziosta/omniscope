@@ -83,8 +83,12 @@ Future<void> main() async {
   await agentApp.load();
   await agentApp.migrateFromConnections(agents.connections);
 
-  final agentChats = AgentChatRepository(store: config);
+  final agentChats = AgentChatRepository(
+    store: config,
+    appSettings: agentApp,
+  );
   await agentChats.load();
+  await agentChats.migrateGlobalAutopilotIfNeeded(agentApp);
 
   final tradeProposals = TradeProposalRepository(store: config);
   await tradeProposals.load();

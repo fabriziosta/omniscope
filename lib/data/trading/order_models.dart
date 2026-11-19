@@ -54,17 +54,22 @@ class OrderResult {
     required this.orderId,
     this.rawStatus,
     this.message,
+    this.fillPrice,
   }) : error = null;
 
   const OrderResult.fail(this.error)
       : orderId = null,
         rawStatus = null,
-        message = null;
+        message = null,
+        fillPrice = null;
 
   final String? orderId;
   final String? rawStatus;
   final String? message;
   final String? error;
+
+  /// Fill / mark price when known (Practice always; live when available).
+  final double? fillPrice;
 
   bool get success => error == null && orderId != null;
 }

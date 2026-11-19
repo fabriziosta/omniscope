@@ -100,15 +100,20 @@ class MandateSettings extends ChangeNotifier {
   int _maxSymbolCount = 20;
   double? _maxNotionalPerProposal;
   int _maxOpenProposals = 3;
+  int _maxAutopilotFillsPerDay = defaultMaxAutopilotFillsPerDay;
+  double? _maxDailyRealizedLoss;
   AgentScheduleInterval _cadencePreference = AgentScheduleInterval.hour1;
   bool _ready = false;
 
   static const defaultMaxSymbolCount = 20;
   static const defaultMaxOpenProposals = 3;
+  static const defaultMaxAutopilotFillsPerDay = 10;
   static const minSymbolCount = 1;
   static const maxSymbolCountCap = 100;
   static const minOpenProposals = 1;
   static const maxOpenProposalsCap = 20;
+  static const minAutopilotFillsPerDay = 1;
+  static const maxAutopilotFillsPerDayCap = 100;
 
   MandateGoal get goal => _goal;
   MandateHorizon get horizon => _horizon;
@@ -116,6 +121,8 @@ class MandateSettings extends ChangeNotifier {
   int get maxSymbolCount => _maxSymbolCount;
   double? get maxNotionalPerProposal => _maxNotionalPerProposal;
   int get maxOpenProposals => _maxOpenProposals;
+  int get maxAutopilotFillsPerDay => _maxAutopilotFillsPerDay;
+  double? get maxDailyRealizedLoss => _maxDailyRealizedLoss;
   AgentScheduleInterval get cadencePreference => _cadencePreference;
   bool get isReady => _ready;
 
@@ -171,6 +178,23 @@ class MandateSettings extends ChangeNotifier {
     await _persist();
   }
 
+  Future<void> setMaxAutopilotFillsPerDay(int count) async {
+    final clamped =
+        count.clamp(minAutopilotFillsPerDay, maxAutopilotFillsPerDayCap);
+    if (_maxAutopilotFillsPerDay == clamped) return;
+    _maxAutopilotFillsPerDay = clamped;
+    notifyListeners();
+    await _persist();
+  }
+
+  Future<void> setMaxDailyRealizedLoss(double? amount) async {
+    final next = amount != null && amount > 0 ? amount : null;
+    if (_maxDailyRealizedLoss == next) return;
+    _maxDailyRealizedLoss = next;
+    notifyListeners();
+    await _persist();
+  }
+
   Future<void> setCadencePreference(AgentScheduleInterval interval) async {
     if (_cadencePreference == interval) return;
     _cadencePreference = interval;
@@ -184,9 +208,14 @@ class MandateSettings extends ChangeNotifier {
     final notionalText = notional == null
         ? 'no max notional'
         : 'max notional \$${notional.toStringAsFixed(notional == notional.roundToDouble() ? 0 : 2)}';
+    final loss = _maxDailyRealizedLoss;
+    final lossText = loss == null
+        ? 'no daily loss stop'
+        : 'max daily realized loss \$${loss.toStringAsFixed(loss == loss.roundToDouble() ? 0 : 2)}';
     return 'Mandate: goal=${_goal.name}, horizon=${_horizon.name}, '
         'universe=${_universe.name}, maxSymbols=$_maxSymbolCount, '
         '$notionalText, maxOpenProposals=$_maxOpenProposals, '
+        'maxAutopilotFillsPerDay=$_maxAutopilotFillsPerDay, $lossText, '
         'preferredCadence=${_cadencePreference.shortLabel}.';
   }
 
@@ -198,6 +227,9 @@ class MandateSettings extends ChangeNotifier {
         if (_maxNotionalPerProposal != null)
           'maxNotionalPerProposal': _maxNotionalPerProposal,
         'maxOpenProposals': _maxOpenProposals,
+        'maxAutopilotFillsPerDay': _maxAutopilotFillsPerDay,
+        if (_maxDailyRealizedLoss != null)
+          'maxDailyRealizedLoss': _maxDailyRealizedLoss,
         'cadencePreference': _cadencePreference.name,
       };
 
@@ -232,6 +264,17 @@ class MandateSettings extends ChangeNotifier {
       _maxOpenProposals =
           maxOpen.clamp(minOpenProposals, maxOpenProposalsCap);
     }
+    final fillsRaw = map['maxAutopilotFillsPerDay'];
+    final fills = fillsRaw is num ? fillsRaw.toInt() : null;
+    if (fills != null) {
+      _maxAutopilotFillsPerDay =
+          fills.clamp(minAutopilotFillsPerDay, maxAutopilotFillsPerDayCap);
+    } else {
+      _maxAutopilotFillsPerDay = defaultMaxAutopilotFillsPerDay;
+    }
+    final lossRaw = map['maxDailyRealizedLoss'];
+    final loss = lossRaw is num ? lossRaw.toDouble() : null;
+    _maxDailyRealizedLoss = loss != null && loss > 0 ? loss : null;
     final cadenceRaw = map['cadencePreference'];
     _cadencePreference = AgentScheduleIntervalX.parse(
       cadenceRaw is String ? cadenceRaw : null,

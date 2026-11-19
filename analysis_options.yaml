@@ -13,6 +13,9 @@ analyzer:
   errors:
     # Genkit Agents API is experimental; we accept churn for in-app agents.
     experimental_member_use: ignore
+    # Fail locally/CI before push: do not import package:flutter/material.dart
+    # (use lib/core/material_compat.dart). That shim owns the ignore.
+    deprecated_member_use: error
   exclude:
     - build/**
     - android/**

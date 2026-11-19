@@ -116,6 +116,10 @@ class AgentChatController extends ChangeNotifier {
     proposals: _proposals,
     activity: _activity,
     tradeExecutor: _tradeExecutor,
+    mandate: _mandate,
+    marketData: _marketData,
+    portfolio: _portfolio,
+    chats: _chats,
   );
 
   InvestInterestProposalActions? get _investInterestActions {
@@ -219,12 +223,35 @@ class AgentChatController extends ChangeNotifier {
     String? exchangeId,
     String? side,
     double? quantity,
+    String? content,
   }) {
     if (roleId == 'intradayTrading' && !_tradeExecutor.canTrade) {
       return _blockNoExchange();
     }
+    final override = content?.trim() ?? '';
+    final placeholderError = override.isEmpty
+        ? null
+        : AgentRolePrompts.unresolvedDraftPlaceholderMessage(
+            roleId: roleId,
+            text: override,
+          );
+    if (placeholderError != null) {
+      return Future.value(AgentChatSendFailed(placeholderError));
+    }
     final sym = symbol.trim();
-    if (sym.isEmpty && !AgentRolePrompts.allowsRunWithoutSymbol(roleId)) {
+    final prompt = override.isNotEmpty
+        ? override
+        : AgentRolePrompts.runUserPrompt(
+            roleId: roleId,
+            symbol: sym,
+            side: side,
+            quantity: quantity,
+          );
+    // Prefer a ticker from the (possibly edited) message; fall back to [symbol].
+    final hint = MarketContextBuilder.extractSymbolHint(prompt) ??
+        (sym.isNotEmpty ? sym.toUpperCase() : null);
+    if ((hint == null || hint.isEmpty) &&
+        !AgentRolePrompts.allowsRunWithoutSymbol(roleId)) {
       return Future.value(
         const AgentChatSendFailed('Enter a symbol to Run.'),
       );
@@ -238,16 +265,10 @@ class AgentChatController extends ChangeNotifier {
         ),
       );
     }
-    final prompt = AgentRolePrompts.runUserPrompt(
-      roleId: roleId,
-      symbol: sym,
-      side: side,
-      quantity: quantity,
-    );
     return sendUserMessage(
       content: prompt,
       kind: AgentChatMessageKind.run,
-      symbolHint: sym.isEmpty ? null : sym,
+      symbolHint: hint,
       exchangeId: exchangeId,
       activityRoleId: roleId,
     );
@@ -259,6 +280,7 @@ class AgentChatController extends ChangeNotifier {
     String? side,
     double? quantity,
     String roleId = 'marketResearch',
+    String? content,
   }) =>
       sendStarter(
         roleId: roleId,
@@ -266,6 +288,7 @@ class AgentChatController extends ChangeNotifier {
         exchangeId: exchangeId,
         side: side,
         quantity: quantity,
+        content: content,
       );
 
   Future<AgentChatSendResult> _blockNoExchange() async {
@@ -331,6 +354,8 @@ class AgentChatController extends ChangeNotifier {
 
       InvestInterestProposal? pendingInvestInterest;
       final investInterestRepo = _investInterestProposals;
+      final chatAutopilot =
+          _chats.threadFor(chatId).autopilotEnabled;
       final toolDeps = OmniscopeAgentToolDeps(
         marketData: _marketData,
         practice: _portfolio.state,
@@ -341,7 +366,9 @@ class AgentChatController extends ChangeNotifier {
         mandate: _mandate,
         answerMood: _appSettings.answerMood,
         answerMoodNote: _appSettings.answerMoodNote,
-        autopilotEnabled: _appSettings.autopilotEnabled,
+        autopilotEnabled: chatAutopilot,
+        tradeProposals: _proposals.proposals,
+        chatId: chatId,
         proposeInvestInterest: investInterestRepo != null
             ? ({
                 required List<String> add,
@@ -371,7 +398,7 @@ class AgentChatController extends ChangeNotifier {
                     summary: proposal.summaryLabel,
                   ),
                 );
-                final mayAutopilot = _appSettings.autopilotEnabled &&
+                final mayAutopilot = chatAutopilot &&
                     InvestInterestProposalActions.isAutopilotAddOnlyEligible(
                       proposal,
                     );
@@ -500,14 +527,14 @@ class AgentChatController extends ChangeNotifier {
       );
 
       if (proposal != null &&
-          _appSettings.autopilotEnabled &&
+          chatAutopilot &&
           proposal.isActionable) {
         await _maybeAutopilot(proposal);
         proposal = _proposals.byId(proposal.id) ?? proposal;
       }
 
       if (pendingInvestInterest != null &&
-          _appSettings.autopilotEnabled &&
+          chatAutopilot &&
           InvestInterestProposalActions.isAutopilotAddOnlyEligible(
             pendingInvestInterest!,
           )) {
@@ -557,6 +584,31 @@ class AgentChatController extends ChangeNotifier {
       await _proposals.upsert(
         proposal.copyWith(status: TradeProposalStatus.skipped),
       );
+      return;
+    }
+    final railError = await _proposalActions.evaluateRiskRails(
+      proposal,
+      autopilot: true,
+    );
+    if (railError != null) {
+      await _proposals.upsert(
+        proposal.copyWith(status: TradeProposalStatus.skipped),
+      );
+      await _activity.add(
+        AgentActivityEvent(
+          id: AgentActivityEvent.newId(),
+          kind: AgentActivityKind.autopilotSubmitted,
+          roleId: proposal.roleId,
+          createdAt: DateTime.now().toUtc(),
+          exchangeId: targetId,
+          proposalId: proposal.id,
+          symbol: proposal.symbol,
+          summary: railError,
+        ),
+      );
+      if (railError.contains('daily realized loss')) {
+        await _chats.setAutopilotEnabled(chatId, enabled: false);
+      }
       return;
     }
     await _activity.add(

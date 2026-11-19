@@ -5,9 +5,11 @@ import '../../market/market_data_client.dart';
 import '../../portfolio/models.dart';
 import '../../settings/mandate_settings.dart';
 import '../../venues/live_venue_capabilities.dart';
+import '../agent_pnl_service.dart';
 import '../invest_interest_proposal.dart';
 import '../market_context_builder.dart';
 import '../models.dart';
+import '../trade_proposal.dart';
 
 /// Callback that creates a pending Confirm-gated Invest interest proposal.
 typedef ProposeInvestInterestFn = Future<String> Function({
@@ -30,6 +32,8 @@ class OmniscopeAgentToolDeps {
     this.answerMoodNote,
     this.autopilotEnabled = false,
     this.proposeInvestInterest,
+    this.tradeProposals = const [],
+    this.chatId,
   });
 
   final MarketDataClient marketData;
@@ -49,11 +53,17 @@ class OmniscopeAgentToolDeps {
   /// Optional short style note from Settings → Agents.
   final String? answerMoodNote;
 
-  /// Settings → Agents Autopilot (add-only Invest interest + trades).
+  /// Per-chat Autopilot (add-only Invest interest + trades).
   final bool autopilotEnabled;
 
   /// When set, [proposeInvestInterestDiff] creates a pending proposal.
   final ProposeInvestInterestFn? proposeInvestInterest;
+
+  /// Executed/pending trade proposals for read-only P&L tools.
+  final List<TradeProposal> tradeProposals;
+
+  /// Current chat id (for chat-scoped P&L).
+  final String? chatId;
 }
 
 /// Registers market / portfolio tools on [ai] for the given [deps].
@@ -239,6 +249,60 @@ class OmniscopeAgentTools {
       },
     );
 
+    final getAgentPnl = ai.defineTool(
+      name: 'getAgentPnl',
+      description:
+          'Read realized profit/loss for agent fills on a symbol. '
+          'Input: {"symbol":"AAPL"} for this chat, or '
+          '{"symbol":"AAPL","roleId":"intradayTrading"} for a specialty '
+          'lifetime rollup. Educational only — not live brokerage P&L.',
+      inputSchema: _symbolInput,
+      fn: (input, _) async {
+        final map = _asMap(input);
+        final symbols = _readSymbols(input);
+        final symbol = symbols.isNotEmpty
+            ? symbols.first
+            : (map['symbol'] as String? ?? '').trim().toUpperCase();
+        if (symbol.isEmpty) {
+          return .response('Provide a symbol, e.g. {"symbol":"AAPL"}.');
+        }
+        final roleId = (map['roleId'] as String? ?? '').trim();
+        final AgentPnlSummary summary;
+        if (roleId.isNotEmpty) {
+          summary = AgentPnlService.summaryForRoleSymbol(
+            proposals: deps.tradeProposals,
+            roleId: roleId,
+            symbol: symbol,
+          );
+        } else {
+          final chatId = deps.chatId?.trim() ?? '';
+          if (chatId.isEmpty) {
+            return .response(
+              'No chat context. Pass roleId for a specialty rollup, '
+              'e.g. {"symbol":"$symbol","roleId":"intradayTrading"}.',
+            );
+          }
+          summary = AgentPnlService.summaryForChatSymbol(
+            proposals: deps.tradeProposals,
+            chatId: chatId,
+            symbol: symbol,
+          );
+        }
+        if (!summary.hasActivity) {
+          return .response(
+            'No executed agent fills for $symbol'
+            '${roleId.isNotEmpty ? ' ($roleId)' : ' in this chat'}.',
+          );
+        }
+        return .response(
+          '${summary.toPlainLine()} '
+          '(buy notional ${summary.buyNotional.toStringAsFixed(2)}, '
+          'sell notional ${summary.sellNotional.toStringAsFixed(2)}, '
+          '${summary.fillCount} fills). Do not invent fills beyond this.',
+        );
+      },
+    );
+
     final proposeInvestInterestDiff = ai.defineTool(
       name: 'proposeInvestInterestDiff',
       description:
@@ -332,6 +396,7 @@ class OmniscopeAgentTools {
       getLiveBalances,
       getInvestInterest,
       getMandate,
+      getAgentPnl,
       proposeInvestInterestDiff,
     ];
   }
@@ -362,6 +427,7 @@ class OmniscopeAgentTools {
           'getQuotes',
           'getInvestInterest',
           'getMandate',
+          'getAgentPnl',
           'proposeInvestInterestDiff',
         ],
       'intradayTrading' => const [
@@ -371,6 +437,7 @@ class OmniscopeAgentTools {
           'getLiveBalances',
           'getInvestInterest',
           'getMandate',
+          'getAgentPnl',
           'proposeInvestInterestDiff',
         ],
       _ => const [

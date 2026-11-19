@@ -1,9 +1,16 @@
 import '../agents/agent_activity.dart';
 import '../agents/agent_activity_repository.dart';
 import '../agents/agent_app_settings.dart';
+import '../agents/agent_chat_repository.dart';
+import '../agents/agent_pnl_service.dart';
 import '../agents/trade_proposal.dart';
 import '../agents/trade_proposal_repository.dart';
+import '../market/market_data_client.dart';
+import '../notifications/app_notification.dart';
+import '../notifications/app_notification_repository.dart';
 import '../portfolio/portfolio_catalog.dart';
+import '../portfolio/portfolio_repository.dart';
+import '../settings/mandate_settings.dart';
 import 'order_models.dart';
 import 'trade_executor.dart';
 
@@ -14,12 +21,22 @@ class TradeProposalActions {
     required this._proposals,
     required this._activity,
     required this._tradeExecutor,
+    this._mandate,
+    this._marketData,
+    this._portfolio,
+    this._chats,
+    this._notifications,
   });
 
   final AgentAppSettings _appSettings;
   final TradeProposalRepository _proposals;
   final AgentActivityRepository _activity;
   final TradeExecutor _tradeExecutor;
+  final MandateSettings? _mandate;
+  final MarketDataClient? _marketData;
+  final PortfolioRepository? _portfolio;
+  final AgentChatRepository? _chats;
+  final AppNotificationRepository? _notifications;
 
   List<TradableVenue> get tradableVenues => _tradeExecutor.tradableVenues;
 
@@ -66,6 +83,64 @@ class TradeProposalActions {
     return exchangeId;
   }
 
+  /// Effective max notional from Mandate ∩ Agents Autopilot settings.
+  double? effectiveMaxNotional() {
+    final mandateCap = _mandate?.maxNotionalPerProposal;
+    final appCap = _appSettings.autopilotMaxNotional;
+    if (mandateCap == null) return appCap;
+    if (appCap == null) return mandateCap;
+    return mandateCap < appCap ? mandateCap : appCap;
+  }
+
+  /// Pre-flight Autopilot / Confirm rails. Returns an error message or null.
+  ///
+  /// [blockConfirmOnNotional] applies the notional cap to manual Confirm.
+  /// Fill-budget and daily-loss stops only apply when [autopilot] is true.
+  Future<String?> evaluateRiskRails(
+    TradeProposal proposal, {
+    required bool autopilot,
+    DateTime? now,
+  }) async {
+    final at = now ?? DateTime.now().toUtc();
+    final maxNotional = effectiveMaxNotional();
+    if (maxNotional != null && maxNotional > 0) {
+      final price = await _estimatePrice(proposal.symbol);
+      if (price != null && price > 0) {
+        final notional = proposal.quantity * price;
+        if (notional > maxNotional) {
+          return 'Notional \$${notional.toStringAsFixed(2)} exceeds max '
+              '\$${maxNotional.toStringAsFixed(2)} per proposal.';
+        }
+      }
+    }
+
+    if (!autopilot) return null;
+
+    final maxFills = _mandate?.maxAutopilotFillsPerDay ??
+        MandateSettings.defaultMaxAutopilotFillsPerDay;
+    final fillsToday = AgentPnlService.autopilotFillCountForUtcDay(
+      proposals: _proposals.proposals,
+      now: at,
+    );
+    if (fillsToday >= maxFills) {
+      return 'Autopilot daily fill budget reached ($maxFills).';
+    }
+
+    final maxLoss = _mandate?.maxDailyRealizedLoss;
+    if (maxLoss != null && maxLoss > 0) {
+      final realizedToday = AgentPnlService.realizedPnlForUtcDay(
+        proposals: _proposals.proposals,
+        now: at,
+      );
+      if (realizedToday <= -maxLoss) {
+        return 'Autopilot halted: daily realized loss '
+            '\$${(-realizedToday).toStringAsFixed(2)} reached the '
+            '\$${maxLoss.toStringAsFixed(2)} stop.';
+      }
+    }
+    return null;
+  }
+
   Future<String?> confirm(
     String proposalId, {
     bool autopilot = false,
@@ -93,6 +168,47 @@ class TradeProposalActions {
     if (portfolioId == null) {
       return 'Choose a portfolio before confirming.';
     }
+
+    final railError = await evaluateRiskRails(proposal, autopilot: autopilot);
+    if (railError != null) {
+      if (autopilot) {
+        await _proposals.upsert(
+          proposal.copyWith(status: TradeProposalStatus.skipped),
+        );
+        await _activity.add(
+          AgentActivityEvent(
+            id: AgentActivityEvent.newId(),
+            kind: AgentActivityKind.autopilotSubmitted,
+            roleId: proposal.roleId,
+            createdAt: DateTime.now().toUtc(),
+            exchangeId: portfolioId,
+            proposalId: proposal.id,
+            symbol: proposal.symbol,
+            summary: railError,
+          ),
+        );
+        final isLossStop = railError.contains('daily realized loss');
+        if (isLossStop) {
+          await _haltChatAutopilot(
+            chatId: proposal.chatId,
+            roleId: proposal.roleId,
+            symbol: proposal.symbol,
+            reason: railError,
+          );
+        }
+        return railError;
+      }
+      // Manual Confirm: hard-block only on notional; loss/fill are Autopilot-only.
+      if (railError.contains('Notional')) {
+        return railError;
+      }
+    }
+
+    final avgCostBefore = _avgCostBeforeFill(
+      portfolioId: portfolioId,
+      symbol: proposal.symbol,
+      side: proposal.side,
+    );
 
     final confirmed = proposal.copyWith(
       exchangeId: portfolioId,
@@ -127,12 +243,26 @@ class TradeProposalActions {
     );
 
     if (result.success) {
+      final fillPrice = result.fillPrice ?? await _estimatePrice(proposal.symbol);
+      final fillNotional =
+          fillPrice != null ? fillPrice * proposal.quantity : null;
+      final filledAt = DateTime.now().toUtc();
+      double? realizedPnl;
+      if (proposal.side == TradeProposalSide.sell &&
+          fillPrice != null &&
+          avgCostBefore != null) {
+        realizedPnl = (fillPrice - avgCostBefore) * proposal.quantity;
+      }
       await _proposals.upsert(
         confirmed.copyWith(
           status: TradeProposalStatus.executed,
           orderId: result.orderId,
           autopilot: autopilot,
           clearExecutionError: true,
+          fillPrice: fillPrice,
+          fillNotional: fillNotional,
+          filledAt: filledAt,
+          realizedPnl: realizedPnl,
         ),
       );
       await _activity.add(
@@ -145,7 +275,9 @@ class TradeProposalActions {
           proposalId: proposal.id,
           symbol: proposal.symbol,
           summary: 'Order ${result.orderId}'
-              '${result.rawStatus != null ? ' (${result.rawStatus})' : ''}',
+              '${result.rawStatus != null ? ' (${result.rawStatus})' : ''}'
+              '${fillPrice != null ? ' @ ${fillPrice.toStringAsFixed(2)}' : ''}'
+              '${realizedPnl != null ? ' · realized ${realizedPnl.toStringAsFixed(2)}' : ''}',
         ),
       );
       return null;
@@ -196,5 +328,53 @@ class TradeProposalActions {
       ),
     );
     return null;
+  }
+
+  Future<double?> _estimatePrice(String symbol) async {
+    final market = _marketData;
+    if (market == null) return null;
+    try {
+      final quotes = await market.getQuotes([symbol.trim().toUpperCase()]);
+      if (quotes.isEmpty || quotes.first.price <= 0) return null;
+      return quotes.first.price;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  double? _avgCostBeforeFill({
+    required String portfolioId,
+    required String symbol,
+    required TradeProposalSide side,
+  }) {
+    if (side != TradeProposalSide.sell) return null;
+    if (portfolioId != PortfolioDescriptor.practiceId) return null;
+    final holding = _portfolio?.state.holdingFor(symbol.trim().toUpperCase());
+    if (holding == null || holding.shares <= 0) return null;
+    return holding.avgCost;
+  }
+
+  Future<void> _haltChatAutopilot({
+    required String? chatId,
+    required String roleId,
+    required String symbol,
+    required String reason,
+  }) async {
+    final id = chatId?.trim();
+    if (id != null && id.isNotEmpty) {
+      await _chats?.setAutopilotEnabled(id, enabled: false);
+    }
+    await _notifications?.enqueue(
+      AppNotification(
+        id: AppNotification.newId(),
+        kind: AppNotificationKind.autopilotRiskHalt,
+        roleId: roleId,
+        createdAt: DateTime.now().toUtc(),
+        title: 'Autopilot halted',
+        body: reason,
+        symbol: symbol,
+        chatId: id,
+      ),
+    );
   }
 }

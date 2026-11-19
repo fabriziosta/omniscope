@@ -398,6 +398,47 @@ void main() {
   });
 
   testWidgets(
+      'sending a selected starter persists a short Run message',
+      (tester) async {
+    final shellNav = ShellNavigationController();
+    final pumped = await _pumpAgents(
+      tester: tester,
+      surfaceSize: const Size(390, 844),
+      shellNav: shellNav,
+    );
+
+    final thread = await pumped.chats.createChat(title: 'Run send');
+    await tester.pump();
+
+    shellNav.goToAgentChat(
+      chatId: thread.chatId,
+      starterRoleId: 'marketResearch',
+      symbol: 'AAPL',
+      autoRun: false,
+    );
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+
+    final draft = AgentRolePrompts.runUserPromptDraft(
+      roleId: 'marketResearch',
+      symbol: 'AAPL',
+    );
+    expect(draft, 'Investigate AAPL.');
+
+    await tester.tap(find.text('Send'));
+    for (var i = 0; i < 40; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+
+    final messages = pumped.chats.threadFor(thread.chatId).messages;
+    expect(messages, isNotEmpty);
+    final user = messages.firstWhere((m) => m.role == AgentChatRole.user);
+    expect(user.kind, AgentChatMessageKind.run);
+    expect(user.content, 'Investigate AAPL.');
+  });
+
+  testWidgets(
       'goToAgentChat portfolio guide drafts without sending',
       (tester) async {
     final shellNav = ShellNavigationController();

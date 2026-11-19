@@ -295,6 +295,38 @@ class AgentRolePrompts {
     );
   }
 
+  /// User message for a foreground Schedule tick (Market Research starter).
+  ///
+  /// Includes cadence, batch position, and optional Mandate so the model knows
+  /// this is a periodic review rather than a one-off Investigate.
+  static String scheduledRunUserPrompt({
+    required String symbol,
+    required String intervalLabel,
+    String? mandateSummary,
+    required int index,
+    required int total,
+  }) {
+    final sym = symbol.trim().toUpperCase();
+    final cadence = intervalLabel.trim().isEmpty
+        ? 'on schedule'
+        : 'every ${intervalLabel.trim()}';
+    final buf = StringBuffer(
+      'Scheduled review ($cadence) · symbol $index of $total: '
+      'Investigate $sym. ',
+    );
+    final mandate = mandateSummary?.trim() ?? '';
+    if (mandate.isNotEmpty) {
+      buf.write('Check Mandate rails ($mandate). ');
+    } else {
+      buf.write('Check Mandate rails. ');
+    }
+    buf.write(
+      'Note material change vs a quiet hold; only propose Invest interest '
+      'diffs when warranted.',
+    );
+    return buf.toString();
+  }
+
   static String runUserPrompt({
     required String roleId,
     required String symbol,
@@ -306,55 +338,26 @@ class AgentRolePrompts {
     final sym = symbol.trim().toUpperCase();
     switch (roleId) {
       case 'marketResearch':
-        return 'Investigate $sym. Give a plain-language research brief.';
+        return 'Investigate $sym.';
       case 'liveBalanceExplainer':
-        final buf = StringBuffer(
-          'Explain my live exchange balances in plain language.',
-        );
+        final buf = StringBuffer('Explain my live balances.');
         if (sym.isNotEmpty) {
-          buf.write(' Focus on $sym if it appears in the snapshot.');
+          buf.write(' Focus on $sym.');
         } else if (forceOptionalSymbolPlaceholder) {
           buf.write(
-            ' Focus on $draftSymbolPlaceholder if it appears in the snapshot '
-            '(or delete this sentence).',
+            ' Focus on $draftSymbolPlaceholder (or delete this sentence).',
           );
         }
-        buf.write(
-          ' Cover total vs available, assets vs cash, and what is read-only '
-          'versus what Confirm or Autopilot would touch. '
-          'Do not emit trade JSON.',
-        );
         return buf.toString();
       case 'portfolioGuide':
-        final buf = StringBuffer(
-          'Review my portfolio allocation in plain language.',
-        );
+        final buf = StringBuffer('Review my portfolio.');
         if (sym.isNotEmpty) {
-          buf.write(' Pay special attention to $sym.');
+          buf.write(' Focus on $sym.');
         } else if (forceOptionalSymbolPlaceholder) {
           buf.write(
-            ' Pay special attention to $draftSymbolPlaceholder '
-            '(or delete this sentence).',
+            ' Focus on $draftSymbolPlaceholder (or delete this sentence).',
           );
         }
-        if (side != null && side.trim().isNotEmpty) {
-          buf.write(' Proposed side: ${side.trim().toLowerCase()}.');
-        }
-        if (quantity != null && quantity > 0) {
-          buf.write(' Proposed quantity: $quantity.');
-        } else if (quantityPlaceholder != null) {
-          buf.write(' Proposed quantity: $quantityPlaceholder.');
-        }
-        buf.write(
-          ' Cover cash vs holdings, concentration, diversification, cash '
-          'drag, and (for Practice) size vs cash and average cost. Remind '
-          'me Practice is fake money. Do not emit trade JSON.',
-        );
-        return buf.toString();
-      case 'intradayTrading':
-        final buf = StringBuffer(
-          'Run a trade check for $sym (Practice or live portfolio).',
-        );
         if (side != null && side.trim().isNotEmpty) {
           buf.write(' Side: ${side.trim().toLowerCase()}.');
         }
@@ -363,13 +366,44 @@ class AgentRolePrompts {
         } else if (quantityPlaceholder != null) {
           buf.write(' Quantity: $quantityPlaceholder.');
         }
-        buf.write(
-          ' Explain risk gates and whether you would approve a suggestion. '
-          'End with the required JSON trade block.',
-        );
+        return buf.toString();
+      case 'intradayTrading':
+        final buf = StringBuffer('Trade check for $sym.');
+        if (side != null && side.trim().isNotEmpty) {
+          buf.write(' Side: ${side.trim().toLowerCase()}.');
+        }
+        if (quantity != null && quantity > 0) {
+          buf.write(' Quantity: $quantity.');
+        } else if (quantityPlaceholder != null) {
+          buf.write(' Quantity: $quantityPlaceholder.');
+        }
         return buf.toString();
       default:
         return 'Investigate $sym.';
     }
+  }
+
+  /// True when [text] still contains draft placeholders the user must replace.
+  ///
+  /// Roles that require a symbol reject an unresolved [draftSymbolPlaceholder].
+  /// Intraday also rejects unresolved side / quantity placeholders.
+  static String? unresolvedDraftPlaceholderMessage({
+    required String roleId,
+    required String text,
+  }) {
+    final body = text.trim();
+    if (body.contains(draftSymbolPlaceholder) &&
+        !allowsRunWithoutSymbol(roleId)) {
+      return 'Replace SYMBOL with a ticker before Send.';
+    }
+    if (roleId == 'intradayTrading') {
+      if (body.contains(draftSidePlaceholder)) {
+        return 'Replace buy|sell with buy or sell before Send.';
+      }
+      if (body.contains(draftQuantityPlaceholder)) {
+        return 'Replace QUANTITY with a number before Send.';
+      }
+    }
+    return null;
   }
 }

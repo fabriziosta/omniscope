@@ -101,6 +101,10 @@ class TradeProposal {
     this.executionError,
     this.orderId,
     this.autopilot = false,
+    this.fillPrice,
+    this.fillNotional,
+    this.filledAt,
+    this.realizedPnl,
   });
 
   final String id;
@@ -118,6 +122,18 @@ class TradeProposal {
   final String? executionError;
   final String? orderId;
   final bool autopilot;
+
+  /// Mark / fill price when the order executed (Practice always when known).
+  final double? fillPrice;
+
+  /// Absolute notional `quantity * fillPrice` when fill price is known.
+  final double? fillNotional;
+
+  /// UTC time the fill was recorded.
+  final DateTime? filledAt;
+
+  /// Realized P&L for sells when cost basis was known at fill time.
+  final double? realizedPnl;
 
   bool get isActionable =>
       status == TradeProposalStatus.pending &&
@@ -141,8 +157,13 @@ class TradeProposal {
     String? executionError,
     String? orderId,
     bool? autopilot,
+    double? fillPrice,
+    double? fillNotional,
+    DateTime? filledAt,
+    double? realizedPnl,
     bool clearExecutionError = false,
     bool clearOrderId = false,
+    bool clearFillEconomics = false,
   }) {
     return TradeProposal(
       id: id ?? this.id,
@@ -162,6 +183,12 @@ class TradeProposal {
           : (executionError ?? this.executionError),
       orderId: clearOrderId ? null : (orderId ?? this.orderId),
       autopilot: autopilot ?? this.autopilot,
+      fillPrice: clearFillEconomics ? null : (fillPrice ?? this.fillPrice),
+      fillNotional:
+          clearFillEconomics ? null : (fillNotional ?? this.fillNotional),
+      filledAt: clearFillEconomics ? null : (filledAt ?? this.filledAt),
+      realizedPnl:
+          clearFillEconomics ? null : (realizedPnl ?? this.realizedPnl),
     );
   }
 
@@ -181,6 +208,10 @@ class TradeProposal {
         if (executionError != null) 'executionError': executionError,
         if (orderId != null) 'orderId': orderId,
         'autopilot': autopilot,
+        if (fillPrice != null) 'fillPrice': fillPrice,
+        if (fillNotional != null) 'fillNotional': fillNotional,
+        if (filledAt != null) 'filledAt': filledAt!.toIso8601String(),
+        if (realizedPnl != null) 'realizedPnl': realizedPnl,
       };
 
   factory TradeProposal.fromJson(Map<String, dynamic> json) {
@@ -207,6 +238,10 @@ class TradeProposal {
       executionError: json['executionError'] as String?,
       orderId: json['orderId'] as String?,
       autopilot: json['autopilot'] as bool? ?? false,
+      fillPrice: (json['fillPrice'] as num?)?.toDouble(),
+      fillNotional: (json['fillNotional'] as num?)?.toDouble(),
+      filledAt: DateTime.tryParse(json['filledAt'] as String? ?? ''),
+      realizedPnl: (json['realizedPnl'] as num?)?.toDouble(),
     );
   }
 

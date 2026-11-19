@@ -149,9 +149,9 @@ Future<void> _pumpPortfolio(WidgetTester tester) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('portfolio master-detail: overlay nav on wide and narrow',
+  testWidgets('portfolio master-detail: push nav on wide, overlay on narrow',
       (tester) async {
-    // Wide: content first; burger opens overlay nav.
+    // Wide: content first; burger opens push nav (content stays visible).
     await tester.binding.setSurfaceSize(const Size(1024, 800));
     await _pumpPortfolio(tester);
 
@@ -162,18 +162,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Practice'), findsWidgets);
     expect(find.text('Crypto.com'), findsOneWidget);
+    expect(find.text('Practice portfolio'), findsOneWidget);
 
     await tester.tap(find.text('Crypto.com'));
     await tester.pumpAndSettle();
 
     expect(find.text('Live · Crypto.com'), findsOneWidget);
     expect(find.text('BTC'), findsOneWidget);
+    // Wide: selecting a destination leaves the push nav open.
+    expect(find.text('Practice'), findsWidgets);
 
-    // Narrow: same content + burger; selection is preserved across resize.
+    // Narrow: selection preserved; open nav becomes an overlay drawer.
     await tester.binding.setSurfaceSize(const Size(390, 844));
     await tester.pumpAndSettle();
 
     expect(find.text('Live · Crypto.com'), findsOneWidget);
+    // Close the overlay so content-only chrome is visible (burger is under
+    // the drawer — invoke onPressed like other overlay hit-test workarounds).
+    tester
+        .widget<MasterDetailMenuButton>(find.byType(MasterDetailMenuButton))
+        .onPressed();
+    await tester.pumpAndSettle();
     expect(find.text(AppCopy.connectLivePortfolioTitle), findsNothing);
 
     await tester.tap(find.byType(MasterDetailMenuButton));

@@ -495,6 +495,112 @@ Desk note: buy a little.
     });
   });
 
+  group('chat-level Autopilot', () {
+    test('keeps proposals pending when chat Autopilot is off', () async {
+      final store = await memoryConfig();
+      final roles = await AgentRoleCatalog.load();
+      final agents = AgentsRepository(store: store, roleCatalog: roles);
+      await agents.load(roleCatalog: roles);
+      final chats = AgentChatRepository(store: store);
+      await chats.load();
+      final proposals = TradeProposalRepository(store: store);
+      await proposals.load();
+      final activity = AgentActivityRepository(store: store);
+      await activity.load();
+      final dataSources = DataSourceSettings(store: store);
+      await dataSources.load();
+      final portfolio = PortfolioRepository(store: store);
+      await portfolio.load();
+      final market = FakeMarketDataClient(basePrice: 100);
+      final executor = RoutingTradeExecutor(
+        cryptoRegistry: const CryptoExchangeRegistry([]),
+        brokerRegistry: BrokerExchangeRegistry.empty,
+        dataSources: dataSources,
+        portfolio: portfolio,
+        marketData: market,
+      );
+      final harness = await buildAgentChatController(
+        store: store,
+        agents: agents,
+        chats: chats,
+        marketData: market,
+        tradeExecutor: executor,
+        proposals: proposals,
+        activity: activity,
+        cryptoRegistry: const CryptoExchangeRegistry([]),
+        dataSources: dataSources,
+        portfolio: portfolio,
+        delegatedTradeJsonFor: (_) => {
+          'ticker': 'AAPL',
+          'action': 'buy',
+          'quantity': 1,
+          'rationale': 'chat autopilot test',
+          'risk_approved': true,
+        },
+      );
+
+      final result = await harness.controller.sendRun(symbol: 'AAPL');
+      expect(result, isA<AgentChatSendOk>());
+      final ok = result as AgentChatSendOk;
+      expect(ok.proposal, isNotNull);
+      expect(ok.proposal!.status, TradeProposalStatus.pending);
+      expect(ok.proposal!.autopilot, isFalse);
+    });
+
+    test('auto-submits when chat Autopilot is on', () async {
+      final store = await memoryConfig();
+      final roles = await AgentRoleCatalog.load();
+      final agents = AgentsRepository(store: store, roleCatalog: roles);
+      await agents.load(roleCatalog: roles);
+      final chats = AgentChatRepository(store: store);
+      await chats.load();
+      final proposals = TradeProposalRepository(store: store);
+      await proposals.load();
+      final activity = AgentActivityRepository(store: store);
+      await activity.load();
+      final dataSources = DataSourceSettings(store: store);
+      await dataSources.load();
+      final portfolio = PortfolioRepository(store: store);
+      await portfolio.load();
+      final market = FakeMarketDataClient(basePrice: 100);
+      final executor = RoutingTradeExecutor(
+        cryptoRegistry: const CryptoExchangeRegistry([]),
+        brokerRegistry: BrokerExchangeRegistry.empty,
+        dataSources: dataSources,
+        portfolio: portfolio,
+        marketData: market,
+      );
+      final harness = await buildAgentChatController(
+        store: store,
+        agents: agents,
+        chats: chats,
+        marketData: market,
+        tradeExecutor: executor,
+        proposals: proposals,
+        activity: activity,
+        cryptoRegistry: const CryptoExchangeRegistry([]),
+        dataSources: dataSources,
+        portfolio: portfolio,
+        delegatedTradeJsonFor: (_) => {
+          'ticker': 'AAPL',
+          'action': 'buy',
+          'quantity': 1,
+          'rationale': 'chat autopilot test',
+          'risk_approved': true,
+        },
+      );
+      await chats.setAutopilotEnabled(harness.chatId, enabled: true);
+
+      final result = await harness.controller.sendRun(symbol: 'AAPL');
+      expect(result, isA<AgentChatSendOk>());
+      final ok = result as AgentChatSendOk;
+      expect(ok.proposal, isNotNull);
+      final stored = proposals.byId(ok.proposal!.id)!;
+      expect(stored.status, TradeProposalStatus.executed);
+      expect(stored.autopilot, isTrue);
+    });
+  });
+
   test('Crypto.com orderResultFromCreate maps order id', () {
     final result = CryptoComExchangeClient.orderResultFromCreate({
       'code': 0,

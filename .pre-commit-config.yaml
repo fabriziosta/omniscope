@@ -1,6 +1,6 @@
 # Install once:  pre-commit install --hook-type pre-commit --hook-type pre-push
 # Run manually:  pre-commit run --all-files
-# Push gates:    flutter analyze + flutter test --exclude-tags live_canary (pre-push)
+# Push gates:    version verify + analyze + test + linux release (tool/flutter_checks.sh all)
 
 default_install_hook_types: [pre-commit, pre-push]
 default_stages: [pre-commit]
@@ -26,16 +26,9 @@ repos:
 
   - repo: local
     hooks:
-      - id: flutter-analyze
-        name: flutter analyze
-        entry: tool/flutter_checks.sh analyze
-        language: system
-        pass_filenames: false
-        stages: [pre-push]
-
-      - id: flutter-test
-        name: flutter test
-        entry: tool/flutter_checks.sh test
+      - id: flutter-checks
+        name: flutter checks (analyze + test + linux release)
+        entry: tool/flutter_checks.sh all
         language: system
         pass_filenames: false
         stages: [pre-push]

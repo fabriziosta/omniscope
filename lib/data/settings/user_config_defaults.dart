@@ -101,6 +101,7 @@ abstract final class UserConfigDefaults {
       'scheduleSymbols': <String>[],
       'scheduleUseInvestInterest': true,
       'answerMood': 'plain',
+      // scheduleChatId omitted until Schedule is enabled (null = no linked chat).
     },
     UserConfigKeys.agentChats: {
       'threads': <dynamic>[],
@@ -133,6 +134,7 @@ abstract final class UserConfigDefaults {
       'universe': 'both',
       'maxSymbolCount': 20,
       'maxOpenProposals': 3,
+      'maxAutopilotFillsPerDay': 10,
       'cadencePreference': 'hour1',
     },
   };

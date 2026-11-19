@@ -10,14 +10,20 @@ import '../../data/agents/agent_activity_repository.dart';
 import '../../data/agents/agent_app_settings.dart';
 import '../../data/agents/agent_chat_repository.dart';
 import '../../data/agents/agent_launch.dart';
+import '../../data/agents/agent_pnl_service.dart';
 import '../../data/agents/agents_repository.dart';
 import '../../data/agents/invest_interest_proposal.dart';
 import '../../data/agents/invest_interest_proposal_repository.dart';
 import '../../data/agents/trade_proposal.dart';
 import '../../data/agents/trade_proposal_repository.dart';
+import '../../data/market/market_data_client.dart';
+import '../../data/notifications/app_notification_repository.dart';
+import '../../data/portfolio/portfolio_repository.dart';
+import '../../data/settings/mandate_settings.dart';
 import '../../data/trading/trade_executor.dart';
 import '../../data/trading/trade_proposal_actions.dart';
 import '../../widgets/agent_launch_button.dart';
+import '../../widgets/agent_pnl_strip.dart';
 import '../../widgets/app_empty_view.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/in_tab_back.dart';
@@ -143,6 +149,11 @@ class _ActivityScreenState extends State<ActivityScreen> {
       proposals: context.read<TradeProposalRepository>(),
       activity: context.read<AgentActivityRepository>(),
       tradeExecutor: context.read<TradeExecutor>(),
+      mandate: context.read<MandateSettings>(),
+      marketData: context.read<MarketDataClient>(),
+      portfolio: context.read<PortfolioRepository>(),
+      chats: context.read<AgentChatRepository>(),
+      notifications: context.read<AppNotificationRepository>(),
     );
   }
 
@@ -558,6 +569,7 @@ class _ActivityList extends StatelessWidget {
             const SizedBox(height: 8),
           ],
         ] else ...[
+          ..._pnlRollup(context),
           for (final p in investInterestHistory) ...[
             _InvestInterestTile(
               proposal: p,
@@ -580,6 +592,23 @@ class _ActivityList extends StatelessWidget {
         ],
       ],
     );
+  }
+
+  List<Widget> _pnlRollup(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final summaries = AgentPnlService.summariesByRoleSymbol(history);
+    if (summaries.isEmpty) return const [];
+    return [
+      Text('P&L by specialty · symbol', style: theme.textTheme.small),
+      const SizedBox(height: 6),
+      for (final summary in summaries)
+        AgentPnlStrip(
+          summary: summary,
+          leading: roleTitle(summary.roleId ?? ''),
+          dense: true,
+        ),
+      const SizedBox(height: 12),
+    ];
   }
 }
 

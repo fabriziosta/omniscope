@@ -8,6 +8,7 @@ import 'package:omniscope/data/crypto/crypto_exchange_registry.dart';
 import 'package:omniscope/data/portfolio/portfolio_catalog.dart';
 import 'package:omniscope/data/portfolio/portfolio_repository.dart';
 import 'package:omniscope/data/settings/data_source_settings.dart';
+import 'package:omniscope/data/settings/mandate_settings.dart';
 import 'package:omniscope/data/trading/broker_exchange_registry.dart';
 import 'package:omniscope/data/trading/trade_executor.dart';
 import 'package:omniscope/data/trading/trade_proposal_actions.dart';
@@ -24,10 +25,14 @@ void main() {
         TradeProposalRepository proposals,
         AgentActivityRepository activity,
         PortfolioRepository portfolio,
+        MandateSettings mandate,
+        AgentAppSettings appSettings,
       })> harness() async {
     final store = await memoryConfig();
     final appSettings = AgentAppSettings(store: store);
     await appSettings.load();
+    final mandate = MandateSettings(store: store);
+    await mandate.load();
     final proposals = TradeProposalRepository(store: store);
     await proposals.load();
     final activity = AgentActivityRepository(store: store);
@@ -49,12 +54,17 @@ void main() {
       proposals: proposals,
       activity: activity,
       tradeExecutor: executor,
+      mandate: mandate,
+      marketData: market,
+      portfolio: portfolio,
     );
     return (
       actions: actions,
       proposals: proposals,
       activity: activity,
       portfolio: portfolio,
+      mandate: mandate,
+      appSettings: appSettings,
     );
   }
 
@@ -79,11 +89,12 @@ void main() {
       targetPortfolioId: PortfolioDescriptor.practiceId,
     );
     expect(err, isNull);
-    expect(h.proposals.byId(proposal.id)!.status, TradeProposalStatus.executed);
-    expect(
-      h.proposals.byId(proposal.id)!.status.dashboardLabel,
-      'Accepted',
-    );
+    final executed = h.proposals.byId(proposal.id)!;
+    expect(executed.status, TradeProposalStatus.executed);
+    expect(executed.status.dashboardLabel, 'Accepted');
+    expect(executed.fillPrice, 100);
+    expect(executed.fillNotional, 200);
+    expect(executed.filledAt, isNotNull);
     expect(h.portfolio.state.holdings.first.shares, 2);
     expect(
       h.activity.events.any((e) => e.kind == AgentActivityKind.proposalConfirmed),
@@ -93,6 +104,110 @@ void main() {
       h.activity.events.any((e) => e.kind == AgentActivityKind.orderAck),
       isTrue,
     );
+  });
+
+  test('confirm enforces max notional', () async {
+    final h = await harness();
+    await h.mandate.setMaxNotionalPerProposal(50);
+    final proposal = TradeProposal(
+      id: 'tp_notional',
+      roleId: 'intradayTrading',
+      exchangeId: 'practice',
+      symbol: 'AAPL',
+      side: TradeProposalSide.buy,
+      quantity: 2,
+      rationale: 'test',
+      riskApproved: true,
+      status: TradeProposalStatus.pending,
+      createdAt: DateTime.utc(2026, 1, 1),
+    );
+    await h.proposals.upsert(proposal);
+
+    final err = await h.actions.confirm(
+      proposal.id,
+      targetPortfolioId: PortfolioDescriptor.practiceId,
+    );
+    expect(err, contains('Notional'));
+    expect(
+      h.proposals.byId(proposal.id)!.status,
+      TradeProposalStatus.pending,
+    );
+  });
+
+  test('autopilot skips when daily fill budget reached', () async {
+    final h = await harness();
+    await h.mandate.setMaxAutopilotFillsPerDay(1);
+    final now = DateTime.now().toUtc();
+    await h.proposals.upsert(
+      TradeProposal(
+        id: 'tp_prior_fill',
+        roleId: 'intradayTrading',
+        exchangeId: 'practice',
+        symbol: 'AAPL',
+        side: TradeProposalSide.buy,
+        quantity: 1,
+        rationale: 'prior',
+        riskApproved: true,
+        status: TradeProposalStatus.executed,
+        createdAt: now,
+        autopilot: true,
+        fillPrice: 100,
+        fillNotional: 100,
+        filledAt: now,
+      ),
+    );
+    final proposal = TradeProposal(
+      id: 'tp_budget',
+      roleId: 'intradayTrading',
+      exchangeId: 'practice',
+      symbol: 'AAPL',
+      side: TradeProposalSide.buy,
+      quantity: 1,
+      rationale: 'test',
+      riskApproved: true,
+      status: TradeProposalStatus.pending,
+      createdAt: now,
+      chatId: 'chat_budget',
+    );
+    await h.proposals.upsert(proposal);
+
+    final err = await h.actions.confirm(
+      proposal.id,
+      autopilot: true,
+      targetPortfolioId: PortfolioDescriptor.practiceId,
+    );
+    expect(err, contains('fill budget'));
+    expect(
+      h.proposals.byId(proposal.id)!.status,
+      TradeProposalStatus.skipped,
+    );
+  });
+
+  test('sell confirm records realized P&L from Practice avgCost', () async {
+    final h = await harness();
+    await h.portfolio.buy(symbol: 'AAPL', shares: 2, price: 100);
+    final proposal = TradeProposal(
+      id: 'tp_sell_pnl',
+      roleId: 'intradayTrading',
+      exchangeId: 'practice',
+      symbol: 'AAPL',
+      side: TradeProposalSide.sell,
+      quantity: 1,
+      rationale: 'test',
+      riskApproved: true,
+      status: TradeProposalStatus.pending,
+      createdAt: DateTime.utc(2026, 1, 5),
+    );
+    await h.proposals.upsert(proposal);
+
+    final err = await h.actions.confirm(
+      proposal.id,
+      targetPortfolioId: PortfolioDescriptor.practiceId,
+    );
+    expect(err, isNull);
+    final executed = h.proposals.byId(proposal.id)!;
+    expect(executed.fillPrice, 100);
+    expect(executed.realizedPnl, 0);
   });
 
   test('dismiss refuses pending proposal', () async {

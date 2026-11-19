@@ -43,7 +43,7 @@ make run DEVICE=chrome   # or: windows / android / ios / macos
 Analyze / test:
 
 ```bash
-make check               # analyze + test (same as pre-push)
+make check               # analyze + test + linux release (same as pre-push / CI)
 # equivalents: make analyze | make test
 # or: tool/flutter_checks.sh all
 ```
@@ -59,7 +59,7 @@ This repo uses [`pre-commit`](https://pre-commit.com/) to block bad commits and 
 | When | Checks |
 |------|--------|
 | **commit** | merge conflicts, private keys, [gitleaks](https://github.com/gitleaks/gitleaks) secret scan, basic file hygiene |
-| **push** | gitleaks again, `flutter analyze`, `flutter test` |
+| **push** | gitleaks again, then `tool/flutter_checks.sh all` (version verify + analyze + offline tests + `flutter build linux --release`). Requires a Linux host with the Flutter Linux desktop toolchain and GTK deps (same as `make build-linux`). |
 
 Install once after clone (needs `pre-commit` on your PATH):
 

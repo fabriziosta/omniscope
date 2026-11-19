@@ -34,7 +34,7 @@ Linux runners only (`.github/workflows/`):
 
 | Workflow | When | What |
 |----------|------|------|
-| **CI** ([`ci.yml`](../.github/workflows/ci.yml)) | PR + push to `main` | Gitleaks + `tool/flutter_checks.sh all` (analyze + test); `flutter build linux` as compile smoke (no artifact upload). Web smoke paused. |
+| **CI** ([`ci.yml`](../.github/workflows/ci.yml)) | PR + push to `main` | Gitleaks + `tool/flutter_checks.sh all` (analyze + test + Linux release compile; same as pre-push / `make check`); dedicated `build-linux` job as well (no artifact upload). Web smoke paused. |
 | **Release** ([`release.yml`](../.github/workflows/release.yml)) | Push tag `v*` only | Build Linux + APK and attach them to a GitHub Release (web asset paused) |
 | **Container** ([`container.yml`](../.github/workflows/container.yml)) | Push tag `v*` + manual | Build [`Containerfile`](../Containerfile) and push `ghcr.io/<owner>/omniscope` (`:latest`, semver tags) |
 | **Bump patch** ([`bump-patch-version.yml`](../.github/workflows/bump-patch-version.yml)) | Push to `main` | Auto-increments patch in `pubspec.yaml` / AppInfo (does **not** create tags) |

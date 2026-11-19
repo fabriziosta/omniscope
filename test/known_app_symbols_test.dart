@@ -14,7 +14,7 @@ void main() {
 
       expect(
         matchingKnownSymbolsInText(
-          'Investigate AAPL. Give a plain-language research brief.',
+          'Investigate AAPL.',
           known: known,
         ),
         ['AAPL'],

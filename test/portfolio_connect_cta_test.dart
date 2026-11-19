@@ -134,7 +134,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    // Connect CTA lives in the overlay nav drawer.
+    // Connect CTA lives in the master–detail nav (overlay on narrow).
     await tester.tap(find.byType(MasterDetailMenuButton));
     await tester.pumpAndSettle();
 

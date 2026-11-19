@@ -47,6 +47,22 @@ class TradeProposalRepository extends ChangeNotifier {
     return null;
   }
 
+  List<TradeProposal> forChat(String chatId) {
+    final id = chatId.trim();
+    return [
+      for (final p in _proposals)
+        if (p.chatId == id) p,
+    ];
+  }
+
+  List<TradeProposal> executedForSymbol(String symbol) {
+    final sym = symbol.trim().toUpperCase();
+    return [
+      for (final p in _proposals)
+        if (p.status == TradeProposalStatus.executed && p.symbol == sym) p,
+    ];
+  }
+
   Future<void> load({UserConfigStore? store}) async {
     if (store != null) this.store = store;
     final slice = this.store?.getSlice(UserConfigKeys.tradeProposals);

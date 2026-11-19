@@ -22,7 +22,7 @@ Targets: **Linux**, **Windows**, **Android**, **Apple** (**iOS** / **macOS**), a
 cd /path/to/omniscope
 make get
 make run                 # DEVICE=linux by default; also: chrome / windows / android / ios / macos
-make check               # analyze + test
+make check               # analyze + test + linux release
 ```
 
 Full toolchain setup (Flutter, Linux/Android deps, hooks): [`docs/development.md`](docs/development.md).

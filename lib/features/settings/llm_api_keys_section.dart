@@ -12,6 +12,7 @@ import '../../data/agents/models.dart';
 import '../../data/settings/env_secrets_repository.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/app_tooltip.dart';
+import '../../widgets/overflow_actions_menu.dart';
 import 'settings_option_tiles.dart';
 
 /// Lists every LLM provider: key + light/heavy model prefs.
@@ -277,22 +278,21 @@ class _ProviderKeyRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                alignment: WrapAlignment.end,
-                children: [
+              OverflowActionsMenu(
+                tooltip: hasKey ? 'Connection actions' : 'Add connection',
+                actions: [
                   if (hasKey)
-                    ShadButton.outline(
-                      size: ShadButtonSize.sm,
-                      onPressed:
-                          probing ? null : () => _testConnection(context),
-                      child: Text(probing ? 'Testing…' : 'Test'),
+                    OverflowAction(
+                      label: probing ? 'Testing…' : 'Test',
+                      icon: LucideIcons.plug,
+                      onTap: probing
+                          ? () {}
+                          : () => _testConnection(context),
                     ),
-                  ShadButton.outline(
-                    size: ShadButtonSize.sm,
-                    onPressed: probing ? null : () => _openEditor(context),
-                    child: Text(hasKey ? 'Edit' : 'Add'),
+                  OverflowAction(
+                    label: hasKey ? 'Edit' : 'Add',
+                    icon: hasKey ? LucideIcons.pencil : LucideIcons.plus,
+                    onTap: probing ? () {} : () => _openEditor(context),
                   ),
                 ],
               ),

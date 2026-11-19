@@ -4,6 +4,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../core/formatting.dart';
 import '../../core/shell_navigation.dart';
+import '../../data/agents/agent_app_settings.dart';
 import '../../data/agents/agent_chat_repository.dart';
 import '../../data/agents/chat_models.dart';
 import '../../data/agents/llm_model_router.dart';
@@ -13,8 +14,10 @@ import '../../widgets/app_empty_view.dart';
 import '../../widgets/app_text.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/app_tooltip.dart';
+import '../../widgets/autopilot_status_pill.dart';
 import '../../widgets/master_detail_shell.dart';
 import '../../widgets/overflow_actions_menu.dart';
+import '../../widgets/schedule_status_pill.dart';
 import 'agent_chat_screen.dart';
 
 /// Agents tab: chat history sidebar + embedded orchestrator chat.
@@ -197,8 +200,16 @@ class _AgentsScreenState extends State<AgentsScreen> {
   Future<void> _deleteChat(AgentChatThread thread) async {
     final chats = context.read<AgentChatRepository>();
     final id = thread.chatId;
+    final wasScheduleChat =
+        context.read<AgentAppSettings>().scheduleChatId == id;
     await chats.deleteChat(id);
     if (!mounted) return;
+    if (wasScheduleChat) {
+      showAppToast(
+        context,
+        description: 'Schedule stopped (chat deleted)',
+      );
+    }
     setState(() {
       if (_selectedChatId == id) {
         final next = chats.threads.isEmpty ? null : chats.threads.first.chatId;
@@ -210,6 +221,26 @@ class _AgentsScreenState extends State<AgentsScreen> {
 
   Future<void> _togglePin(AgentChatThread thread) async {
     await context.read<AgentChatRepository>().togglePinned(thread.chatId);
+  }
+
+  Future<void> _toggleAutopilot(AgentChatThread thread) async {
+    final next = !thread.autopilotEnabled;
+    final chats = context.read<AgentChatRepository>();
+    if (next) {
+      final block = chats.autopilotEnableBlockReason(thread.chatId);
+      if (block != null) {
+        showAppToast(context, description: block);
+        return;
+      }
+    }
+    await chats.setAutopilotEnabled(thread.chatId, enabled: next);
+    if (!mounted) return;
+    showAppToast(
+      context,
+      description: next
+          ? 'Autopilot on for this chat'
+          : 'Autopilot off for this chat',
+    );
   }
 
   Widget _buildSidebar({
@@ -256,6 +287,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
                           closeNav();
                         },
                         onTogglePin: () => _togglePin(thread),
+                        onToggleAutopilot: () => _toggleAutopilot(thread),
                         onRename: () => _renameChat(thread),
                         onDelete: () => _deleteChat(thread),
                       );
@@ -348,6 +380,7 @@ class _ChatNavTile extends StatelessWidget {
     required this.selected,
     required this.onOpen,
     required this.onTogglePin,
+    required this.onToggleAutopilot,
     required this.onRename,
     required this.onDelete,
   });
@@ -356,6 +389,7 @@ class _ChatNavTile extends StatelessWidget {
   final bool selected;
   final VoidCallback onOpen;
   final Future<void> Function() onTogglePin;
+  final Future<void> Function() onToggleAutopilot;
   final Future<void> Function() onRename;
   final Future<void> Function() onDelete;
 
@@ -424,6 +458,18 @@ class _ChatNavTile extends StatelessWidget {
                             ),
                           ],
                         ),
+                        const SizedBox(height: 4),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            AutopilotStatusPill(
+                              enabled: thread.autopilotEnabled,
+                            ),
+                            ScheduleStatusPill(chatId: thread.chatId),
+                          ],
+                        ),
                         if (updatedLabel != null) ...[
                           const SizedBox(height: 2),
                           AppEllipsisText(
@@ -448,6 +494,16 @@ class _ChatNavTile extends StatelessWidget {
                         active: thread.pinned,
                         onTap: () {
                           onTogglePin();
+                        },
+                      ),
+                      OverflowAction(
+                        label: thread.autopilotEnabled
+                            ? 'Autopilot off'
+                            : 'Autopilot on',
+                        icon: LucideIcons.zap,
+                        active: thread.autopilotEnabled,
+                        onTap: () {
+                          onToggleAutopilot();
                         },
                       ),
                       OverflowAction(

@@ -1,13 +1,24 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscope/core/formatting.dart';
+import 'package:omniscope/data/agents/agent_activity_repository.dart';
 import 'package:omniscope/data/agents/agent_chat_repository.dart';
+import 'package:omniscope/data/agents/agent_role_catalog.dart';
 import 'package:omniscope/data/agents/agent_role_prompts.dart';
+import 'package:omniscope/data/agents/agents_repository.dart';
 import 'package:omniscope/data/agents/chat_models.dart';
 import 'package:omniscope/data/agents/llm_model_router.dart';
 import 'package:omniscope/data/agents/market_context_builder.dart';
 import 'package:omniscope/data/agents/models.dart';
+import 'package:omniscope/data/agents/trade_proposal_repository.dart';
+import 'package:omniscope/data/crypto/crypto_exchange_registry.dart';
 import 'package:omniscope/data/market/models.dart';
+import 'package:omniscope/data/portfolio/portfolio_repository.dart';
+import 'package:omniscope/data/settings/data_source_settings.dart';
+import 'package:omniscope/data/trading/broker_exchange_registry.dart';
+import 'package:omniscope/data/trading/trade_executor.dart';
+import 'package:omniscope/features/agents/agent_chat_controller.dart';
 
+import 'support/agent_test_harness.dart';
 import 'support/fake_genkit_agent_runner.dart';
 import 'support/fake_market_data_client.dart';
 import 'support/memory_config.dart';
@@ -278,37 +289,34 @@ void main() {
   });
 
   group('AgentRolePrompts', () {
-    test('builds role-aware run prompts', () {
+    test('builds short role-aware run prompts', () {
       expect(
         AgentRolePrompts.runUserPrompt(
           roleId: 'marketResearch',
           symbol: 'aapl',
         ),
-        contains('AAPL'),
+        'Investigate AAPL.',
       );
       expect(
         AgentRolePrompts.runUserPrompt(
           roleId: 'liveBalanceExplainer',
           symbol: '',
         ),
-        allOf(
-          contains('live exchange balances'),
-          contains('Do not emit trade JSON'),
-        ),
+        'Explain my live balances.',
       );
       expect(
         AgentRolePrompts.runUserPrompt(
           roleId: 'liveBalanceExplainer',
           symbol: 'BTC',
         ),
-        contains('BTC'),
+        'Explain my live balances. Focus on BTC.',
       );
       expect(
         AgentRolePrompts.runUserPrompt(
           roleId: 'portfolioGuide',
           symbol: '',
         ),
-        contains('allocation'),
+        'Review my portfolio.',
       );
       expect(
         AgentRolePrompts.runUserPrompt(
@@ -317,7 +325,7 @@ void main() {
           side: 'buy',
           quantity: 2,
         ),
-        allOf(contains('AAPL'), contains('buy'), contains('2')),
+        'Review my portfolio. Focus on AAPL. Side: buy. Quantity: 2.0.',
       );
       expect(
         AgentRolePrompts.runUserPrompt(
@@ -326,7 +334,7 @@ void main() {
           side: 'buy',
           quantity: 5,
         ),
-        allOf(contains('MSFT'), contains('buy'), contains('5')),
+        'Trade check for MSFT. Side: buy. Quantity: 5.0.',
       );
       expect(
         AgentRolePrompts.runChipLabel('liveBalanceExplainer'),
@@ -342,10 +350,7 @@ void main() {
       );
       expect(
         AgentRolePrompts.runUserPromptDraft(roleId: 'marketResearch'),
-        allOf(
-          contains(AgentRolePrompts.draftSymbolPlaceholder),
-          contains('plain-language research brief'),
-        ),
+        'Investigate ${AgentRolePrompts.draftSymbolPlaceholder}.',
       );
       expect(
         AgentRolePrompts.runUserPromptDraft(
@@ -368,6 +373,44 @@ void main() {
       expect(AgentRolePrompts.usesPracticePortfolioContext('portfolioGuide'), isTrue);
       expect(AgentRolePrompts.allowsRunWithoutSymbol('liveBalanceExplainer'), isTrue);
       expect(AgentRolePrompts.allowsRunWithoutSymbol('portfolioGuide'), isTrue);
+    });
+
+    test('flags unresolved draft placeholders', () {
+      expect(
+        AgentRolePrompts.unresolvedDraftPlaceholderMessage(
+          roleId: 'marketResearch',
+          text: 'Investigate SYMBOL.',
+        ),
+        contains('SYMBOL'),
+      );
+      expect(
+        AgentRolePrompts.unresolvedDraftPlaceholderMessage(
+          roleId: 'portfolioGuide',
+          text: 'Review my portfolio. Focus on SYMBOL (or delete this sentence).',
+        ),
+        isNull,
+      );
+      expect(
+        AgentRolePrompts.unresolvedDraftPlaceholderMessage(
+          roleId: 'intradayTrading',
+          text: 'Trade check for AAPL. Side: buy|sell. Quantity: 1.',
+        ),
+        contains('buy|sell'),
+      );
+      expect(
+        AgentRolePrompts.unresolvedDraftPlaceholderMessage(
+          roleId: 'intradayTrading',
+          text: 'Trade check for AAPL. Side: buy. Quantity: QUANTITY.',
+        ),
+        contains('QUANTITY'),
+      );
+      expect(
+        AgentRolePrompts.unresolvedDraftPlaceholderMessage(
+          roleId: 'intradayTrading',
+          text: 'Trade check for AAPL. Side: buy. Quantity: 2.',
+        ),
+        isNull,
+      );
     });
   });
 
@@ -411,6 +454,102 @@ void main() {
       );
       expect(turn.reply, 'Hello research');
       expect(turn.delegatedTradeJson, isNull);
+    });
+  });
+
+  group('AgentChatController sendStarter content', () {
+    test('content override persists short Run message', () async {
+      final store = await memoryConfig();
+      final roles = await AgentRoleCatalog.load();
+      final agents = AgentsRepository(store: store, roleCatalog: roles);
+      await agents.load(roleCatalog: roles);
+      final chats = AgentChatRepository(store: store);
+      await chats.load();
+      final proposals = TradeProposalRepository(store: store);
+      await proposals.load();
+      final activity = AgentActivityRepository(store: store);
+      await activity.load();
+      final dataSources = DataSourceSettings(store: store);
+      await dataSources.load();
+      final portfolio = PortfolioRepository(store: store);
+      await portfolio.load();
+      final market = FakeMarketDataClient();
+      final tradeExecutor = RoutingTradeExecutor(
+        cryptoRegistry: const CryptoExchangeRegistry([]),
+        brokerRegistry: BrokerExchangeRegistry.empty,
+        dataSources: dataSources,
+        portfolio: portfolio,
+        marketData: market,
+      );
+      final harness = await buildAgentChatController(
+        store: store,
+        agents: agents,
+        chats: chats,
+        marketData: market,
+        tradeExecutor: tradeExecutor,
+        proposals: proposals,
+        activity: activity,
+        cryptoRegistry: const CryptoExchangeRegistry([]),
+        dataSources: dataSources,
+        portfolio: portfolio,
+        reply: 'Short research reply.',
+      );
+
+      final result = await harness.controller.sendStarter(
+        roleId: 'marketResearch',
+        content: 'Investigate MSFT.',
+      );
+      expect(result, isA<AgentChatSendOk>());
+      final messages = chats.threadFor(harness.chatId).messages;
+      expect(messages, isNotEmpty);
+      final user = messages.first;
+      expect(user.role, AgentChatRole.user);
+      expect(user.kind, AgentChatMessageKind.run);
+      expect(user.content, 'Investigate MSFT.');
+    });
+
+    test('rejects unresolved SYMBOL placeholder', () async {
+      final store = await memoryConfig();
+      final roles = await AgentRoleCatalog.load();
+      final agents = AgentsRepository(store: store, roleCatalog: roles);
+      await agents.load(roleCatalog: roles);
+      final chats = AgentChatRepository(store: store);
+      await chats.load();
+      final proposals = TradeProposalRepository(store: store);
+      await proposals.load();
+      final activity = AgentActivityRepository(store: store);
+      await activity.load();
+      final dataSources = DataSourceSettings(store: store);
+      await dataSources.load();
+      final portfolio = PortfolioRepository(store: store);
+      await portfolio.load();
+      final market = FakeMarketDataClient();
+      final tradeExecutor = RoutingTradeExecutor(
+        cryptoRegistry: const CryptoExchangeRegistry([]),
+        brokerRegistry: BrokerExchangeRegistry.empty,
+        dataSources: dataSources,
+        portfolio: portfolio,
+        marketData: market,
+      );
+      final harness = await buildAgentChatController(
+        store: store,
+        agents: agents,
+        chats: chats,
+        marketData: market,
+        tradeExecutor: tradeExecutor,
+        proposals: proposals,
+        activity: activity,
+        cryptoRegistry: const CryptoExchangeRegistry([]),
+        dataSources: dataSources,
+        portfolio: portfolio,
+      );
+
+      final result = await harness.controller.sendStarter(
+        roleId: 'marketResearch',
+        content: 'Investigate SYMBOL.',
+      );
+      expect(result, isA<AgentChatSendFailed>());
+      expect(chats.threadFor(harness.chatId).messages, isEmpty);
     });
   });
 

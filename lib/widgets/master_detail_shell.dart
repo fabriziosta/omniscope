@@ -8,12 +8,17 @@ import 'app_text.dart';
 import 'app_tooltip.dart';
 import 'in_tab_back.dart';
 
-/// Overlay master–detail layout for shell tabs (Markets, Portfolio, Activity,
-/// Agents, Settings).
+/// Master–detail layout for shell tabs (Markets, Portfolio, Activity, Agents,
+/// Settings).
 ///
-/// Content is always full-bleed. Switching to this shell's bottom tab opens
-/// the left nav drawer automatically; the burger also opens it. Tap barrier or
-/// pick a destination to close. System back closes the drawer when open.
+/// Content is always shown. Switching to this shell's bottom tab opens the
+/// left nav automatically; the burger toggles it. System back closes the nav
+/// when open.
+///
+/// - **Wide** (`>= [wideBreakpointDefault]`): animated side panel **pushes**
+///   content (no scrim). Destination taps leave the nav open.
+/// - **Narrow**: overlay drawer with dimmed barrier. Tap barrier or pick a
+///   destination to close.
 ///
 /// Only one content body should be mounted at a time — callers typically key
 /// the content widget on [selected].
@@ -57,6 +62,7 @@ class _MasterDetailShellState<T> extends State<MasterDetailShell<T>>
   late final AnimationController _controller;
   late final Animation<Offset> _slide;
   late final Animation<double> _fade;
+  late final Animation<double> _sizeFactor;
   bool _navOpen = false;
 
   ShellNavigationController? _shellNav;
@@ -67,10 +73,13 @@ class _MasterDetailShellState<T> extends State<MasterDetailShell<T>>
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this, duration: _animDuration);
+    final curve =
+        CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
     _slide = Tween<Offset>(
       begin: const Offset(-1, 0),
       end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    ).animate(curve);
+    _sizeFactor = curve;
     _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
   }
 
@@ -133,91 +142,164 @@ class _MasterDetailShellState<T> extends State<MasterDetailShell<T>>
     _controller.reverse();
   }
 
+  void _toggleNav() {
+    if (_navOpen) {
+      _closeNav();
+    } else {
+      _openNav();
+    }
+  }
+
+  Widget _sidebarPanel({
+    required BuildContext context,
+    required double panelWidth,
+    required VoidCallback closeNav,
+    required bool elevate,
+  }) {
+    final theme = ShadTheme.of(context);
+    return SizedBox(
+      width: panelWidth,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.background,
+          border: Border(
+            right: BorderSide(color: theme.colorScheme.border),
+          ),
+          boxShadow: elevate
+              ? [
+                  BoxShadow(
+                    color: BrandColors.shadowOf(context),
+                    blurRadius: 16,
+                    offset: const Offset(4, 0),
+                  ),
+                ]
+              : null,
+        ),
+        child: SafeArea(
+          right: false,
+          child: widget.sidebarBuilder(
+            context,
+            widget.selected,
+            closeNav: closeNav,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
 
     return InTabBackEffect(
       onBack: _navOpen ? _closeNav : null,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final panelWidth = widget.sidebarWidth.clamp(
-            0.0,
-            (constraints.maxWidth - 48).clamp(0.0, widget.sidebarWidth),
-          );
+      child: _MasterDetailNavScope(
+        open: _navOpen,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = constraints.maxWidth >=
+                MasterDetailShell.wideBreakpointDefault;
+            final panelWidth = widget.sidebarWidth.clamp(
+              0.0,
+              (constraints.maxWidth - 48).clamp(0.0, widget.sidebarWidth),
+            );
 
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              widget.contentBuilder(
-                context,
-                widget.selected,
-                onOpenMenu: _openNav,
-              ),
-              AnimatedBuilder(
-                animation: _controller,
-                builder: (context, _) {
-                  if (_controller.isDismissed) {
-                    return const SizedBox.shrink();
-                  }
-                  return Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      FadeTransition(
-                        opacity: _fade,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: _closeNav,
-                          child: ColoredBox(
-                            color: theme.colorScheme.foreground
-                                .withValues(alpha: 0.32),
-                          ),
-                        ),
-                      ),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: SlideTransition(
-                          position: _slide,
-                          child: SizedBox(
-                            width: panelWidth,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.background,
-                                border: Border(
-                                  right: BorderSide(
-                                    color: theme.colorScheme.border,
-                                  ),
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: BrandColors.shadowOf(context),
-                                    blurRadius: 16,
-                                    offset: const Offset(4, 0),
-                                  ),
-                                ],
-                              ),
-                              child: SafeArea(
-                                right: false,
-                                child: widget.sidebarBuilder(
-                                  context,
-                                  widget.selected,
-                                  closeNav: _closeNav,
-                                ),
-                              ),
+            final content = widget.contentBuilder(
+              context,
+              widget.selected,
+              onOpenMenu: _toggleNav,
+            );
+
+            if (wide) {
+              // Push: animated width insets content; no scrim.
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SizeTransition(
+                    sizeFactor: _sizeFactor,
+                    axis: Axis.horizontal,
+                    axisAlignment: -1,
+                    child: _sidebarPanel(
+                      context: context,
+                      panelWidth: panelWidth,
+                      closeNav: () {},
+                      elevate: false,
+                    ),
+                  ),
+                  Expanded(child: content),
+                ],
+              );
+            }
+
+            // Overlay: slide over full-bleed content with a dim barrier.
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                content,
+                AnimatedBuilder(
+                  animation: _controller,
+                  builder: (context, _) {
+                    if (_controller.isDismissed) {
+                      return const SizedBox.shrink();
+                    }
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        FadeTransition(
+                          opacity: _fade,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: _closeNav,
+                            child: ColoredBox(
+                              color: theme.colorScheme.foreground
+                                  .withValues(alpha: 0.32),
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ],
-          );
-        },
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: SlideTransition(
+                            position: _slide,
+                            child: _sidebarPanel(
+                              context: context,
+                              panelWidth: panelWidth,
+                              closeNav: _closeNav,
+                              elevate: true,
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
+}
+
+/// Propagates nav open state so [MasterDetailMenuButton] can announce open/close.
+class _MasterDetailNavScope extends InheritedWidget {
+  const _MasterDetailNavScope({
+    required this.open,
+    required super.child,
+  });
+
+  final bool open;
+
+  static bool isOpenOf(BuildContext context) {
+    return context
+            .dependOnInheritedWidgetOfExactType<_MasterDetailNavScope>()
+            ?.open ??
+        false;
+  }
+
+  @override
+  bool updateShouldNotify(_MasterDetailNavScope oldWidget) =>
+      open != oldWidget.open;
 }
 
 /// Standard padded sidebar list shared by master–detail shell tabs.
@@ -479,9 +561,10 @@ class MasterDetailMenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final open = _MasterDetailNavScope.isOpenOf(context);
     return Semantics(
       button: true,
-      label: 'Open menu',
+      label: open ? 'Close menu' : 'Open menu',
       child: ShadButton.ghost(
         width: 44,
         height: 44,

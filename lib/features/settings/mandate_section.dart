@@ -20,7 +20,26 @@ class _MandateSectionBodyState extends State<MandateSectionBody> {
   late final TextEditingController _maxSymbolsController;
   late final TextEditingController _maxNotionalController;
   late final TextEditingController _maxOpenController;
+  late final TextEditingController _maxFillsController;
+  late final TextEditingController _maxDailyLossController;
   var _saving = false;
+
+  static final _goalOptions = [
+    for (final goal in MandateGoal.values) (goal, goal.label),
+  ];
+
+  static final _horizonOptions = [
+    for (final horizon in MandateHorizon.values) (horizon, horizon.label),
+  ];
+
+  static final _universeOptions = [
+    for (final universe in MandateUniverse.values) (universe, universe.label),
+  ];
+
+  static final _cadenceOptions = [
+    for (final interval in AgentScheduleInterval.values)
+      (interval, interval.shortLabel),
+  ];
 
   @override
   void initState() {
@@ -40,6 +59,17 @@ class _MandateSectionBodyState extends State<MandateSectionBody> {
     _maxOpenController = TextEditingController(
       text: mandate.maxOpenProposals.toString(),
     );
+    _maxFillsController = TextEditingController(
+      text: mandate.maxAutopilotFillsPerDay.toString(),
+    );
+    final dailyLoss = mandate.maxDailyRealizedLoss;
+    _maxDailyLossController = TextEditingController(
+      text: dailyLoss == null
+          ? ''
+          : (dailyLoss == dailyLoss.roundToDouble()
+              ? dailyLoss.toInt().toString()
+              : dailyLoss.toStringAsFixed(2)),
+    );
   }
 
   @override
@@ -47,6 +77,8 @@ class _MandateSectionBodyState extends State<MandateSectionBody> {
     _maxSymbolsController.dispose();
     _maxNotionalController.dispose();
     _maxOpenController.dispose();
+    _maxFillsController.dispose();
+    _maxDailyLossController.dispose();
     super.dispose();
   }
 
@@ -72,6 +104,18 @@ class _MandateSectionBodyState extends State<MandateSectionBody> {
       );
       return;
     }
+    final maxFills = int.tryParse(_maxFillsController.text.trim());
+    if (maxFills == null ||
+        maxFills < MandateSettings.minAutopilotFillsPerDay) {
+      showAppToast(
+        context,
+        description:
+            'Max Autopilot fills/day must be at least '
+            '${MandateSettings.minAutopilotFillsPerDay}.',
+        destructive: true,
+      );
+      return;
+    }
     final notionalRaw = _maxNotionalController.text.trim().replaceAll(',', '');
     double? notional;
     if (notionalRaw.isNotEmpty) {
@@ -85,25 +129,100 @@ class _MandateSectionBodyState extends State<MandateSectionBody> {
         return;
       }
     }
+    final lossRaw = _maxDailyLossController.text.trim().replaceAll(',', '');
+    double? dailyLoss;
+    if (lossRaw.isNotEmpty) {
+      dailyLoss = double.tryParse(lossRaw);
+      if (dailyLoss == null || dailyLoss <= 0) {
+        showAppToast(
+          context,
+          description:
+              'Max daily loss must be a positive dollar amount, or empty.',
+          destructive: true,
+        );
+        return;
+      }
+    }
 
     setState(() => _saving = true);
     await mandate.setMaxSymbolCount(maxSymbols);
     await mandate.setMaxOpenProposals(maxOpen);
     await mandate.setMaxNotionalPerProposal(notional);
+    await mandate.setMaxAutopilotFillsPerDay(maxFills);
+    await mandate.setMaxDailyRealizedLoss(dailyLoss);
     if (!mounted) return;
     setState(() => _saving = false);
     _maxSymbolsController.text = mandate.maxSymbolCount.toString();
     _maxOpenController.text = mandate.maxOpenProposals.toString();
+    _maxFillsController.text = mandate.maxAutopilotFillsPerDay.toString();
     final saved = mandate.maxNotionalPerProposal;
     _maxNotionalController.text = saved == null
         ? ''
         : (saved == saved.roundToDouble()
             ? saved.toInt().toString()
             : saved.toStringAsFixed(2));
+    final savedLoss = mandate.maxDailyRealizedLoss;
+    _maxDailyLossController.text = savedLoss == null
+        ? ''
+        : (savedLoss == savedLoss.roundToDouble()
+            ? savedLoss.toInt().toString()
+            : savedLoss.toStringAsFixed(2));
     showAppToast(
       context,
       title: 'Risk rails saved',
       description: AppCopy.mandateRiskRailsSaved,
+    );
+  }
+
+  Widget _riskRailsFields(MandateSettings mandate) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SettingsWidePair(
+          first: SettingsLabeledInput(
+            label: 'Max invest-interest symbols',
+            controller: _maxSymbolsController,
+            keyboardType: TextInputType.number,
+            placeholder: const Text('20'),
+          ),
+          second: SettingsLabeledInput(
+            label: 'Max open Autopilot proposals',
+            controller: _maxOpenController,
+            keyboardType: TextInputType.number,
+            placeholder: const Text('3'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SettingsWidePair(
+          first: SettingsLabeledInput(
+            label: 'Max Autopilot fills per day',
+            controller: _maxFillsController,
+            keyboardType: TextInputType.number,
+            placeholder: const Text('10'),
+          ),
+          second: SettingsLabeledInput(
+            label: 'Max daily realized loss (optional)',
+            controller: _maxDailyLossController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            placeholder: const Text('Leave empty for no stop'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SettingsLabeledInput(
+          label: 'Max notional per proposal (optional, enforced)',
+          controller: _maxNotionalController,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          placeholder: const Text('Leave empty for no cap'),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ShadButton(
+            onPressed: _saving ? null : () => _saveRiskRails(mandate),
+            child: Text(_saving ? 'Saving…' : 'Save risk rails'),
+          ),
+        ),
+      ],
     );
   }
 
@@ -125,48 +244,36 @@ class _MandateSectionBodyState extends State<MandateSectionBody> {
           description: 'What agents should optimize for.',
         ),
         const SizedBox(height: 8),
-        for (final goal in MandateGoal.values) ...[
-          if (goal != MandateGoal.values.first)
-            const SizedBox(height: settingsOptionGap),
-          SettingsSelectableOptionTile(
-            title: goal.label,
-            subtitle: goal.description,
-            selected: mandate.goal == goal,
-            onTap: () => mandate.setGoal(goal),
-          ),
-        ],
+        SettingsExclusiveChips<MandateGoal>(
+          options: _goalOptions,
+          value: mandate.goal,
+          onChanged: mandate.setGoal,
+          hintFor: (goal) => goal.description,
+        ),
         const SizedBox(height: settingsSectionGap),
         const SettingsSubsectionLabel(
           'Horizon',
           description: 'How far ahead agents should think.',
         ),
         const SizedBox(height: 8),
-        for (final horizon in MandateHorizon.values) ...[
-          if (horizon != MandateHorizon.values.first)
-            const SizedBox(height: settingsOptionGap),
-          SettingsSelectableOptionTile(
-            title: horizon.label,
-            subtitle: horizon.description,
-            selected: mandate.horizon == horizon,
-            onTap: () => mandate.setHorizon(horizon),
-          ),
-        ],
+        SettingsExclusiveChips<MandateHorizon>(
+          options: _horizonOptions,
+          value: mandate.horizon,
+          onChanged: mandate.setHorizon,
+          hintFor: (horizon) => horizon.description,
+        ),
         const SizedBox(height: settingsSectionGap),
         const SettingsSubsectionLabel(
           'Universe',
           description: 'Which assets agents may put in Invest interest.',
         ),
         const SizedBox(height: 8),
-        for (final universe in MandateUniverse.values) ...[
-          if (universe != MandateUniverse.values.first)
-            const SizedBox(height: settingsOptionGap),
-          SettingsSelectableOptionTile(
-            title: universe.label,
-            subtitle: universe.description,
-            selected: mandate.universe == universe,
-            onTap: () => mandate.setUniverse(universe),
-          ),
-        ],
+        SettingsExclusiveChips<MandateUniverse>(
+          options: _universeOptions,
+          value: mandate.universe,
+          onChanged: mandate.setUniverse,
+          hintFor: (universe) => universe.description,
+        ),
         const SizedBox(height: settingsSectionGap),
         const SettingsSubsectionLabel(
           'Preferred cadence',
@@ -175,60 +282,22 @@ class _MandateSectionBodyState extends State<MandateSectionBody> {
               'Does not change existing connections.',
         ),
         const SizedBox(height: 8),
-        for (final interval in AgentScheduleInterval.values) ...[
-          if (interval != AgentScheduleInterval.values.first)
-            const SizedBox(height: settingsOptionGap),
-          SettingsSelectableOptionTile(
-            title: interval.label,
-            subtitle: 'Run about every ${interval.label.toLowerCase()}',
-            selected: mandate.cadencePreference == interval,
-            onTap: () => mandate.setCadencePreference(interval),
-          ),
-        ],
+        SettingsExclusiveChips<AgentScheduleInterval>(
+          options: _cadenceOptions,
+          value: mandate.cadencePreference,
+          onChanged: mandate.setCadencePreference,
+          hintFor: (interval) =>
+              'About every ${interval.label.toLowerCase()}',
+        ),
         const SizedBox(height: settingsSectionGap),
         const SettingsSubsectionLabel(
           'Risk rails',
           description:
-              'Hard caps for Invest interest size and Autopilot proposals.',
+              'Hard caps for Invest interest size, Autopilot fills per day '
+              '(UTC), optional daily loss stop, and max notional per order.',
         ),
         const SizedBox(height: 8),
-        Text('Max invest-interest symbols', style: theme.textTheme.small),
-        const SizedBox(height: 6),
-        ShadInput(
-          controller: _maxSymbolsController,
-          keyboardType: TextInputType.number,
-          placeholder: const Text('20'),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          'Max open Autopilot proposals',
-          style: theme.textTheme.small,
-        ),
-        const SizedBox(height: 6),
-        ShadInput(
-          controller: _maxOpenController,
-          keyboardType: TextInputType.number,
-          placeholder: const Text('3'),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          'Max notional per proposal (optional)',
-          style: theme.textTheme.small,
-        ),
-        const SizedBox(height: 6),
-        ShadInput(
-          controller: _maxNotionalController,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          placeholder: const Text('Leave empty for no cap'),
-        ),
-        const SizedBox(height: 12),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: ShadButton(
-            onPressed: _saving ? null : () => _saveRiskRails(mandate),
-            child: Text(_saving ? 'Saving…' : 'Save risk rails'),
-          ),
-        ),
+        _riskRailsFields(mandate),
       ],
     );
   }

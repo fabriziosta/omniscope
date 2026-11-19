@@ -67,7 +67,8 @@ abstract final class AppCopy {
       'auto-add symbols (remove/set still need Confirm).';
 
   static const mandateRiskRailsSaved =
-      'Agents will respect these caps on Confirm and Autopilot.';
+      'Notional is enforced on Confirm; Autopilot also respects daily fill '
+      'budget and optional loss stop.';
 
   static const noMarketSourcesEnabled =
       'No market data sources enabled. Turn one on in Settings.';

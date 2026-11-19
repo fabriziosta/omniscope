@@ -222,6 +222,7 @@ void main() {
     );
     final llmRuntime = seeded.llmRuntime;
     final agentApp = seeded.appSettings;
+    agentChats.appSettings = agentApp;
     final envSecrets = seeded.secrets;
     final llmConnectionStatus = LlmConnectionStatusStore();
     final agentSchedule = AgentScheduleCoordinator(
@@ -417,7 +418,7 @@ void main() {
     await tester.tap(tradeStarter);
     await tester.pumpAndSettle();
     expect(
-      find.textContaining('Run a trade check for'),
+      find.textContaining('Trade check for'),
       findsOneWidget,
     );
 

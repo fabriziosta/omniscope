@@ -8,6 +8,7 @@ import 'package:omniscope/data/agents/agent_role_catalog.dart';
 import 'package:omniscope/data/agents/agent_role_prompts.dart';
 import 'package:omniscope/data/agents/agents_repository.dart';
 import 'package:omniscope/data/agents/models.dart';
+import 'package:omniscope/data/agents/schedule_chat_binding.dart';
 import 'package:omniscope/data/agents/trade_proposal_repository.dart';
 import 'package:omniscope/data/crypto/crypto_exchange_registry.dart';
 import 'package:omniscope/data/notifications/app_notification.dart';
@@ -330,6 +331,144 @@ void main() {
       );
       expect(app.isScheduleDue(DateTime.utc(2026, 1, 1)), isFalse);
     });
+
+    test('ETA helpers: first run due, then next interval, then overdue', () async {
+      final store = await memoryConfig();
+      final app = AgentAppSettings(store: store);
+      await app.load();
+      await app.setSchedule(
+        enabled: true,
+        interval: AgentScheduleInterval.hour1,
+        symbols: const ['AAPL'],
+        useInvestInterest: false,
+      );
+
+      final now = DateTime.utc(2026, 1, 1, 12);
+      expect(app.scheduleNextRunAt(now), isNull);
+      expect(app.scheduleTimeUntilNext(now), Duration.zero);
+      expect(app.scheduleEtaLabel(now), 'Due now');
+
+      final stamped = DateTime.utc(2026, 1, 1, 12);
+      await app.updateScheduleLastRunAt(stamped);
+      expect(
+        app.scheduleNextRunAt(stamped),
+        stamped.add(const Duration(hours: 1)),
+      );
+      expect(
+        app.scheduleTimeUntilNext(stamped.add(const Duration(minutes: 15))),
+        const Duration(minutes: 45),
+      );
+      expect(
+        app.scheduleEtaLabel(stamped.add(const Duration(minutes: 15))),
+        'Next in 45m',
+      );
+      expect(
+        app.scheduleTimeUntilNext(stamped.add(const Duration(hours: 2))),
+        Duration.zero,
+      );
+      expect(
+        app.scheduleEtaLabel(stamped.add(const Duration(hours: 2))),
+        'Due now',
+      );
+
+      await app.setSchedule(enabled: false);
+      expect(app.scheduleEtaLabel(now), isNull);
+    });
+
+    test('persists scheduleChatId across reload', () async {
+      final store = await memoryConfig();
+      final app = AgentAppSettings(store: store);
+      await app.load();
+      await app.setSchedule(
+        enabled: true,
+        scheduleChatId: 'chat-schedule-1',
+      );
+      expect(app.scheduleChatId, 'chat-schedule-1');
+      expect(app.isScheduleChat('chat-schedule-1'), isTrue);
+
+      final again = AgentAppSettings(store: store);
+      await again.load();
+      expect(again.scheduleEnabled, isTrue);
+      expect(again.scheduleChatId, 'chat-schedule-1');
+    });
+  });
+
+  group('ScheduleChatBinding', () {
+    test('ensureChat creates pinned chat and reuses it', () async {
+      final store = await memoryConfig();
+      final app = AgentAppSettings(store: store);
+      await app.load();
+      await app.setSchedule(enabled: true);
+      final chats = AgentChatRepository(store: store, appSettings: app);
+      await chats.load();
+
+      final first = await ScheduleChatBinding.ensureChat(
+        app: app,
+        chats: chats,
+      );
+      expect(first.title, AgentAppSettings.scheduleChatTitle);
+      expect(first.pinned, isTrue);
+      expect(app.scheduleChatId, first.chatId);
+      expect(chats.threads, hasLength(1));
+
+      final second = await ScheduleChatBinding.ensureChat(
+        app: app,
+        chats: chats,
+      );
+      expect(second.chatId, first.chatId);
+      expect(chats.threads, hasLength(1));
+    });
+
+    test('ensureChat recreates when linked chat is missing', () async {
+      final store = await memoryConfig();
+      final app = AgentAppSettings(store: store);
+      await app.load();
+      await app.setSchedule(
+        enabled: true,
+        scheduleChatId: 'orphan-id',
+      );
+      final chats = AgentChatRepository(store: store, appSettings: app);
+      await chats.load();
+
+      final thread = await ScheduleChatBinding.ensureChat(
+        app: app,
+        chats: chats,
+      );
+      expect(thread.chatId, isNot('orphan-id'));
+      expect(app.scheduleChatId, thread.chatId);
+    });
+
+    test('deleteChat stops schedule when linked', () async {
+      final store = await memoryConfig();
+      final app = AgentAppSettings(store: store);
+      await app.load();
+      await app.setSchedule(enabled: true);
+      final chats = AgentChatRepository(store: store, appSettings: app);
+      await chats.load();
+
+      final thread = await ScheduleChatBinding.ensureChat(
+        app: app,
+        chats: chats,
+      );
+      await chats.deleteChat(thread.chatId);
+      expect(app.scheduleEnabled, isFalse);
+      expect(app.scheduleChatId, isNull);
+      expect(chats.threads, isEmpty);
+    });
+
+    test('clearAllThreads stops schedule', () async {
+      final store = await memoryConfig();
+      final app = AgentAppSettings(store: store);
+      await app.load();
+      await app.setSchedule(enabled: true);
+      final chats = AgentChatRepository(store: store, appSettings: app);
+      await chats.load();
+      await ScheduleChatBinding.ensureChat(app: app, chats: chats);
+
+      await chats.clearAllThreads();
+      expect(app.scheduleEnabled, isFalse);
+      expect(app.scheduleChatId, isNull);
+    });
   });
 
   group('AgentScheduleCoordinator', () {
@@ -343,16 +482,26 @@ void main() {
           AppNotificationRepository notifications,
           AgentAppSettings agentApp,
           ValueGetter<int> agentCalls,
-        })> harness({
-      void Function()? onAgentCall,
-    }) async {
+          List<String> wakeMessages,
+        })> harness() async {
       final store = await memoryConfig();
       final roles = AgentRoleCatalog.parse(_manifestFixture);
       final agents = AgentsRepository(store: store, roleCatalog: roles);
       await agents.load(roleCatalog: roles);
       final favorites = FavoritesRepository(store: store);
       await favorites.load();
-      final chats = AgentChatRepository(store: store);
+      final seeded = await seedLlmStack(
+        store,
+        lightModelId: 'gpt-test',
+        heavyModelId: 'gpt-test',
+      );
+      final llmRuntime = seeded.llmRuntime;
+      final agentApp = seeded.appSettings;
+      await agentApp.setSchedule(
+        enabled: true,
+        useInvestInterest: true,
+      );
+      final chats = AgentChatRepository(store: store, appSettings: agentApp);
       await chats.load();
       final proposals = TradeProposalRepository(store: store);
       await proposals.load();
@@ -366,18 +515,7 @@ void main() {
       await portfolio.load();
       final market = FakeMarketDataClient();
       var calls = 0;
-
-      final seeded = await seedLlmStack(
-        store,
-        lightModelId: 'gpt-test',
-        heavyModelId: 'gpt-test',
-      );
-      final llmRuntime = seeded.llmRuntime;
-      final agentApp = seeded.appSettings;
-      await agentApp.setSchedule(
-        enabled: true,
-        useInvestInterest: true,
-      );
+      final wakeMessages = <String>[];
       final secrets = seeded.secrets;
       final coord = AgentScheduleCoordinator(
         agents: agents,
@@ -386,7 +524,7 @@ void main() {
         agentRunner: fakeGenkitAgentRunner(
           replyFor: (lastUser) {
             calls++;
-            onAgentCall?.call();
+            wakeMessages.add(lastUser);
             return 'Scheduled brief';
           },
         ),
@@ -418,6 +556,7 @@ void main() {
         notifications: notifications,
         agentApp: agentApp,
         agentCalls: () => calls,
+        wakeMessages: wakeMessages,
       );
     }
 
@@ -446,6 +585,20 @@ void main() {
       h.coord.dispose();
     });
 
+    test('scheduledRunUserPrompt includes cadence and batch index', () {
+      final text = AgentRolePrompts.scheduledRunUserPrompt(
+        symbol: 'aapl',
+        intervalLabel: '1h',
+        mandateSummary: 'Mandate: goal=learn',
+        index: 2,
+        total: 5,
+      );
+      expect(text, contains('Scheduled review (every 1h)'));
+      expect(text, contains('symbol 2 of 5'));
+      expect(text, contains('Investigate AAPL.'));
+      expect(text, contains('Mandate: goal=learn'));
+    });
+
     test('runs due symbols when resumed and logs scheduled activity', () async {
       final h = await harness();
 
@@ -463,7 +616,15 @@ void main() {
 
       expect(h.agentCalls(), 2);
       expect(h.agentApp.scheduleLastRunAt, now);
-      expect(h.chats.threads, isNotEmpty);
+      expect(h.chats.threads, hasLength(1));
+      expect(h.agentApp.scheduleChatId, h.chats.threads.single.chatId);
+      expect(h.chats.threads.single.pinned, isTrue);
+      expect(h.wakeMessages, hasLength(2));
+      expect(h.wakeMessages[0], contains('Scheduled review (every 1h)'));
+      expect(h.wakeMessages[0], contains('symbol 1 of 2'));
+      expect(h.wakeMessages[0], contains('Investigate AAPL.'));
+      expect(h.wakeMessages[1], contains('symbol 2 of 2'));
+      expect(h.wakeMessages[1], contains('Investigate MSFT.'));
 
       final scheduled = h.activity.events
           .where((e) => e.kind == AgentActivityKind.scheduledRun)
@@ -484,7 +645,7 @@ void main() {
       );
       expect(
         h.notifications.active.every(
-          (n) => n.chatId != null && n.chatId!.isNotEmpty,
+          (n) => n.chatId == h.agentApp.scheduleChatId,
         ),
         isTrue,
       );
@@ -494,6 +655,14 @@ void main() {
       await h.coord.tick(now: now.add(const Duration(minutes: 10)));
       expect(h.agentCalls(), 2);
       expect(h.notifications.active, hasLength(2));
+      expect(h.chats.threads, hasLength(1));
+
+      // Next due tick reuses the same schedule chat.
+      final nextDue = now.add(const Duration(hours: 1));
+      await h.coord.tick(now: nextDue);
+      expect(h.agentCalls(), 4);
+      expect(h.chats.threads, hasLength(1));
+      expect(h.agentApp.scheduleChatId, h.chats.threads.single.chatId);
 
       h.coord.dispose();
     });
@@ -520,6 +689,10 @@ void main() {
           .map((e) => e.symbol)
           .toList();
       expect(scheduled, unorderedEquals(['TSLA', 'NVDA']));
+      expect(
+        h.wakeMessages.any((m) => m.contains('Investigate TSLA.')),
+        isTrue,
+      );
 
       h.coord.dispose();
     });

@@ -149,6 +149,7 @@ class AgentChatThread {
     required this.messages,
     required this.updatedAt,
     this.pinned = false,
+    this.autopilotEnabled = false,
     this.legacyRoleId,
   });
 
@@ -159,6 +160,10 @@ class AgentChatThread {
 
   /// When true, the Agents sidebar keeps this chat above unpinned ones.
   final bool pinned;
+
+  /// When true, risk-approved trades / add-only Invest interest auto-apply
+  /// for this chat only (Confirm still gates other chats).
+  final bool autopilotEnabled;
 
   /// Present when migrated from a legacy per-role thread.
   final String? legacyRoleId;
@@ -189,6 +194,7 @@ class AgentChatThread {
     List<AgentChatMessage>? messages,
     DateTime? updatedAt,
     bool? pinned,
+    bool? autopilotEnabled,
     String? legacyRoleId,
     bool clearLegacyRoleId = false,
   }) {
@@ -198,6 +204,7 @@ class AgentChatThread {
       messages: messages ?? this.messages,
       updatedAt: updatedAt ?? this.updatedAt,
       pinned: pinned ?? this.pinned,
+      autopilotEnabled: autopilotEnabled ?? this.autopilotEnabled,
       legacyRoleId:
           clearLegacyRoleId ? null : (legacyRoleId ?? this.legacyRoleId),
     );
@@ -209,6 +216,7 @@ class AgentChatThread {
         'messages': messages.map((m) => m.toJson()).toList(),
         'updatedAt': updatedAt.toIso8601String(),
         if (pinned) 'pinned': true,
+        if (autopilotEnabled) 'autopilotEnabled': true,
         if (legacyRoleId != null) 'legacyRoleId': legacyRoleId,
         // Keep roleId for older readers during transition.
         if (legacyRoleId != null) 'roleId': legacyRoleId,
@@ -246,6 +254,7 @@ class AgentChatThread {
       updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
       pinned: json['pinned'] == true,
+      autopilotEnabled: json['autopilotEnabled'] == true,
       legacyRoleId: legacyRoleId,
     );
   }
@@ -253,12 +262,14 @@ class AgentChatThread {
   factory AgentChatThread.empty({
     required String chatId,
     String title = 'New chat',
+    bool autopilotEnabled = false,
   }) {
     return AgentChatThread(
       chatId: chatId,
       title: title,
       messages: const [],
       updatedAt: DateTime.fromMillisecondsSinceEpoch(0),
+      autopilotEnabled: autopilotEnabled,
     );
   }
 

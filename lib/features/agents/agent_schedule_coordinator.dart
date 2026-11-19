@@ -6,10 +6,13 @@ import '../../data/agents/agent_activity.dart';
 import '../../data/agents/agent_activity_repository.dart';
 import '../../data/agents/agent_app_settings.dart';
 import '../../data/agents/agent_chat_repository.dart';
+import '../../data/agents/agent_role_prompts.dart';
 import '../../data/agents/agents_repository.dart';
 import '../../data/agents/genkit/genkit_agent_runner.dart';
 import '../../data/agents/invest_interest_proposal_repository.dart';
 import '../../data/agents/llm_runtime_settings.dart';
+import '../../data/agents/models.dart';
+import '../../data/agents/schedule_chat_binding.dart';
 import '../../data/agents/trade_proposal_repository.dart';
 import '../../data/crypto/crypto_exchange_registry.dart';
 import '../../data/market/market_data_client.dart';
@@ -73,6 +76,7 @@ class AgentScheduleCoordinator extends ChangeNotifier {
 
   bool get isResumed => _resumed;
   bool get isPolling => _timer != null;
+  bool get isInFlight => _inFlight;
 
   void resume() {
     if (_disposed) return;
@@ -114,10 +118,14 @@ class AgentScheduleCoordinator extends ChangeNotifier {
     if (symbols.isEmpty) return;
 
     _inFlight = true;
+    if (!_disposed) notifyListeners();
     try {
       await _appSettings.updateScheduleLastRunAt(at);
 
-      final chat = await _chats.createChat(title: 'Scheduled run');
+      final chat = await ScheduleChatBinding.ensureChat(
+        app: _appSettings,
+        chats: _chats,
+      );
       final controller = AgentChatController(
         chatId: chat.chatId,
         agents: _agents,
@@ -138,7 +146,12 @@ class AgentScheduleCoordinator extends ChangeNotifier {
         investInterestProposals: _investInterestProposals,
       );
 
-      for (final symbol in symbols) {
+      final intervalLabel = _appSettings.scheduleInterval.shortLabel;
+      final mandateSummary = _mandate?.toAgentSummary();
+      final total = symbols.length;
+
+      for (var i = 0; i < symbols.length; i++) {
+        final symbol = symbols[i];
         if (_disposed || !_resumed) break;
         if (!_appSettings.scheduleEnabled) break;
 
@@ -153,9 +166,17 @@ class AgentScheduleCoordinator extends ChangeNotifier {
           ),
         );
 
+        final wake = AgentRolePrompts.scheduledRunUserPrompt(
+          symbol: symbol,
+          intervalLabel: intervalLabel,
+          mandateSummary: mandateSummary,
+          index: i + 1,
+          total: total,
+        );
         final result = await controller.sendRun(
           symbol: symbol,
           roleId: 'marketResearch',
+          content: wake,
         );
         if (result is AgentChatSendFailed) {
           await _activity.add(
@@ -196,6 +217,7 @@ class AgentScheduleCoordinator extends ChangeNotifier {
       }
     } finally {
       _inFlight = false;
+      if (!_disposed) notifyListeners();
     }
   }
 }

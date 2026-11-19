@@ -151,6 +151,7 @@ class RoutingTradeExecutor implements TradeExecutor {
         rawStatus: 'FILLED',
         message: 'Practice ${request.side.label.toLowerCase()} filled '
             'at $price',
+        fillPrice: price,
       );
     } catch (e) {
       return OrderResult.fail('$e');

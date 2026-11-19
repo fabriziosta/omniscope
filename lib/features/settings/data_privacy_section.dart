@@ -196,12 +196,17 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
       confirmLabel: 'Clear chats',
     );
     if (!ok || !mounted) return;
+    final hadSchedule =
+        context.read<AgentAppSettings>().scheduleEnabled ||
+            context.read<AgentAppSettings>().scheduleChatId != null;
     await context.read<AgentChatRepository>().clearAllThreads();
     if (!mounted) return;
     showAppToast(
       context,
       title: 'Chats cleared',
-      description: 'All agent conversations were removed from this device.',
+      description: hadSchedule
+          ? 'All agent conversations were removed. Schedule was stopped.'
+          : 'All agent conversations were removed from this device.',
     );
   }
 

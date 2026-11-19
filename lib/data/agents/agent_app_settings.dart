@@ -42,7 +42,10 @@ class AgentRoleOverride {
   }
 }
 
-/// Global Autopilot / Schedule / role enable — Settings → Agents (advanced).
+/// Schedule / role enable / default Autopilot portfolio — Settings → Agents.
+///
+/// Chat Autopilot enable lives on each [AgentChatThread]; [autopilotEnabled]
+/// remains only for one-shot migration from older configs.
 class AgentAppSettings extends ChangeNotifier {
   AgentAppSettings({this.store});
 
@@ -62,9 +65,13 @@ class AgentAppSettings extends ChangeNotifier {
   List<String> _scheduleSymbols = const [];
   var _scheduleUseInvestInterest = true;
   DateTime? _scheduleLastRunAt;
+  String? _scheduleChatId;
   var _answerMood = AgentAnswerMood.plain;
   String? _answerMoodNote;
   bool _ready = false;
+
+  /// Default title for the persistent schedule-bound chat.
+  static const scheduleChatTitle = 'Scheduled run';
 
   bool get isReady => _ready;
   bool get autopilotEnabled => _autopilotEnabled;
@@ -76,6 +83,7 @@ class AgentAppSettings extends ChangeNotifier {
   List<String> get scheduleSymbols => _scheduleSymbols;
   bool get scheduleUseInvestInterest => _scheduleUseInvestInterest;
   DateTime? get scheduleLastRunAt => _scheduleLastRunAt;
+  String? get scheduleChatId => _scheduleChatId;
   AgentAnswerMood get answerMood => _answerMood;
   String? get answerMoodNote => _answerMoodNote;
   Set<String> get disabledRoleIds => Set.unmodifiable(_disabledRoleIds);
@@ -101,6 +109,42 @@ class AgentAppSettings extends ChangeNotifier {
     if (last == null) return true;
     final elapsed = now.toUtc().difference(last.toUtc());
     return !elapsed.isNegative && elapsed >= _scheduleInterval.duration;
+  }
+
+  /// Next scheduled fire time, or null when Schedule is off / first run pending.
+  DateTime? scheduleNextRunAt(DateTime now) {
+    if (!_scheduleEnabled) return null;
+    final last = _scheduleLastRunAt;
+    if (last == null) return null;
+    return last.toUtc().add(_scheduleInterval.duration);
+  }
+
+  /// Time until next fire. Null when Schedule is off. Zero when due (first run
+  /// or overdue).
+  Duration? scheduleTimeUntilNext(DateTime now) {
+    if (!_scheduleEnabled) return null;
+    final next = scheduleNextRunAt(now);
+    if (next == null) return Duration.zero;
+    final remaining = next.difference(now.toUtc());
+    if (remaining.isNegative) return Duration.zero;
+    return remaining;
+  }
+
+  /// Compact ETA for the schedule chat pill (`Due now` / `Next in 12m`).
+  String? scheduleEtaLabel(DateTime now) {
+    final until = scheduleTimeUntilNext(now);
+    if (until == null) return null;
+    if (until <= Duration.zero) return 'Due now';
+    if (until.inMinutes < 60) return 'Next in ${until.inMinutes}m';
+    if (until.inHours < 48) return 'Next in ${until.inHours}h';
+    return 'Next in ${until.inDays}d';
+  }
+
+  /// Whether [chatId] is the persistent Schedule home chat.
+  bool isScheduleChat(String? chatId) {
+    final id = chatId?.trim();
+    if (id == null || id.isEmpty) return false;
+    return _scheduleEnabled && _scheduleChatId == id;
   }
 
   Future<void> load({UserConfigStore? store}) async {
@@ -131,6 +175,7 @@ class AgentAppSettings extends ChangeNotifier {
     _scheduleSymbols = const [];
     _scheduleUseInvestInterest = true;
     _scheduleLastRunAt = null;
+    _scheduleChatId = null;
     _answerMood = AgentAnswerMood.plain;
     _answerMoodNote = null;
   }
@@ -196,6 +241,10 @@ class AgentAppSettings extends ChangeNotifier {
     final last = json['scheduleLastRunAt'];
     _scheduleLastRunAt =
         last is String ? DateTime.tryParse(last) : null;
+    final chatIdRaw = json['scheduleChatId'];
+    _scheduleChatId = chatIdRaw is String && chatIdRaw.trim().isNotEmpty
+        ? chatIdRaw.trim()
+        : null;
     final moodRaw = json['answerMood'];
     _answerMood = AgentAnswerMoodX.parse(moodRaw is String ? moodRaw : null);
     final noteRaw = json['answerMoodNote'];
@@ -218,6 +267,7 @@ class AgentAppSettings extends ChangeNotifier {
         'scheduleUseInvestInterest': _scheduleUseInvestInterest,
         if (_scheduleLastRunAt != null)
           'scheduleLastRunAt': _scheduleLastRunAt!.toUtc().toIso8601String(),
+        if (_scheduleChatId != null) 'scheduleChatId': _scheduleChatId,
         'answerMood': _answerMood.name,
         if (_answerMoodNote != null) 'answerMoodNote': _answerMoodNote,
       };
@@ -285,6 +335,8 @@ class AgentAppSettings extends ChangeNotifier {
     AgentScheduleInterval? interval,
     List<String>? symbols,
     bool? useInvestInterest,
+    String? scheduleChatId,
+    bool clearScheduleChatId = false,
   }) async {
     _scheduleEnabled = enabled;
     if (interval != null) _scheduleInterval = interval;
@@ -294,6 +346,27 @@ class AgentAppSettings extends ChangeNotifier {
     if (useInvestInterest != null) {
       _scheduleUseInvestInterest = useInvestInterest;
     }
+    if (clearScheduleChatId) {
+      _scheduleChatId = null;
+    } else if (scheduleChatId != null && scheduleChatId.trim().isNotEmpty) {
+      _scheduleChatId = scheduleChatId.trim();
+    }
+    await _persist();
+    notifyListeners();
+  }
+
+  /// Clears the linked schedule chat id without changing enable/interval.
+  Future<void> clearScheduleChatId() async {
+    if (_scheduleChatId == null) return;
+    _scheduleChatId = null;
+    await _persist();
+    notifyListeners();
+  }
+
+  /// Disables Schedule and drops the linked chat id (chat delete / clear all).
+  Future<void> stopScheduleForDeletedChat() async {
+    _scheduleEnabled = false;
+    _scheduleChatId = null;
     await _persist();
     notifyListeners();
   }

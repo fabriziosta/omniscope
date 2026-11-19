@@ -28,7 +28,7 @@ git clone https://github.com/fabriziosta/omniscope.git
 cd omniscope
 make get                 # flutter pub get
 make hooks               # install pre-commit + pre-push (recommended)
-make check               # analyze + test
+make check               # analyze + test + linux release
 make run                 # DEVICE=linux by default
 # make run DEVICE=chrome
 ```
@@ -52,7 +52,7 @@ Add LLM / exchange keys in the app under **Settings → Connections** and
 ## Before you open a PR
 
 1. Branch from `main` with a short, descriptive name.
-2. Run `make check` (same as the pre-push hook: analyze + test).
+2. Run `make check` (same as the pre-push hook: analyze + test + Linux release compile).
 3. Keep the diff focused; update README / AGENTS.md / `docs/` when behavior,
    architecture, or setup/release procedures change.
 4. Do not commit secrets, large binaries, or generated `build/` output.
