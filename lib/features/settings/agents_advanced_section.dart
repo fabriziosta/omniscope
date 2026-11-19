@@ -136,8 +136,8 @@ class AgentsAdvancedSectionBody extends StatelessWidget {
               value: app.scheduleEnabled,
               onChanged: (v) async {
                 if (v) {
-                  await app.setSchedule(enabled: true);
                   final chats = context.read<AgentChatRepository>();
+                  await app.setSchedule(enabled: true);
                   await ScheduleChatBinding.ensureChat(
                     app: app,
                     chats: chats,

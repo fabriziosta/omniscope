@@ -218,7 +218,7 @@ class _MasterDetailShellState<T> extends State<MasterDetailShell<T>>
                   SizeTransition(
                     sizeFactor: _sizeFactor,
                     axis: Axis.horizontal,
-                    axisAlignment: -1,
+                    alignment: const Alignment(-1.0, -1.0),
                     child: _sidebarPanel(
                       context: context,
                       panelWidth: panelWidth,
