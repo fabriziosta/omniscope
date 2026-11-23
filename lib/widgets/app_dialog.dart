@@ -1,5 +1,4 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// App-standard modal: [showShadDialog] plus focus on the first text field.
@@ -19,8 +18,6 @@ Future<T?> showAppDialog<T>({
   String barrierLabel = '',
   RouteSettings? routeSettings,
   Offset? anchorPoint,
-  List<Effect<dynamic>>? animateIn,
-  List<Effect<dynamic>>? animateOut,
 }) {
   return showShadDialog<T>(
     context: context,
@@ -32,8 +29,6 @@ Future<T?> showAppDialog<T>({
     barrierLabel: barrierLabel,
     routeSettings: routeSettings,
     anchorPoint: anchorPoint,
-    animateIn: animateIn,
-    animateOut: animateOut,
     builder: (dialogContext) {
       final content = builder(dialogContext);
       if (!autofocusPrimaryInput) return content;

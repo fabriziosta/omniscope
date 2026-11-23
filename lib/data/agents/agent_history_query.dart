@@ -101,6 +101,6 @@ abstract final class AgentHistoryQuery {
     if (!intraday) return '$y-$m-$d';
     final hh = utc.hour.toString().padLeft(2, '0');
     final mm = utc.minute.toString().padLeft(2, '0');
-    return '$y-$m-$d ${hh}:$mm UTC';
+    return '$y-$m-$d $hh:$mm UTC';
   }
 }
