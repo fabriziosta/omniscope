@@ -724,9 +724,9 @@ class _StarterPromptList extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Tap a starter, edit the draft if you want, then Send. '
-                      'Market research works with a ticker or a topic; Trade '
-                      'check needs a symbol.',
+                      'Tap a starter, edit if needed, then Send. Market '
+                      'research can explore a topic; Trade check needs a '
+                      'ticker.',
                       style: theme.textTheme.muted,
                     ),
                     const SizedBox(height: 12),

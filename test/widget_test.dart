@@ -412,7 +412,7 @@ void main() {
     final tradeStarter = find.text('Trade check');
     await tester.scrollUntilVisible(
       tradeStarter,
-      120,
+      80,
       scrollable: find
           .descendant(
             of: find.byType(AgentChatScreen),
@@ -420,6 +420,8 @@ void main() {
           )
           .first,
     );
+    await tester.ensureVisible(tradeStarter);
+    await tester.pumpAndSettle();
     expect(tradeStarter, findsOneWidget);
     await tester.tap(tradeStarter);
     await tester.pumpAndSettle();
