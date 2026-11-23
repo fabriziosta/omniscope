@@ -290,9 +290,11 @@ class AgentRolePrompts {
     return roleId == 'portfolioGuide';
   }
 
-  /// Roles that can Run without a symbol (portfolio / venue / literacy-level).
+  /// Roles that can Run without a symbol (research discovery / portfolio /
+  /// venue / literacy-level). Trade check still requires a ticker.
   static bool allowsRunWithoutSymbol(String roleId) {
-    return roleId == 'liveBalanceExplainer' ||
+    return roleId == 'marketResearch' ||
+        roleId == 'liveBalanceExplainer' ||
         roleId == 'portfolioGuide' ||
         roleId == 'cryptoSpotGuide' ||
         roleId == 'marketsLiteracy';
@@ -415,7 +417,19 @@ class AgentRolePrompts {
     final sym = symbol.trim().toUpperCase();
     switch (roleId) {
       case 'marketResearch':
-        return 'Investigate $sym.';
+        if (sym.isNotEmpty) {
+          return 'Investigate $sym.';
+        }
+        if (forceOptionalSymbolPlaceholder) {
+          return 'Suggest investment ideas worth adding to Invest interest. '
+              'Use Mandate, the current Invest interest list, and Markets / '
+              'crypto catalogs — not invented listings. '
+              'Optional focus: $draftSymbolPlaceholder '
+              '(or delete that sentence).';
+        }
+        return 'Suggest investment ideas worth adding to Invest interest. '
+            'Use Mandate, the current Invest interest list, and Markets / '
+            'crypto catalogs — not invented listings.';
       case 'liveBalanceExplainer':
         final buf = StringBuffer('Explain my live balances.');
         if (sym.isNotEmpty) {

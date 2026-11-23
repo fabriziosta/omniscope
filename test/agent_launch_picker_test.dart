@@ -6,6 +6,7 @@ import 'package:omniscope/data/agents/agent_activity_repository.dart';
 import 'package:omniscope/data/agents/agent_app_settings.dart';
 import 'package:omniscope/data/agents/agent_chat_repository.dart';
 import 'package:omniscope/data/agents/agent_launch.dart';
+import 'package:omniscope/data/agents/agent_memory_repository.dart';
 import 'package:omniscope/data/agents/agent_role_catalog.dart';
 import 'package:omniscope/data/agents/agents_repository.dart';
 import 'package:omniscope/data/agents/genkit/genkit_agent_runner.dart';
@@ -14,6 +15,7 @@ import 'package:omniscope/data/agents/llm_runtime_settings.dart';
 import 'package:omniscope/data/agents/trade_proposal_repository.dart';
 import 'package:omniscope/data/crypto/crypto_exchange_registry.dart';
 import 'package:omniscope/data/market/market_data_client.dart';
+import 'package:omniscope/data/notifications/app_notification_repository.dart';
 import 'package:omniscope/data/portfolio/portfolio_repository.dart';
 import 'package:omniscope/data/settings/data_source_settings.dart';
 import 'package:omniscope/data/settings/env_secrets_repository.dart';
@@ -23,6 +25,7 @@ import 'package:omniscope/data/trading/broker_exchange_registry.dart';
 import 'package:omniscope/data/trading/trade_executor.dart';
 import 'package:omniscope/features/agents/agent_chat_screen.dart';
 import 'package:omniscope/features/agents/agent_launch_actions.dart';
+import 'package:omniscope/features/agents/agent_schedule_coordinator.dart';
 import 'package:omniscope/features/agents/agents_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -65,6 +68,10 @@ void main() {
     await favorites.load();
     final mandate = MandateSettings(store: store);
     await mandate.load();
+    final agentMemory = AgentMemoryRepository(store: store);
+    await agentMemory.load();
+    final notifications = AppNotificationRepository(store: store);
+    await notifications.load();
     final marketData = FakeMarketDataClient(
       emptyQuotes: true,
       emptyHistory: true,
@@ -78,9 +85,33 @@ void main() {
       portfolio: portfolio,
       marketData: marketData,
     );
+    final agentRunner = fakeGenkitAgentRunner();
+    final agentSchedule = AgentScheduleCoordinator(
+      agents: agents,
+      chats: agentChats,
+      marketData: marketData,
+      agentRunner: agentRunner,
+      tradeExecutor: tradeExecutor,
+      proposals: proposals,
+      activity: activity,
+      notifications: notifications,
+      cryptoRegistry: cryptoRegistry,
+      dataSources: dataSources,
+      portfolio: portfolio,
+      favorites: favorites,
+      secrets: secrets,
+      llmRuntime: llmRuntime,
+      appSettings: agentApp,
+      mandate: mandate,
+      agentMemory: agentMemory,
+      investInterestProposals: investInterest,
+    );
 
     await tester.binding.setSurfaceSize(const Size(390, 844));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+    addTearDown(() {
+      agentSchedule.dispose();
+      return tester.binding.setSurfaceSize(null);
+    });
 
     await tester.pumpWidget(
       MultiProvider(
@@ -97,6 +128,7 @@ void main() {
           ChangeNotifierProvider<LlmRuntimeSettings>.value(value: llmRuntime),
           ChangeNotifierProvider<AgentAppSettings>.value(value: agentApp),
           ChangeNotifierProvider<AgentChatRepository>.value(value: agentChats),
+          ChangeNotifierProvider<AgentMemoryRepository>.value(value: agentMemory),
           ChangeNotifierProvider<TradeProposalRepository>.value(
             value: proposals,
           ),
@@ -104,8 +136,12 @@ void main() {
           ChangeNotifierProvider<InvestInterestProposalRepository>.value(
             value: investInterest,
           ),
-          Provider<GenkitAgentRunner>.value(
-            value: fakeGenkitAgentRunner(),
+          ChangeNotifierProvider<AppNotificationRepository>.value(
+            value: notifications,
+          ),
+          Provider<GenkitAgentRunner>.value(value: agentRunner),
+          ChangeNotifierProvider<AgentScheduleCoordinator>.value(
+            value: agentSchedule,
           ),
           ChangeNotifierProvider<EnvSecretsRepository>.value(value: secrets),
           ChangeNotifierProvider<ShellNavigationController>(

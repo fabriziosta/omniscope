@@ -724,8 +724,9 @@ class _StarterPromptList extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Tap a starter, replace placeholders like SYMBOL, then '
-                      'Send.',
+                      'Tap a starter, edit the draft if you want, then Send. '
+                      'Market research works with a ticker or a topic; Trade '
+                      'check needs a symbol.',
                       style: theme.textTheme.muted,
                     ),
                     const SizedBox(height: 12),
