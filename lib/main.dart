@@ -9,12 +9,14 @@ import 'core/shell_navigation.dart';
 import 'data/agents/agent_activity_repository.dart';
 import 'data/agents/agent_app_settings.dart';
 import 'data/agents/agent_chat_repository.dart';
+import 'data/agents/agent_memory_repository.dart';
 import 'data/agents/agent_role_catalog.dart';
 import 'data/agents/agents_repository.dart';
 import 'data/agents/genkit/genkit_agent_runner.dart';
 import 'data/agents/invest_interest_proposal_repository.dart';
 import 'data/agents/llm_connection_status_store.dart';
 import 'data/agents/llm_model_catalog.dart';
+import 'data/agents/llm_model_router.dart';
 import 'data/agents/llm_runtime_settings.dart';
 import 'data/agents/trade_proposal_repository.dart';
 import 'data/crypto/crypto_exchange_registry.dart';
@@ -90,6 +92,9 @@ Future<void> main() async {
   await agentChats.load();
   await agentChats.migrateGlobalAutopilotIfNeeded(agentApp);
 
+  final agentMemory = AgentMemoryRepository(store: config);
+  await agentMemory.load();
+
   final tradeProposals = TradeProposalRepository(store: config);
   await tradeProposals.load();
 
@@ -117,6 +122,19 @@ Future<void> main() async {
     },
   );
   await envSecrets.load();
+
+  void syncConfigureAgentsReminder() {
+    appNotifications.setConfigureAgentsNeeded(
+      !LlmModelRouter.hasAnyEndpoint(
+        runtime: llmRuntime,
+        keys: envSecrets.llmKeys,
+      ),
+    );
+  }
+
+  envSecrets.addListener(syncConfigureAgentsReminder);
+  llmRuntime.addListener(syncConfigureAgentsReminder);
+  syncConfigureAgentsReminder();
 
   final equitiesRegistry = EquityDataSourceRegistry([
     EquityDataSourceEntry(
@@ -164,6 +182,7 @@ Future<void> main() async {
     llmRuntime: llmRuntime,
     appSettings: agentApp,
     mandate: mandate,
+    agentMemory: agentMemory,
     investInterestProposals: investInterestProposals,
   );
 
@@ -189,6 +208,7 @@ Future<void> main() async {
         ),
         ChangeNotifierProvider<AgentAppSettings>.value(value: agentApp),
         ChangeNotifierProvider<AgentChatRepository>.value(value: agentChats),
+        ChangeNotifierProvider<AgentMemoryRepository>.value(value: agentMemory),
         ChangeNotifierProvider<TradeProposalRepository>.value(
           value: tradeProposals,
         ),

@@ -13,6 +13,12 @@ enum AgentLaunchIntent {
 
   /// Allocation / diversification / practice sizing review (Practice and/or Live).
   explainPortfolio,
+
+  /// Crypto spot pair literacy (venue tickers, quote units).
+  explainCryptoSpot,
+
+  /// Markets instrument literacy (indices vs ETFs vs stocks).
+  explainMarketsLiteracy,
 }
 
 extension AgentLaunchIntentX on AgentLaunchIntent {
@@ -30,6 +36,12 @@ extension AgentLaunchIntentX on AgentLaunchIntent {
         AgentLaunchIntent.explainPortfolio => const [
             'portfolioGuide',
           ],
+        AgentLaunchIntent.explainCryptoSpot => const [
+            'cryptoSpotGuide',
+          ],
+        AgentLaunchIntent.explainMarketsLiteracy => const [
+            'marketsLiteracy',
+          ],
       };
 
   /// True when this intent can auto-run without a symbol.
@@ -40,12 +52,24 @@ extension AgentLaunchIntentX on AgentLaunchIntent {
         _ => false,
       };
 
+  /// True when this intent can draft without a required symbol.
+  bool get allowsOptionalSymbol => switch (this) {
+        AgentLaunchIntent.explainLive ||
+        AgentLaunchIntent.explainPortfolio ||
+        AgentLaunchIntent.explainCryptoSpot ||
+        AgentLaunchIntent.explainMarketsLiteracy =>
+          true,
+        _ => false,
+      };
+
   /// Primary CTA label when a single button is shown.
   String get ctaLabel => switch (this) {
         AgentLaunchIntent.investigate => 'Investigate',
         AgentLaunchIntent.tradeCheck => 'Trade check',
         AgentLaunchIntent.explainLive => 'Explain balances',
         AgentLaunchIntent.explainPortfolio => 'Review portfolio',
+        AgentLaunchIntent.explainCryptoSpot => 'Spot primer',
+        AgentLaunchIntent.explainMarketsLiteracy => 'Markets tutor',
       };
 
   /// Title for the new chat created when this intent is launched from a CTA.
@@ -66,6 +90,12 @@ extension AgentLaunchIntentX on AgentLaunchIntent {
       AgentLaunchIntent.explainLive => 'Explain balances for $portfolio',
       AgentLaunchIntent.explainPortfolio =>
         'Portfolio review for $portfolio',
+      AgentLaunchIntent.explainCryptoSpot => asset.isNotEmpty
+          ? 'Crypto spot primer for $asset'
+          : 'Crypto spot primer',
+      AgentLaunchIntent.explainMarketsLiteracy => asset.isNotEmpty
+          ? 'Markets tutor for $asset'
+          : 'Markets tutor',
     };
   }
 }

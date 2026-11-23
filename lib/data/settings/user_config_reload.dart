@@ -8,6 +8,7 @@ import 'theme_settings.dart';
 import 'user_config_store.dart';
 import '../agents/agent_app_settings.dart';
 import '../agents/agent_chat_repository.dart';
+import '../agents/agent_memory_repository.dart';
 import '../agents/agents_repository.dart';
 import '../agents/invest_interest_proposal_repository.dart';
 import '../agents/llm_runtime_settings.dart';
@@ -28,6 +29,7 @@ Future<void> reloadUserConfigConsumers({
   LlmRuntimeSettings? llmRuntime,
   AgentAppSettings? agentApp,
   MandateSettings? mandate,
+  AgentMemoryRepository? agentMemory,
   InvestInterestProposalRepository? investInterestProposals,
   TradeProposalRepository? tradeProposals,
   VenueCatalog? venues,
@@ -43,6 +45,7 @@ Future<void> reloadUserConfigConsumers({
   if (llmRuntime != null) await llmRuntime.load(store: config);
   if (agentApp != null) await agentApp.load(store: config);
   if (mandate != null) await mandate.load(store: config);
+  if (agentMemory != null) await agentMemory.load(store: config);
   if (investInterestProposals != null) {
     await investInterestProposals.load(store: config);
   }

@@ -5,9 +5,11 @@ import 'package:provider/provider.dart';
 
 import '../../core/app_copy.dart';
 import '../../core/fade_page_route.dart';
+import '../../data/agents/agent_launch.dart';
 import '../../data/crypto/crypto_exchange_client.dart';
 import '../../data/market/market_data_client.dart';
 import '../../data/settings/display_settings.dart';
+import '../../widgets/agent_launch_button.dart';
 import '../../widgets/app_empty_view.dart';
 import '../../widgets/master_detail_shell.dart';
 import '../../widgets/quote_list_tile.dart';
@@ -115,6 +117,12 @@ class _CryptoExchangePairsPaneViewState
           '${widget.displayName} spot USD pairs (public market data). '
           'Load more to browse additional instruments.',
       onOpenMenu: widget.onOpenMenu,
+      trailing: AgentLaunchButton(
+        intent: AgentLaunchIntent.explainCryptoSpot,
+        exchangeId: widget.exchangeId,
+        outline: true,
+        showTradeOption: false,
+      ),
       body: QuotesPagingErrorListener(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,

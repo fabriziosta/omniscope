@@ -7,6 +7,7 @@ import 'package:omniscope/core/shell_navigation.dart';
 import 'package:omniscope/data/agents/agent_activity_repository.dart';
 import 'package:omniscope/data/agents/agent_app_settings.dart';
 import 'package:omniscope/data/agents/agent_chat_repository.dart';
+import 'package:omniscope/data/agents/agent_memory_repository.dart';
 import 'package:omniscope/data/agents/agent_role_catalog.dart';
 import 'package:omniscope/data/agents/agents_repository.dart';
 import 'package:omniscope/data/agents/genkit/genkit_agent_runner.dart';
@@ -179,6 +180,8 @@ void main() {
     await agents.load(roleCatalog: agentRoles);
     final agentChats = AgentChatRepository(store: config);
     await agentChats.load();
+    final agentMemory = AgentMemoryRepository(store: config);
+    await agentMemory.load();
     final tradeProposals = TradeProposalRepository(store: config);
     await tradeProposals.load();
     final investInterestProposals =
@@ -271,6 +274,9 @@ void main() {
           ),
           ChangeNotifierProvider<AgentAppSettings>.value(value: agentApp),
           ChangeNotifierProvider<AgentChatRepository>.value(value: agentChats),
+          ChangeNotifierProvider<AgentMemoryRepository>.value(
+            value: agentMemory,
+          ),
           ChangeNotifierProvider<TradeProposalRepository>.value(
             value: tradeProposals,
           ),
@@ -425,15 +431,16 @@ void main() {
     await tester.tap(find.text('Settings').last);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    // Content-first: Appearance is the default section.
+    // Content-first: Appearance is the default section (expanded in sidebar).
     expect(find.text('System'), findsOneWidget);
     expect(find.text('Light'), findsOneWidget);
     expect(find.text('Dark'), findsOneWidget);
-    expect(find.text('Lists'), findsOneWidget);
+    // Subsection titles appear in the expanded sidebar and the body.
+    expect(find.text('Lists'), findsWidgets);
     expect(find.text('Comfortable'), findsOneWidget);
     expect(find.text('Compact'), findsWidgets);
-    expect(find.text('Numbers'), findsOneWidget);
-    expect(find.text('Charts'), findsOneWidget);
+    expect(find.text('Numbers'), findsWidgets);
+    expect(find.text('Charts'), findsWidgets);
     expect(find.text('Market providers'), findsNothing);
 
     // Switching to Settings auto-opens the nav drawer — do not toggle the
@@ -443,32 +450,80 @@ void main() {
     expect(find.text('Appearance'), findsWidgets);
     expect(find.text('Data sources'), findsOneWidget);
     expect(find.text('Connections'), findsOneWidget);
+    expect(find.text('Brightness'), findsWidgets);
 
+    // Header tap selects the section and expands subsections; nav stays open.
     await tester.tap(find.text('Data sources'));
     await tester.pumpAndSettle();
-    expect(find.text('Market providers'), findsOneWidget);
-    expect(find.text('Crypto venues'), findsOneWidget);
+    expect(find.text('Market providers'), findsWidgets);
+    expect(find.text('Crypto venues'), findsWidgets);
     expect(find.text('Yahoo Finance'), findsWidgets);
     expect(find.text('Crypto.com'), findsWidgets);
-    expect(find.text('Credentials'), findsOneWidget);
+    expect(find.text('Credentials'), findsWidgets);
     expect(find.text('System'), findsNothing);
+
+    // Subsection tap (sidebar row) scrolls into the body and closes the nav.
+    final settingsNav = find.byType(MasterDetailNavList);
+    final settingsNavScrollable = find.descendant(
+      of: settingsNav,
+      matching: find.byType(Scrollable),
+    );
+    final marketProvidersNav = find.descendant(
+      of: settingsNav,
+      matching: find.text('Market providers'),
+    );
+    await tester.ensureVisible(marketProvidersNav);
+    await tester.tap(marketProvidersNav);
+    await tester.pumpAndSettle();
+    // Nav closed — only the body label remains.
+    expect(find.text('Market providers'), findsOneWidget);
+    expect(find.text('Credentials'), findsOneWidget);
 
     tester
         .widget<MasterDetailMenuButton>(find.byType(MasterDetailMenuButton))
         .onPressed();
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Connections'));
-    await tester.tap(find.text('Connections'));
+    await tester.scrollUntilVisible(
+      find.descendant(of: settingsNav, matching: find.text('Connections')),
+      120,
+      scrollable: settingsNavScrollable.first,
+    );
+    await tester.tap(
+      find.descendant(of: settingsNav, matching: find.text('Connections')),
+    );
     await tester.pumpAndSettle();
-    expect(find.text('LLM API keys & models'), findsOneWidget);
+    // Connections expands; label in sidebar + body.
+    expect(find.text('LLM API keys & models'), findsWidgets);
     // Seeded OpenAI key from pumpApp — Connections should show configured state.
     expect(find.textContaining('ChatGPT'), findsWidgets);
 
+    // Subsection tap closes nav; reopen and return to Appearance.
+    await tester.tap(
+      find.descendant(
+        of: settingsNav,
+        matching: find.text('LLM API keys & models'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('LLM API keys & models'), findsOneWidget);
+
     tester
         .widget<MasterDetailMenuButton>(find.byType(MasterDetailMenuButton))
         .onPressed();
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Appearance').last);
+    await tester.scrollUntilVisible(
+      find.descendant(of: settingsNav, matching: find.text('Appearance')),
+      -120,
+      scrollable: settingsNavScrollable.first,
+    );
+    await tester.tap(
+      find.descendant(of: settingsNav, matching: find.text('Appearance')),
+    );
+    await tester.pumpAndSettle();
+    // Close nav via subsection so Dark chips are tappable.
+    await tester.tap(
+      find.descendant(of: settingsNav, matching: find.text('Brightness')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Dark'));
     await tester.pump();

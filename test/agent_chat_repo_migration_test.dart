@@ -25,6 +25,30 @@ void main() {
     expect(off.toJson().containsKey('autopilotEnabled'), isFalse);
   });
 
+  test('thread JSON defaults memoryEnabled on; persists off', () async {
+    final store = await memoryConfig();
+    final repo = AgentChatRepository(store: store);
+    await repo.load();
+    final created = await repo.createChat(title: 'Mem');
+    expect(created.memoryEnabled, isTrue);
+    expect(created.toJson().containsKey('memoryEnabled'), isFalse);
+
+    final toggled = await repo.setMemoryEnabled(created.chatId, enabled: false);
+    expect(toggled.memoryEnabled, isFalse);
+    expect(toggled.toJson()['memoryEnabled'], isFalse);
+
+    final again = AgentChatRepository(store: store);
+    await again.load();
+    expect(again.threadFor(created.chatId).memoryEnabled, isFalse);
+
+    await again.setMemoryEnabled(created.chatId, enabled: true);
+    expect(again.threadFor(created.chatId).memoryEnabled, isTrue);
+    expect(
+      again.threadFor(created.chatId).toJson().containsKey('memoryEnabled'),
+      isFalse,
+    );
+  });
+
   test('migrates legacy roleId threads to chatId', () async {
     final store = await memoryConfig();
     await store.setSlice(UserConfigKeys.agentChats, {

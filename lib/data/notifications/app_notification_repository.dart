@@ -6,12 +6,16 @@ import '../settings/user_config_store.dart';
 import 'app_notification.dart';
 
 /// Persisted shell attention inbox (scheduled Runs, Confirm prompts, Autopilot).
+///
+/// Also surfaces a virtual sticky [AppNotificationKind.configureAgents]
+/// reminder when no LLM API key is configured (not stored in the config slice).
 class AppNotificationRepository extends ChangeNotifier {
   AppNotificationRepository({this.store});
 
   UserConfigStore? store;
   List<AppNotification> _items = const [];
   bool _ready = false;
+  bool _configureAgentsNeeded = false;
 
   /// Cap on active + dismissed retained rows.
   static const maxStored = 80;
@@ -21,20 +25,40 @@ class AppNotificationRepository extends ChangeNotifier {
 
   bool get isReady => _ready;
 
+  /// Whether the sticky configure-Agents reminder should appear.
+  bool get configureAgentsNeeded => _configureAgentsNeeded;
+
   List<AppNotification> get items => List.unmodifiable(_items);
 
   List<AppNotification> get active => [
+        if (_configureAgentsNeeded) AppNotification.configureAgentsReminder(),
         for (final n in _items)
-          if (n.isActive) n,
+          if (n.isActive && !n.isSticky) n,
+      ];
+
+  /// Active rows the user can dismiss (excludes sticky setup reminder).
+  List<AppNotification> get dismissibleActive => [
+        for (final n in active)
+          if (!n.isSticky) n,
       ];
 
   int get unreadCount => active.where((n) => !n.read).length;
 
   AppNotification? byId(String id) {
+    if (_configureAgentsNeeded && id == AppNotification.configureAgentsId) {
+      return AppNotification.configureAgentsReminder();
+    }
     for (final n in _items) {
       if (n.id == id) return n;
     }
     return null;
+  }
+
+  /// Show or hide the sticky setup reminder (call when LLM keys/runtime change).
+  void setConfigureAgentsNeeded(bool needed) {
+    if (_configureAgentsNeeded == needed) return;
+    _configureAgentsNeeded = needed;
+    notifyListeners();
   }
 
   Future<void> load({UserConfigStore? store}) async {
@@ -45,7 +69,9 @@ class AppNotificationRepository extends ChangeNotifier {
       'items',
       (json) {
         final n = AppNotification.fromJson(json);
-        return n.id.isNotEmpty ? n : null;
+        // Sticky setup is virtual — drop any legacy persisted copies.
+        if (n.id.isEmpty || n.isSticky) return null;
+        return n;
       },
     );
     _ready = true;
@@ -55,6 +81,11 @@ class AppNotificationRepository extends ChangeNotifier {
   /// Enqueue [notification], replacing an active duplicate of the same
   /// role + symbol + kind (+ proposalId when set).
   Future<AppNotification> enqueue(AppNotification notification) async {
+    // Sticky setup reminder is virtual — never persist it.
+    if (notification.isSticky) {
+      setConfigureAgentsNeeded(true);
+      return AppNotification.configureAgentsReminder();
+    }
     final incoming = notification.copyWith(
       status: AppNotificationStatus.active,
     );
@@ -72,10 +103,11 @@ class AppNotificationRepository extends ChangeNotifier {
   }
 
   Future<void> markRead(String id) async {
+    if (id == AppNotification.configureAgentsId) return;
     final index = _items.indexWhere((n) => n.id == id);
     if (index < 0) return;
     final current = _items[index];
-    if (current.read) return;
+    if (current.isSticky || current.read) return;
     _items = List<AppNotification>.from(_items)
       ..[index] = current.copyWith(read: true);
     await _persist();
@@ -83,9 +115,11 @@ class AppNotificationRepository extends ChangeNotifier {
   }
 
   Future<void> dismiss(String id) async {
+    if (id == AppNotification.configureAgentsId) return;
     final index = _items.indexWhere((n) => n.id == id);
     if (index < 0) return;
     final current = _items[index];
+    if (current.isSticky) return;
     if (current.status == AppNotificationStatus.dismissed) return;
     _items = List<AppNotification>.from(_items)
       ..[index] = current.copyWith(
@@ -97,10 +131,10 @@ class AppNotificationRepository extends ChangeNotifier {
   }
 
   Future<void> dismissAll() async {
-    if (active.isEmpty) return;
+    if (dismissibleActive.isEmpty) return;
     _items = [
       for (final n in _items)
-        if (n.isActive)
+        if (n.isActive && !n.isSticky)
           n.copyWith(
             status: AppNotificationStatus.dismissed,
             read: true,
@@ -141,7 +175,7 @@ class AppNotificationRepository extends ChangeNotifier {
   void _trimExcessActive() {
     final activeIds = [
       for (final n in _items)
-        if (n.isActive) n.id,
+        if (n.isActive && !n.isSticky) n.id,
     ];
     if (activeIds.length <= maxActive) return;
     final drop = activeIds.sublist(maxActive).toSet();

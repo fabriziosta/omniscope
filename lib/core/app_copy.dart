@@ -29,8 +29,14 @@ abstract final class AppCopy {
       'Prices may be delayed — educational use only.';
 
   static const assetOverviewFallback =
-      'No short overview for this symbol yet. Use Investigate for a '
-      'plain-language research turn, or open the research links below.';
+      'No short overview for this symbol yet. Use Markets tutor for what '
+      'kind of instrument this is, Investigate for a research turn, or open '
+      'the research links below.';
+
+  static const assetOverviewCryptoFallback =
+      'No short overview for this spot pair yet. Use Spot primer to learn '
+      'how the ticker works, Investigate for a research turn, or open the '
+      'research links below.';
 
   static const filterQuotesHint = 'Filter by symbol…';
 

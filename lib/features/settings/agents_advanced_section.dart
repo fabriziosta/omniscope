@@ -4,17 +4,23 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../data/agents/agent_app_settings.dart';
 import '../../data/agents/agent_chat_repository.dart';
+import '../../data/agents/agent_memory.dart';
+import '../../data/agents/agent_memory_repository.dart';
 import '../../data/agents/agents_repository.dart';
 import '../../data/agents/models.dart';
 import '../../data/agents/schedule_chat_binding.dart';
 import '../../data/settings/favorites_repository.dart';
 import '../../data/trading/trade_executor.dart';
+import '../../widgets/app_confirm_dialog.dart';
 import '../../widgets/app_toast.dart';
 import 'settings_option_tiles.dart';
 
 /// Settings → Agents (advanced): mood, role enable, Autopilot, Schedule.
 class AgentsAdvancedSectionBody extends StatelessWidget {
-  const AgentsAdvancedSectionBody({super.key});
+  const AgentsAdvancedSectionBody({super.key, this.subsectionKeys});
+
+  /// Optional scroll anchors keyed by subsection id.
+  final Map<String, GlobalKey>? subsectionKeys;
 
   static final _moodOptions = [
     for (final mood in AgentAnswerMood.values) (mood, mood.label),
@@ -31,6 +37,7 @@ class AgentsAdvancedSectionBody extends StatelessWidget {
     final agents = context.watch<AgentsRepository>();
     final app = context.watch<AgentAppSettings>();
     final favorites = context.watch<FavoritesRepository>();
+    final memory = context.watch<AgentMemoryRepository>();
     final tradeExecutor = context.watch<TradeExecutor>();
 
     return Column(
@@ -42,8 +49,21 @@ class AgentsAdvancedSectionBody extends StatelessWidget {
           style: theme.textTheme.muted,
         ),
         const SizedBox(height: settingsSectionGap),
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
+          'Shared memory',
+          key: subsectionKeys?['sharedMemory'],
+          description:
+              'Durable facts shared across chats that have Memory on '
+              '(default). Agents may remember/forget during Runs; you can '
+              'edit here. Turn Memory off per chat from the Agents list or '
+              'chat header.',
+        ),
+        const SizedBox(height: 8),
+        _SharedMemoryEditor(memory: memory),
+        const SizedBox(height: 20),
+        SettingsSubsectionLabel(
           'Answer mood',
+          key: subsectionKeys?['answerMood'],
           description:
               'How agents phrase answers. Does not change Mandate risk rails.',
         ),
@@ -62,8 +82,9 @@ class AgentsAdvancedSectionBody extends StatelessWidget {
           onSave: app.setAnswerMoodNote,
         ),
         const SizedBox(height: 20),
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'Enabled specialties',
+          key: subsectionKeys?['specialties'],
           description:
               'Turn roles off to hide their starter prompts and keep them '
               'out of the orchestrator.',
@@ -78,8 +99,9 @@ class AgentsAdvancedSectionBody extends StatelessWidget {
           const SizedBox(height: 6),
         ],
         const SizedBox(height: 16),
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'Autopilot portfolio',
+          key: subsectionKeys?['autopilotPortfolio'],
           description:
               'Default target when a chat has Autopilot on (risk-approved '
               'trades auto-submit; investigation may auto-add Invest interest). '
@@ -118,8 +140,9 @@ class AgentsAdvancedSectionBody extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 20),
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'Schedule',
+          key: subsectionKeys?['schedule'],
           description:
               'While Omniscope is open, periodically Run research on Invest '
               'interest (or typed symbols) into one pinned Schedule chat. '
@@ -188,6 +211,184 @@ class AgentsAdvancedSectionBody extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+class _SharedMemoryEditor extends StatefulWidget {
+  const _SharedMemoryEditor({required this.memory});
+
+  final AgentMemoryRepository memory;
+
+  @override
+  State<_SharedMemoryEditor> createState() => _SharedMemoryEditorState();
+}
+
+class _SharedMemoryEditorState extends State<_SharedMemoryEditor> {
+  late final TextEditingController _controller;
+  var _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _add() async {
+    if (_saving) return;
+    final text = _controller.text;
+    setState(() => _saving = true);
+    try {
+      final fact = await widget.memory.addFact(
+        text,
+        source: AgentMemorySource.user,
+      );
+      if (!mounted) return;
+      if (fact == null) {
+        showAppToast(
+          context,
+          description:
+              'Enter a short fact (max ${AgentMemoryRepository.maxFactLength} '
+              'characters).',
+          destructive: true,
+        );
+        return;
+      }
+      _controller.clear();
+      showAppToast(context, description: 'Fact added to shared memory');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _clearAll() async {
+    final count = widget.memory.facts.length;
+    final ok = await confirmDestructiveAction(
+      context,
+      title: 'Clear shared memory?',
+      description: count == 0
+          ? 'Removes every shared memory fact. This cannot be undone.'
+          : 'Removes $count shared memory '
+              '${count == 1 ? 'fact' : 'facts'}. This cannot be undone.',
+      confirmLabel: 'Clear memory',
+    );
+    if (!ok || !mounted) return;
+    await widget.memory.clearAll();
+    if (!mounted) return;
+    showAppToast(context, description: 'Shared memory cleared');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final facts = widget.memory.facts;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (facts.isEmpty)
+          Text(
+            'No facts yet. Add one below or let agents remember during a Run.',
+            style: theme.textTheme.muted,
+          )
+        else
+          for (final fact in facts) ...[
+            _MemoryFactRow(
+              fact: fact,
+              onDelete: () => widget.memory.removeFact(fact.id),
+            ),
+            const SizedBox(height: 6),
+          ],
+        const SizedBox(height: 8),
+        ShadInput(
+          controller: _controller,
+          maxLength: AgentMemoryRepository.maxFactLength,
+          placeholder: const Text(
+            'e.g. Prefer ETFs; avoid leveraged products',
+          ),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ShadButton(
+              size: ShadButtonSize.sm,
+              onPressed: _saving ? null : _add,
+              child: Text(_saving ? 'Adding…' : 'Add fact'),
+            ),
+            if (facts.isNotEmpty)
+              ShadButton.outline(
+                size: ShadButtonSize.sm,
+                onPressed: _clearAll,
+                child: const Text('Clear all'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '${facts.length} / ${AgentMemoryRepository.maxFacts} facts',
+          style: theme.textTheme.muted.copyWith(fontSize: 11),
+        ),
+      ],
+    );
+  }
+}
+
+class _MemoryFactRow extends StatelessWidget {
+  const _MemoryFactRow({
+    required this.fact,
+    required this.onDelete,
+  });
+
+  final AgentMemoryFact fact;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: theme.colorScheme.border),
+        borderRadius: theme.radius,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(fact.text, style: theme.textTheme.small),
+                  const SizedBox(height: 4),
+                  ShadBadge.secondary(
+                    child: Text(fact.source.label),
+                  ),
+                ],
+              ),
+            ),
+            ShadButton.ghost(
+              size: ShadButtonSize.sm,
+              width: 36,
+              height: 36,
+              padding: EdgeInsets.zero,
+              onPressed: onDelete,
+              child: Icon(
+                LucideIcons.trash2,
+                size: 16,
+                color: theme.colorScheme.destructive,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -72,6 +72,7 @@ void main() {
     expect(doc[UserConfigKeys.llmRuntime], isA<Map>());
     expect(doc[UserConfigKeys.agentApp], isA<Map>());
     expect(doc[UserConfigKeys.agentChats], isA<Map>());
+    expect(doc[UserConfigKeys.agentMemory], isA<Map>());
     expect(doc[UserConfigKeys.tradeProposals], isA<Map>());
     expect(doc[UserConfigKeys.investInterestProposals], isA<Map>());
     expect(doc[UserConfigKeys.agentActivity], isA<Map>());

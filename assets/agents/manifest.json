@@ -61,6 +61,36 @@
         "grok": "grok-4.7"
       },
       "suggestionNote": "Prefer a heavier model for trading agents — stronger reasoning for risk and execution."
+    },
+    {
+      "id": "cryptoSpotGuide",
+      "title": "Crypto Spot Primer",
+      "description": "Plain-language intro to spot pairs, venue symbols, and quote units.",
+      "framework": "genkit",
+      "workload": "investigation",
+      "suggestedModels": {
+        "gemini": "gemini-3.5-flash-lite",
+        "openAi": "gpt-6-luna",
+        "anthropic": "claude-haiku-5-5",
+        "deepSeek": "deepseek-flash",
+        "grok": "grok-4.3"
+      },
+      "suggestionNote": "Prefer a lighter model for crypto literacy — faster and cheaper for teaching."
+    },
+    {
+      "id": "marketsLiteracy",
+      "title": "Markets & Instruments Tutor",
+      "description": "Plain-language tutor for indices vs ETFs vs stocks and how Markets is organized.",
+      "framework": "genkit",
+      "workload": "investigation",
+      "suggestedModels": {
+        "gemini": "gemini-3.5-flash-lite",
+        "openAi": "gpt-6-luna",
+        "anthropic": "claude-haiku-5-5",
+        "deepSeek": "deepseek-flash",
+        "grok": "grok-4.3"
+      },
+      "suggestionNote": "Prefer a lighter model for markets literacy — faster and cheaper for teaching."
     }
   ]
 }

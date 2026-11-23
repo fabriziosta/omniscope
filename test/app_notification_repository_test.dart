@@ -88,6 +88,61 @@ void main() {
       expect(repo.items, isEmpty);
     });
 
+    test('sticky configure-Agents reminder stays unread and undismissable',
+        () async {
+      final store = await memoryConfig();
+      final repo = AppNotificationRepository(store: store);
+      await repo.load();
+
+      expect(repo.active, isEmpty);
+      expect(repo.unreadCount, 0);
+
+      repo.setConfigureAgentsNeeded(true);
+      expect(repo.active, hasLength(1));
+      expect(repo.active.first.kind, AppNotificationKind.configureAgents);
+      expect(repo.active.first.read, isFalse);
+      expect(repo.unreadCount, 1);
+      expect(repo.dismissibleActive, isEmpty);
+
+      await repo.markRead(AppNotification.configureAgentsId);
+      expect(repo.active.first.read, isFalse);
+      expect(repo.unreadCount, 1);
+
+      await repo.dismiss(AppNotification.configureAgentsId);
+      expect(repo.active, hasLength(1));
+      expect(repo.unreadCount, 1);
+
+      await repo.enqueue(
+        AppNotification(
+          id: 'n_other',
+          kind: AppNotificationKind.scheduledRunCompleted,
+          roleId: 'marketResearch',
+          createdAt: DateTime.utc(2026, 7, 2),
+          title: 'Done',
+          body: 'AAPL',
+          symbol: 'AAPL',
+        ),
+      );
+      expect(repo.active, hasLength(2));
+      expect(repo.active.first.kind, AppNotificationKind.configureAgents);
+      expect(repo.unreadCount, 2);
+      expect(repo.dismissibleActive, hasLength(1));
+
+      await repo.dismissAll();
+      expect(repo.active, hasLength(1));
+      expect(repo.active.first.kind, AppNotificationKind.configureAgents);
+      expect(repo.unreadCount, 1);
+
+      await repo.clearAll();
+      expect(repo.items, isEmpty);
+      expect(repo.active, hasLength(1));
+      expect(repo.unreadCount, 1);
+
+      repo.setConfigureAgentsNeeded(false);
+      expect(repo.active, isEmpty);
+      expect(repo.unreadCount, 0);
+    });
+
     test('JSON round-trip via store', () async {
       final store = await memoryConfig();
       final repo = AppNotificationRepository(store: store);

@@ -10,6 +10,7 @@ import '../../core/shell_navigation.dart';
 import '../../data/agents/agent_activity_repository.dart';
 import '../../data/agents/agent_app_settings.dart';
 import '../../data/agents/agent_chat_repository.dart';
+import '../../data/agents/agent_memory_repository.dart';
 import '../../data/agents/agent_pnl_service.dart';
 import '../../data/agents/agent_role_prompts.dart';
 import '../../data/agents/agents_repository.dart';
@@ -40,11 +41,13 @@ import '../../widgets/app_text.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/app_tooltip.dart';
 import '../../widgets/autopilot_status_pill.dart';
+import '../../widgets/memory_status_pill.dart';
 import '../../widgets/portfolio_picker_dialog.dart';
 import '../../widgets/schedule_status_pill.dart';
 import '../../widgets/subscreen_app_bar.dart';
 import '../asset_detail/asset_detail_screen.dart';
 import 'agent_chat_controller.dart';
+import 'agent_schedule_coordinator.dart';
 
 class AgentChatScreen extends StatelessWidget {
   const AgentChatScreen({
@@ -82,27 +85,32 @@ class AgentChatScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (context) => AgentChatController(
-        chatId: chatId,
-        agents: context.read<AgentsRepository>(),
-        chats: context.read<AgentChatRepository>(),
-        marketData: context.read<MarketDataClient>(),
-        agentRunner: context.read<GenkitAgentRunner>(),
-        tradeExecutor: context.read<TradeExecutor>(),
-        proposals: context.read<TradeProposalRepository>(),
-        activity: context.read<AgentActivityRepository>(),
-        cryptoRegistry: context.read<CryptoExchangeRegistry>(),
-        brokerRegistry: context.read<BrokerExchangeRegistry>(),
-        dataSources: context.read<DataSourceSettings>(),
-        portfolio: context.read<PortfolioRepository>(),
-        secrets: context.read<EnvSecretsRepository>(),
-        llmRuntime: context.read<LlmRuntimeSettings>(),
-        appSettings: context.read<AgentAppSettings>(),
-        favorites: context.read<FavoritesRepository>(),
-        mandate: context.read<MandateSettings>(),
-        investInterestProposals:
-            context.read<InvestInterestProposalRepository>(),
-      ),
+      create: (context) {
+        final schedule = context.read<AgentScheduleCoordinator>();
+        return AgentChatController(
+          chatId: chatId,
+          agents: context.read<AgentsRepository>(),
+          chats: context.read<AgentChatRepository>(),
+          marketData: context.read<MarketDataClient>(),
+          agentRunner: context.read<GenkitAgentRunner>(),
+          tradeExecutor: context.read<TradeExecutor>(),
+          proposals: context.read<TradeProposalRepository>(),
+          activity: context.read<AgentActivityRepository>(),
+          cryptoRegistry: context.read<CryptoExchangeRegistry>(),
+          brokerRegistry: context.read<BrokerExchangeRegistry>(),
+          dataSources: context.read<DataSourceSettings>(),
+          portfolio: context.read<PortfolioRepository>(),
+          secrets: context.read<EnvSecretsRepository>(),
+          llmRuntime: context.read<LlmRuntimeSettings>(),
+          appSettings: context.read<AgentAppSettings>(),
+          favorites: context.read<FavoritesRepository>(),
+          mandate: context.read<MandateSettings>(),
+          agentMemory: context.read<AgentMemoryRepository>(),
+          investInterestProposals:
+              context.read<InvestInterestProposalRepository>(),
+          scheduleInFlight: () => schedule.isInFlight,
+        );
+      },
       child: _AgentChatView(
         chatId: chatId,
         initialSymbol: initialSymbol,
@@ -154,6 +162,7 @@ class _AgentChatViewState extends State<_AgentChatView> {
   void initState() {
     super.initState();
     _composer.addListener(_onComposerChanged);
+    _composerFocus.onKeyEvent = _onComposerKeyEvent;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _maybeAutoRun();
       _maybeDraftLaunch();
@@ -164,6 +173,23 @@ class _AgentChatViewState extends State<_AgentChatView> {
     if (_selectedStarterRoleId == null) return;
     if (_composer.text.trim().isNotEmpty) return;
     setState(() => _selectedStarterRoleId = null);
+  }
+
+  /// Enter sends; Shift+Enter inserts a newline (multiline composer).
+  KeyEventResult _onComposerKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final isEnter = event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter;
+    if (!isEnter) return KeyEventResult.ignored;
+    if (HardwareKeyboard.instance.isShiftPressed) {
+      return KeyEventResult.ignored;
+    }
+    if (!mounted) return KeyEventResult.handled;
+    final controller = context.read<AgentChatController>();
+    if (!controller.sending && controller.hasLlmEndpoint) {
+      _sendComposer();
+    }
+    return KeyEventResult.handled;
   }
 
   Future<void> _maybeAutoRun() async {
@@ -352,6 +378,21 @@ class _AgentChatViewState extends State<_AgentChatView> {
     );
   }
 
+  Future<void> _toggleMemory(AgentChatThread thread) async {
+    final next = !thread.memoryEnabled;
+    await context.read<AgentChatRepository>().setMemoryEnabled(
+          thread.chatId,
+          enabled: next,
+        );
+    if (!mounted) return;
+    showAppToast(
+      context,
+      description: next
+          ? 'Memory on for this chat'
+          : 'Memory off for this chat',
+    );
+  }
+
   Future<void> _confirmProposal(TradeProposal proposal) async {
     final controller = context.read<AgentChatController>();
     String? targetId = controller.resolveConfirmPortfolioId();
@@ -445,14 +486,29 @@ class _AgentChatViewState extends State<_AgentChatView> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   ScheduleStatusPill(chatId: widget.chatId),
-                  AppTooltip(
-                    message: thread.autopilotEnabled
-                        ? 'Autopilot on — tap to require Confirm'
-                        : 'Autopilot off — tap to auto-apply in this chat',
-                    child: AutopilotStatusPill(
-                      enabled: thread.autopilotEnabled,
-                      onTap: () => _toggleAutopilot(thread),
-                    ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      AppTooltip(
+                        message: thread.autopilotEnabled
+                            ? 'Autopilot on — tap to require Confirm'
+                            : 'Autopilot off — tap to auto-apply in this chat',
+                        child: AutopilotStatusPill(
+                          enabled: thread.autopilotEnabled,
+                          onTap: () => _toggleAutopilot(thread),
+                        ),
+                      ),
+                      AppTooltip(
+                        message: thread.memoryEnabled
+                            ? 'Memory on — shared facts for this chat'
+                            : 'Memory off — this chat ignores shared memory',
+                        child: MemoryStatusPill(
+                          enabled: thread.memoryEnabled,
+                          onTap: () => _toggleMemory(thread),
+                        ),
+                      ),
+                    ],
                   ),
                   if (thread.messages.isNotEmpty) ...[
                     const SizedBox(width: 4),
@@ -599,6 +655,7 @@ class _AgentChatViewState extends State<_AgentChatView> {
                             placeholder: const Text('Message…'),
                             minLines: 2,
                             maxLines: 5,
+                            textInputAction: TextInputAction.send,
                             onSubmitted: (_) {
                               if (!sending && ready) _sendComposer();
                             },
@@ -710,6 +767,8 @@ class _StarterPromptOption extends StatelessWidget {
         'liveBalanceExplainer' => LucideIcons.wallet,
         'portfolioGuide' => LucideIcons.pieChart,
         'intradayTrading' => LucideIcons.activity,
+        'cryptoSpotGuide' => LucideIcons.bitcoin,
+        'marketsLiteracy' => LucideIcons.bookOpen,
         _ => LucideIcons.messageSquare,
       };
 

@@ -204,6 +204,29 @@ class AgentChatRepository extends ChangeNotifier {
     return setAutopilotEnabled(chatId, enabled: !existing.autopilotEnabled);
   }
 
+  /// Enables or disables shared memory for one chat. Does not bump [updatedAt].
+  Future<AgentChatThread> setMemoryEnabled(
+    String chatId, {
+    required bool enabled,
+  }) async {
+    final existing = _state.byId(chatId);
+    if (existing == null) {
+      return _state.threadFor(chatId);
+    }
+    if (existing.memoryEnabled == enabled) return existing;
+    final next = existing.copyWith(memoryEnabled: enabled);
+    _state = _state.withThread(next);
+    await _persist();
+    notifyListeners();
+    return next;
+  }
+
+  Future<AgentChatThread> toggleMemoryEnabled(String chatId) async {
+    final existing = _state.byId(chatId);
+    if (existing == null) return _state.threadFor(chatId);
+    return setMemoryEnabled(chatId, enabled: !existing.memoryEnabled);
+  }
+
   Future<AgentChatThread> append({
     required String chatId,
     required AgentChatMessage message,
@@ -232,6 +255,7 @@ class AgentChatRepository extends ChangeNotifier {
       updatedAt: DateTime.now().toUtc(),
       pinned: existing.pinned,
       autopilotEnabled: existing.autopilotEnabled,
+      memoryEnabled: existing.memoryEnabled,
       legacyRoleId: existing.legacyRoleId,
     );
     _state = _state.withThread(thread);

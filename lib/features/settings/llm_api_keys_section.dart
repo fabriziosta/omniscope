@@ -10,6 +10,7 @@ import '../../data/agents/llm_model_catalog.dart';
 import '../../data/agents/llm_runtime_settings.dart';
 import '../../data/agents/models.dart';
 import '../../data/settings/env_secrets_repository.dart';
+import '../../widgets/app_dialog.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/app_tooltip.dart';
 import '../../widgets/overflow_actions_menu.dart';
@@ -17,7 +18,10 @@ import 'settings_option_tiles.dart';
 
 /// Lists every LLM provider: key + light/heavy model prefs.
 class LlmApiKeysSectionBody extends StatefulWidget {
-  const LlmApiKeysSectionBody({super.key});
+  const LlmApiKeysSectionBody({super.key, this.sectionKey});
+
+  /// Optional scroll anchor for the subsection label.
+  final GlobalKey? sectionKey;
 
   @override
   State<LlmApiKeysSectionBody> createState() => _LlmApiKeysSectionBodyState();
@@ -47,8 +51,9 @@ class _LlmApiKeysSectionBodyState extends State<LlmApiKeysSectionBody> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'LLM API keys & models',
+          key: widget.sectionKey,
           description:
               'Add keys for each provider you use. Pick a light model '
               '(research) and a heavy model (trading). Save or Test connection '
@@ -118,7 +123,7 @@ class _ProviderKeyRow extends StatelessWidget {
           provider: provider,
           catalog: catalog,
         );
-    final result = await showShadDialog<_KeyEditResult>(
+    final result = await showAppDialog<_KeyEditResult>(
       context: context,
       builder: (context) => _LlmApiKeyDialog(
         provider: provider,
@@ -471,6 +476,7 @@ class _LlmApiKeyDialogState extends State<_LlmApiKeyDialog> {
             const SizedBox(height: 6),
             ShadInput(
               controller: _controller,
+              autofocus: true,
               obscureText: true,
               placeholder: Text(envName),
             ),

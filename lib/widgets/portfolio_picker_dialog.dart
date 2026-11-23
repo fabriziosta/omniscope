@@ -2,13 +2,14 @@ import 'package:flutter/widgets.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../data/trading/trade_executor.dart';
+import 'app_dialog.dart';
 
 /// Asks the user to pick Practice or a live venue before Confirm.
 Future<String?> showPortfolioPickerDialog(
   BuildContext context, {
   required List<TradableVenue> venues,
 }) {
-  return showShadDialog<String>(
+  return showAppDialog<String>(
     context: context,
     builder: (context) => _PortfolioPickerDialog(venues: venues),
   );

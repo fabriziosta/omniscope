@@ -6,6 +6,7 @@ import '../../data/agents/agent_activity.dart';
 import '../../data/agents/agent_activity_repository.dart';
 import '../../data/agents/agent_app_settings.dart';
 import '../../data/agents/agent_chat_repository.dart';
+import '../../data/agents/agent_memory_repository.dart';
 import '../../data/agents/agent_role_prompts.dart';
 import '../../data/agents/agents_repository.dart';
 import '../../data/agents/genkit/genkit_agent_runner.dart';
@@ -45,6 +46,7 @@ class AgentScheduleCoordinator extends ChangeNotifier {
     required this._llmRuntime,
     required this._appSettings,
     this._mandate,
+    this._agentMemory,
     this._investInterestProposals,
     this.pollInterval = const Duration(seconds: 60),
   });
@@ -65,6 +67,7 @@ class AgentScheduleCoordinator extends ChangeNotifier {
   final LlmRuntimeSettings _llmRuntime;
   final AgentAppSettings _appSettings;
   final MandateSettings? _mandate;
+  final AgentMemoryRepository? _agentMemory;
   final InvestInterestProposalRepository? _investInterestProposals;
 
   final Duration pollInterval;
@@ -143,7 +146,9 @@ class AgentScheduleCoordinator extends ChangeNotifier {
         appSettings: _appSettings,
         favorites: _favorites,
         mandate: _mandate,
+        agentMemory: _agentMemory,
         investInterestProposals: _investInterestProposals,
+        scheduleInFlight: () => true,
       );
 
       final intervalLabel = _appSettings.scheduleInterval.shortLabel;

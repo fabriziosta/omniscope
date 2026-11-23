@@ -6,6 +6,7 @@ import 'package:omniscope/data/agents/agent_activity_repository.dart';
 import 'package:omniscope/data/agents/agent_app_settings.dart';
 import 'package:omniscope/data/agents/agent_chat_repository.dart';
 import 'package:omniscope/data/agents/agent_launch.dart';
+import 'package:omniscope/data/agents/agent_memory_repository.dart';
 import 'package:omniscope/data/agents/agent_role_catalog.dart';
 import 'package:omniscope/data/agents/agent_role_prompts.dart';
 import 'package:omniscope/data/agents/agents_repository.dart';
@@ -17,6 +18,7 @@ import 'package:omniscope/data/agents/trade_proposal_repository.dart';
 import 'package:omniscope/data/crypto/crypto_exchange_registry.dart';
 import 'package:omniscope/data/market/market_data_client.dart';
 import 'package:omniscope/data/market/models.dart';
+import 'package:omniscope/data/notifications/app_notification_repository.dart';
 import 'package:omniscope/data/portfolio/portfolio_repository.dart';
 import 'package:omniscope/data/settings/data_source_settings.dart';
 import 'package:omniscope/data/settings/env_secrets_repository.dart';
@@ -26,6 +28,7 @@ import 'package:omniscope/data/trading/broker_exchange_registry.dart';
 import 'package:omniscope/data/trading/trade_executor.dart';
 import 'package:omniscope/features/agents/agent_chat_screen.dart';
 import 'package:omniscope/features/agents/agent_launch_actions.dart';
+import 'package:omniscope/features/agents/agent_schedule_coordinator.dart';
 import 'package:omniscope/features/agents/agents_screen.dart';
 import 'package:omniscope/widgets/agent_launch_button.dart';
 import 'package:provider/provider.dart';
@@ -94,6 +97,22 @@ void main() {
       workload: AgentWorkload.trading,
       suggestedModels: {},
     ),
+    const AgentRoleDefinition(
+      id: 'cryptoSpotGuide',
+      title: 'Crypto Spot Primer',
+      description: 'Spot literacy',
+      framework: AgentFramework.genkit,
+      workload: AgentWorkload.investigation,
+      suggestedModels: {},
+    ),
+    const AgentRoleDefinition(
+      id: 'marketsLiteracy',
+      title: 'Markets & Instruments Tutor',
+      description: 'Markets literacy',
+      framework: AgentFramework.genkit,
+      workload: AgentWorkload.investigation,
+      suggestedModels: {},
+    ),
   ];
 
   group('AgentLaunchResolver', () {
@@ -138,6 +157,29 @@ void main() {
       expect(AgentLaunchIntent.explainPortfolio.isPortfolioLevel, isTrue);
     });
 
+    test('maps explainCryptoSpot to crypto spot guide', () {
+      final roles = AgentLaunchResolver.rolesForIntent(
+        availableRoles: sampleRoles,
+        intent: AgentLaunchIntent.explainCryptoSpot,
+      );
+      expect(roles.map((r) => r.id).toList(), ['cryptoSpotGuide']);
+      expect(AgentLaunchIntent.explainCryptoSpot.ctaLabel, 'Spot primer');
+      expect(AgentLaunchIntent.explainCryptoSpot.allowsOptionalSymbol, isTrue);
+    });
+
+    test('maps explainMarketsLiteracy to markets literacy', () {
+      final roles = AgentLaunchResolver.rolesForIntent(
+        availableRoles: sampleRoles,
+        intent: AgentLaunchIntent.explainMarketsLiteracy,
+      );
+      expect(roles.map((r) => r.id).toList(), ['marketsLiteracy']);
+      expect(AgentLaunchIntent.explainMarketsLiteracy.ctaLabel, 'Markets tutor');
+      expect(
+        AgentLaunchIntent.explainMarketsLiteracy.allowsOptionalSymbol,
+        isTrue,
+      );
+    });
+
     test('chatTitle uses asset and portfolio labels', () {
       expect(
         AgentLaunchIntent.investigate.chatTitle(symbol: 'AAPL'),
@@ -154,6 +196,14 @@ void main() {
       expect(
         AgentLaunchIntent.explainPortfolio.chatTitle(),
         'Portfolio review for Practice',
+      );
+      expect(
+        AgentLaunchIntent.explainCryptoSpot.chatTitle(symbol: 'BTC_USD'),
+        'Crypto spot primer for BTC_USD',
+      );
+      expect(
+        AgentLaunchIntent.explainMarketsLiteracy.chatTitle(),
+        'Markets tutor',
       );
     });
   });
@@ -180,6 +230,10 @@ void main() {
     await activity.load();
     final investInterest = InvestInterestProposalRepository(store: store);
     await investInterest.load();
+    final agentMemory = AgentMemoryRepository(store: store);
+    await agentMemory.load();
+    final notifications = AppNotificationRepository(store: store);
+    await notifications.load();
     final dataSources = DataSourceSettings(store: store);
     await dataSources.load();
     final portfolio = PortfolioRepository(store: store);
@@ -206,10 +260,31 @@ void main() {
         return 'Brief';
       },
     );
+    final agentSchedule = AgentScheduleCoordinator(
+      agents: agents,
+      chats: agentChats,
+      marketData: marketData,
+      agentRunner: agentRunner,
+      tradeExecutor: tradeExecutor,
+      proposals: proposals,
+      activity: activity,
+      notifications: notifications,
+      cryptoRegistry: cryptoRegistry,
+      dataSources: dataSources,
+      portfolio: portfolio,
+      favorites: favorites,
+      secrets: secrets,
+      llmRuntime: llmRuntime,
+      appSettings: agentApp,
+      mandate: mandate,
+      agentMemory: agentMemory,
+      investInterestProposals: investInterest,
+    );
     final shellNav = ShellNavigationController();
 
     await tester.binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() async {
+      agentSchedule.dispose();
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump();
       await tester.binding.setSurfaceSize(null);
@@ -230,6 +305,7 @@ void main() {
           ChangeNotifierProvider<LlmRuntimeSettings>.value(value: llmRuntime),
           ChangeNotifierProvider<AgentAppSettings>.value(value: agentApp),
           ChangeNotifierProvider<AgentChatRepository>.value(value: agentChats),
+          ChangeNotifierProvider<AgentMemoryRepository>.value(value: agentMemory),
           ChangeNotifierProvider<TradeProposalRepository>.value(
             value: proposals,
           ),
@@ -237,8 +313,14 @@ void main() {
           ChangeNotifierProvider<InvestInterestProposalRepository>.value(
             value: investInterest,
           ),
+          ChangeNotifierProvider<AppNotificationRepository>.value(
+            value: notifications,
+          ),
           ChangeNotifierProvider<EnvSecretsRepository>.value(value: secrets),
           Provider<GenkitAgentRunner>.value(value: agentRunner),
+          ChangeNotifierProvider<AgentScheduleCoordinator>.value(
+            value: agentSchedule,
+          ),
           ChangeNotifierProvider<ShellNavigationController>.value(
             value: shellNav,
           ),
@@ -361,6 +443,44 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text('Investigate'), findsWidgets);
+    expect(find.text('Trade check'), findsOneWidget);
+  });
+
+  testWidgets(
+      'Spot primer CTA shows Spot primer, Investigate, and Trade check',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      await tester.binding.setSurfaceSize(null);
+    });
+
+    await tester.pumpWidget(
+      ShadApp(
+        theme: ShadThemeData(
+          brightness: Brightness.light,
+          colorScheme: BrandColors.lightScheme(),
+        ),
+        home: const ColoredBox(
+          color: Color(0xFFFFFFFF),
+          child: Center(
+            child: AgentLaunchButton(
+              symbol: 'BTC_USD',
+              intent: AgentLaunchIntent.explainCryptoSpot,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Spot primer'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('Spot primer'), findsWidgets);
+    expect(find.text('Investigate'), findsOneWidget);
     expect(find.text('Trade check'), findsOneWidget);
   });
 

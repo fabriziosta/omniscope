@@ -70,6 +70,14 @@ void main() {
       AgentPeerDelegation.chatMetaLabel('marketResearch'),
       'Market Research',
     );
+    expect(
+      AgentPeerDelegation.chatMetaLabel('cryptoSpotGuide'),
+      'Crypto Spot',
+    );
+    expect(
+      AgentPeerDelegation.chatMetaLabel('marketsLiteracy'),
+      'Markets Literacy',
+    );
     expect(AgentPeerDelegation.chatMetaLabel('orchestrator'), 'Orchestrator');
   });
 

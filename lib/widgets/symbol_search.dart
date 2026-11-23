@@ -13,6 +13,7 @@ import '../data/portfolio/portfolio_repository.dart';
 import '../data/settings/data_source_settings.dart';
 import '../data/settings/favorites_repository.dart';
 import 'agent_launch_button.dart';
+import 'app_dialog.dart';
 import 'app_text.dart';
 import 'app_tooltip.dart';
 import 'tappable_nav_row.dart';
@@ -55,7 +56,7 @@ class SymbolSearchButton extends StatelessWidget {
 
 /// Shows curated symbol search; returns the selected symbol or null.
 Future<String?> showSymbolSearch(BuildContext context) {
-  return showShadDialog<String>(
+  return showAppDialog<String>(
     context: context,
     builder: (context) => const _SymbolSearchDialog(),
   );
@@ -70,7 +71,6 @@ class _SymbolSearchDialog extends StatefulWidget {
 
 class _SymbolSearchDialogState extends State<_SymbolSearchDialog> {
   final _controller = TextEditingController();
-  final _focusNode = FocusNode();
   Timer? _debounce;
   var _query = '';
   var _entries = <SymbolSearchEntry>[];
@@ -79,10 +79,9 @@ class _SymbolSearchDialogState extends State<_SymbolSearchDialog> {
   @override
   void initState() {
     super.initState();
+    // Focus comes from [showAppDialog]; bootstrap catalog after first frame.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      // Desktop: caret focus; mobile: open the soft keyboard.
-      _focusNode.requestFocus();
       unawaited(_bootstrap());
     });
   }
@@ -90,7 +89,6 @@ class _SymbolSearchDialogState extends State<_SymbolSearchDialog> {
   @override
   void dispose() {
     _debounce?.cancel();
-    _focusNode.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -188,7 +186,6 @@ class _SymbolSearchDialogState extends State<_SymbolSearchDialog> {
             constraints: const BoxConstraints(minHeight: 44),
             child: ShadInput(
               controller: _controller,
-              focusNode: _focusNode,
               autofocus: true,
               placeholder: const Text(AppCopy.symbolSearchHint),
               onChanged: _onQueryChanged,

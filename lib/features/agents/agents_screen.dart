@@ -10,11 +10,13 @@ import '../../data/agents/chat_models.dart';
 import '../../data/agents/llm_model_router.dart';
 import '../../data/agents/llm_runtime_settings.dart';
 import '../../data/settings/env_secrets_repository.dart';
+import '../../widgets/app_dialog.dart';
 import '../../widgets/app_empty_view.dart';
 import '../../widgets/app_text.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/app_tooltip.dart';
 import '../../widgets/autopilot_status_pill.dart';
+import '../../widgets/memory_status_pill.dart';
 import '../../widgets/master_detail_shell.dart';
 import '../../widgets/overflow_actions_menu.dart';
 import '../../widgets/schedule_status_pill.dart';
@@ -166,7 +168,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
 
   Future<void> _renameChat(AgentChatThread thread) async {
     final controller = TextEditingController(text: thread.title);
-    final next = await showShadDialog<String>(
+    final next = await showAppDialog<String>(
       context: context,
       builder: (context) => ShadDialog(
         title: const Text('Rename chat'),
@@ -184,6 +186,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
           constraints: const BoxConstraints(maxWidth: 420),
           child: ShadInput(
             controller: controller,
+            autofocus: true,
             placeholder: const Text('Chat name'),
             onSubmitted: (value) => Navigator.of(context).pop(value),
           ),
@@ -243,6 +246,21 @@ class _AgentsScreenState extends State<AgentsScreen> {
     );
   }
 
+  Future<void> _toggleMemory(AgentChatThread thread) async {
+    final next = !thread.memoryEnabled;
+    await context.read<AgentChatRepository>().setMemoryEnabled(
+          thread.chatId,
+          enabled: next,
+        );
+    if (!mounted) return;
+    showAppToast(
+      context,
+      description: next
+          ? 'Memory on for this chat'
+          : 'Memory off for this chat',
+    );
+  }
+
   Widget _buildSidebar({
     required List<AgentChatThread> threads,
     required bool ready,
@@ -288,6 +306,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
                         },
                         onTogglePin: () => _togglePin(thread),
                         onToggleAutopilot: () => _toggleAutopilot(thread),
+                        onToggleMemory: () => _toggleMemory(thread),
                         onRename: () => _renameChat(thread),
                         onDelete: () => _deleteChat(thread),
                       );
@@ -381,6 +400,7 @@ class _ChatNavTile extends StatelessWidget {
     required this.onOpen,
     required this.onTogglePin,
     required this.onToggleAutopilot,
+    required this.onToggleMemory,
     required this.onRename,
     required this.onDelete,
   });
@@ -390,6 +410,7 @@ class _ChatNavTile extends StatelessWidget {
   final VoidCallback onOpen;
   final Future<void> Function() onTogglePin;
   final Future<void> Function() onToggleAutopilot;
+  final Future<void> Function() onToggleMemory;
   final Future<void> Function() onRename;
   final Future<void> Function() onDelete;
 
@@ -464,8 +485,18 @@ class _ChatNavTile extends StatelessWidget {
                           runSpacing: 4,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            AutopilotStatusPill(
-                              enabled: thread.autopilotEnabled,
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                AutopilotStatusPill(
+                                  enabled: thread.autopilotEnabled,
+                                ),
+                                const SizedBox(height: 4),
+                                MemoryStatusPill(
+                                  enabled: thread.memoryEnabled,
+                                ),
+                              ],
                             ),
                             ScheduleStatusPill(chatId: thread.chatId),
                           ],
@@ -504,6 +535,16 @@ class _ChatNavTile extends StatelessWidget {
                         active: thread.autopilotEnabled,
                         onTap: () {
                           onToggleAutopilot();
+                        },
+                      ),
+                      OverflowAction(
+                        label: thread.memoryEnabled
+                            ? 'Memory off'
+                            : 'Memory on',
+                        icon: LucideIcons.brain,
+                        active: thread.memoryEnabled,
+                        onTap: () {
+                          onToggleMemory();
                         },
                       ),
                       OverflowAction(

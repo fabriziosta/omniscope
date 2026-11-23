@@ -150,6 +150,7 @@ class AgentChatThread {
     required this.updatedAt,
     this.pinned = false,
     this.autopilotEnabled = false,
+    this.memoryEnabled = true,
     this.legacyRoleId,
   });
 
@@ -164,6 +165,10 @@ class AgentChatThread {
   /// When true, risk-approved trades / add-only Invest interest auto-apply
   /// for this chat only (Confirm still gates other chats).
   final bool autopilotEnabled;
+
+  /// When true, this chat may read/write the shared agent memory store.
+  /// Default on; omit in JSON when true, write `false` when off.
+  final bool memoryEnabled;
 
   /// Present when migrated from a legacy per-role thread.
   final String? legacyRoleId;
@@ -195,6 +200,7 @@ class AgentChatThread {
     DateTime? updatedAt,
     bool? pinned,
     bool? autopilotEnabled,
+    bool? memoryEnabled,
     String? legacyRoleId,
     bool clearLegacyRoleId = false,
   }) {
@@ -205,6 +211,7 @@ class AgentChatThread {
       updatedAt: updatedAt ?? this.updatedAt,
       pinned: pinned ?? this.pinned,
       autopilotEnabled: autopilotEnabled ?? this.autopilotEnabled,
+      memoryEnabled: memoryEnabled ?? this.memoryEnabled,
       legacyRoleId:
           clearLegacyRoleId ? null : (legacyRoleId ?? this.legacyRoleId),
     );
@@ -217,6 +224,8 @@ class AgentChatThread {
         'updatedAt': updatedAt.toIso8601String(),
         if (pinned) 'pinned': true,
         if (autopilotEnabled) 'autopilotEnabled': true,
+        // Default on: only persist when explicitly off.
+        if (!memoryEnabled) 'memoryEnabled': false,
         if (legacyRoleId != null) 'legacyRoleId': legacyRoleId,
         // Keep roleId for older readers during transition.
         if (legacyRoleId != null) 'roleId': legacyRoleId,
@@ -255,6 +264,7 @@ class AgentChatThread {
           DateTime.fromMillisecondsSinceEpoch(0),
       pinned: json['pinned'] == true,
       autopilotEnabled: json['autopilotEnabled'] == true,
+      memoryEnabled: json['memoryEnabled'] != false,
       legacyRoleId: legacyRoleId,
     );
   }
@@ -263,6 +273,7 @@ class AgentChatThread {
     required String chatId,
     String title = 'New chat',
     bool autopilotEnabled = false,
+    bool memoryEnabled = true,
   }) {
     return AgentChatThread(
       chatId: chatId,
@@ -270,6 +281,7 @@ class AgentChatThread {
       messages: const [],
       updatedAt: DateTime.fromMillisecondsSinceEpoch(0),
       autopilotEnabled: autopilotEnabled,
+      memoryEnabled: memoryEnabled,
     );
   }
 

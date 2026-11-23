@@ -12,64 +12,9 @@ import 'data_privacy_section.dart';
 import 'data_sources_section.dart';
 import 'mandate_section.dart';
 import 'portfolios_section.dart';
+import 'settings_nav.dart';
 
-/// Sidebar destinations for Settings. Only one body is mounted at a time.
-enum SettingsNavSection {
-  appearance,
-  mandate,
-  dataSources,
-  portfolios,
-  connections,
-  agents,
-  dataAndPrivacy,
-}
-
-extension SettingsNavSectionX on SettingsNavSection {
-  String get title => switch (this) {
-        SettingsNavSection.appearance => 'Appearance',
-        SettingsNavSection.mandate => 'Mandate',
-        SettingsNavSection.dataSources => 'Data sources',
-        SettingsNavSection.portfolios => 'Portfolios',
-        SettingsNavSection.connections => 'Connections',
-        SettingsNavSection.agents => 'Agents',
-        SettingsNavSection.dataAndPrivacy => 'Data & privacy',
-      };
-
-  String get subtitle => switch (this) {
-        SettingsNavSection.appearance =>
-          'Brightness, color set, lists, numbers, charts',
-        SettingsNavSection.mandate =>
-          'Goal, universe, and risk rails for agents',
-        SettingsNavSection.dataSources =>
-          'Market providers, crypto venues, credentials',
-        SettingsNavSection.portfolios =>
-          'Practice cash and live connections',
-        SettingsNavSection.connections =>
-          'LLM keys, models, and exchange credentials',
-        SettingsNavSection.agents =>
-          'Answer mood, specialties, Autopilot, and schedule',
-        SettingsNavSection.dataAndPrivacy =>
-          'Config path, backup, and clear local data',
-      };
-
-  IconData get icon => switch (this) {
-        SettingsNavSection.appearance => LucideIcons.palette,
-        SettingsNavSection.mandate => LucideIcons.crosshair,
-        SettingsNavSection.dataSources => LucideIcons.database,
-        SettingsNavSection.portfolios => LucideIcons.wallet,
-        SettingsNavSection.connections => LucideIcons.plug,
-        SettingsNavSection.agents => LucideIcons.sparkles,
-        SettingsNavSection.dataAndPrivacy => LucideIcons.shield,
-      };
-
-  static SettingsNavSection? tryParse(String? id) {
-    if (id == null || id.isEmpty) return null;
-    for (final s in SettingsNavSection.values) {
-      if (s.name == id) return s;
-    }
-    return null;
-  }
-}
+export 'settings_nav.dart' show SettingsNavSection, SettingsNavSubsection;
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -82,8 +27,25 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   SettingsNavSection _selected = SettingsNavSection.appearance;
+  late final Set<SettingsNavSection> _expanded = {_selected};
+  String? _focusedSubsectionId;
+
+  final ScrollController _contentScroll = ScrollController();
+  final Map<String, GlobalKey> _subsectionKeys = {};
 
   ShellNavigationController? _shellNav;
+
+  GlobalKey _keyFor(SettingsNavSection section, String subsectionId) {
+    final id = '${section.name}.$subsectionId';
+    return _subsectionKeys.putIfAbsent(id, GlobalKey.new);
+  }
+
+  Map<String, GlobalKey> _keysFor(SettingsNavSection section) {
+    return {
+      for (final sub in section.subsections)
+        sub.id: _keyFor(section, sub.id),
+    };
+  }
 
   @override
   void didChangeDependencies() {
@@ -102,6 +64,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void dispose() {
     _shellNav?.removeListener(_onShellNavChanged);
+    _contentScroll.dispose();
     super.dispose();
   }
 
@@ -121,32 +84,106 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (raw == 'dataFile' || raw == 'privacy') {
       section = SettingsNavSection.dataAndPrivacy;
     } else {
-      for (final s in SettingsNavSection.values) {
-        if (s.name == raw) {
-          section = s;
-          break;
-        }
-      }
+      section = SettingsNavSectionX.tryParse(raw);
     }
     if (section == null) return;
     _select(section);
   }
 
-  void _select(SettingsNavSection section) {
-    setState(() => _selected = section);
+  void _select(SettingsNavSection section, {String? subsectionId}) {
+    setState(() {
+      _selected = section;
+      _expanded.add(section);
+      _focusedSubsectionId = subsectionId;
+    });
+
+    if (subsectionId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToSubsection(section, subsectionId);
+      });
+    } else if (_contentScroll.hasClients) {
+      _contentScroll.jumpTo(0);
+    }
+  }
+
+  void _onHeaderTap(SettingsNavSection section) {
+    final wasSelected = _selected == section;
+    final wasExpanded = _expanded.contains(section);
+    setState(() {
+      _selected = section;
+      _focusedSubsectionId = null;
+      if (wasSelected && wasExpanded) {
+        _expanded.remove(section);
+      } else {
+        _expanded.add(section);
+      }
+    });
+    if (_contentScroll.hasClients) {
+      _contentScroll.jumpTo(0);
+    }
+  }
+
+  void _onSubsectionTap(
+    SettingsNavSection section,
+    SettingsNavSubsection sub, {
+    required VoidCallback closeNav,
+  }) {
+    _select(section, subsectionId: sub.id);
+    closeNav();
+  }
+
+  void _scrollToSubsection(SettingsNavSection section, String subsectionId) {
+    if (!mounted) return;
+    final key = _keyFor(section, subsectionId);
+    final ctx = key.currentContext;
+    if (ctx == null) {
+      // Body may still be mounting after a section switch.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final retry = key.currentContext;
+        if (retry == null) return;
+        Scrollable.ensureVisible(
+          retry,
+          alignment: 0.05,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+        );
+      });
+      return;
+    }
+    Scrollable.ensureVisible(
+      ctx,
+      alignment: 0.05,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   Widget _bodyFor(SettingsNavSection section) {
+    final keys = _keysFor(section);
     return switch (section) {
-      SettingsNavSection.appearance => const AppearanceSectionBody(),
-      SettingsNavSection.mandate => const MandateSectionBody(),
-      SettingsNavSection.dataSources => const DataSourcesSectionBody(),
+      SettingsNavSection.appearance => AppearanceSectionBody(
+          subsectionKeys: keys,
+        ),
+      SettingsNavSection.mandate => MandateSectionBody(
+          subsectionKeys: keys,
+        ),
+      SettingsNavSection.dataSources => DataSourcesSectionBody(
+          subsectionKeys: keys,
+        ),
       SettingsNavSection.portfolios => PortfoliosSectionBody(
+          subsectionKeys: keys,
           onOpenDataSources: () => _select(SettingsNavSection.dataSources),
         ),
-      SettingsNavSection.connections => const ConnectionsSectionBody(),
-      SettingsNavSection.agents => const AgentsAdvancedSectionBody(),
-      SettingsNavSection.dataAndPrivacy => const DataPrivacySectionBody(),
+      SettingsNavSection.connections => ConnectionsSectionBody(
+          subsectionKeys: keys,
+        ),
+      SettingsNavSection.agents => AgentsAdvancedSectionBody(
+          subsectionKeys: keys,
+        ),
+      SettingsNavSection.dataAndPrivacy => DataPrivacySectionBody(
+          subsectionKeys: keys,
+        ),
     };
   }
 
@@ -160,14 +197,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return MasterDetailNavList(
           tiles: [
             for (final section in SettingsNavSection.values)
-              MasterDetailNavTile(
-                title: section.title,
-                icon: section.icon,
+              SettingsNavExpandableGroup(
+                section: section,
+                expanded: _expanded.contains(section),
                 selected: highlighted == section,
-                onTap: () {
-                  _select(section);
-                  closeNav();
-                },
+                focusedSubsectionId:
+                    highlighted == section ? _focusedSubsectionId : null,
+                onHeaderTap: () => _onHeaderTap(section),
+                onSubsectionTap: (sub) => _onSubsectionTap(
+                  section,
+                  sub,
+                  closeNav: closeNav,
+                ),
               ),
           ],
           footer: Text(
@@ -186,6 +227,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           subtitle: section.subtitle,
           onOpenMenu: onOpenMenu,
           body: ListView(
+            controller: _contentScroll,
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
             children: [
               KeyedSubtree(

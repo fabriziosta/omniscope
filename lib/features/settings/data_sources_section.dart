@@ -11,11 +11,15 @@ import '../../data/trading/broker_exchange_registry.dart';
 import '../../data/venues/venue_catalog.dart';
 import '../../data/venues/venue_credential_schema.dart';
 import '../../data/venues/venue_trading_mode.dart';
+import '../../widgets/app_dialog.dart';
 import '../../widgets/app_toast.dart';
 import 'settings_option_tiles.dart';
 
 class DataSourcesSectionBody extends StatelessWidget {
-  const DataSourcesSectionBody({super.key});
+  const DataSourcesSectionBody({super.key, this.subsectionKeys});
+
+  /// Optional scroll anchors keyed by subsection id.
+  final Map<String, GlobalKey>? subsectionKeys;
 
   @override
   Widget build(BuildContext context) {
@@ -29,8 +33,9 @@ class DataSourcesSectionBody extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'Market providers',
+          key: subsectionKeys?['marketProviders'],
           description:
               'Choose which sources fetch indices, ETFs, and stocks. '
               'More providers can be added later.',
@@ -56,8 +61,9 @@ class DataSourcesSectionBody extends StatelessWidget {
             ),
           ],
         const SizedBox(height: settingsSectionGap),
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'Crypto venues',
+          key: subsectionKeys?['cryptoVenues'],
           description:
               'Choose which exchanges appear under Markets and supply live '
               'quotes. Credentials below unlock Live balances and trading.',
@@ -86,8 +92,9 @@ class DataSourcesSectionBody extends StatelessWidget {
             ),
           ],
         const SizedBox(height: settingsSectionGap),
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'Brokers',
+          key: subsectionKeys?['brokers'],
           description:
               'Equity brokers for Live portfolio balances and agent Confirm / '
               'Autopilot. Quotes still come from market providers above.',
@@ -116,8 +123,9 @@ class DataSourcesSectionBody extends StatelessWidget {
             ),
           ],
         const SizedBox(height: settingsSectionGap),
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'Credentials',
+          key: subsectionKeys?['credentials'],
           description:
               'Optional. Key + secret unlock Live balances on Portfolio and '
               'live order placement for agent Confirm / Autopilot. '
@@ -141,7 +149,7 @@ class _VenueCredentialsCard extends StatelessWidget {
   Future<void> _openEditor(BuildContext context) async {
     final secrets = context.read<EnvSecretsRepository>();
     final initial = secrets.exchangeCredentialsFor(schema.venueId);
-    final result = await showShadDialog<_VenueCredsResult>(
+    final result = await showAppDialog<_VenueCredsResult>(
       context: context,
       builder: (context) => _VenueCredentialsDialog(
         schema: schema,
@@ -366,6 +374,7 @@ class _VenueCredentialsDialogState extends State<_VenueCredentialsDialog> {
                 const SizedBox(height: 6),
                 ShadInput(
                   controller: _apiKeyController,
+                  autofocus: true,
                   obscureText: true,
                   placeholder: Text(schema.apiKeyEnvName),
                 ),
@@ -376,6 +385,7 @@ class _VenueCredentialsDialogState extends State<_VenueCredentialsDialog> {
                 const SizedBox(height: 6),
                 ShadInput(
                   controller: _apiSecretController,
+                  autofocus: !schema.requiresApiKey,
                   obscureText: true,
                   placeholder: Text(schema.apiSecretEnvName),
                 ),
@@ -391,6 +401,8 @@ class _VenueCredentialsDialogState extends State<_VenueCredentialsDialog> {
                 const SizedBox(height: 6),
                 ShadInput(
                   controller: _apiTokenController,
+                  autofocus:
+                      !schema.requiresApiKey && !schema.requiresApiSecret,
                   obscureText: true,
                   placeholder: Text(schema.apiTokenEnvName),
                 ),

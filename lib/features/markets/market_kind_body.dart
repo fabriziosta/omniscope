@@ -6,11 +6,13 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../core/app_copy.dart';
 import '../../core/fade_page_route.dart';
+import '../../data/agents/agent_launch.dart';
 import '../../data/market/equity_data_source.dart';
 import '../../data/market/market_data_client.dart';
 import '../../data/market/models.dart';
 import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/display_settings.dart';
+import '../../widgets/agent_launch_button.dart';
 import '../../widgets/app_empty_view.dart';
 import '../../widgets/app_text.dart';
 import '../../widgets/master_detail_shell.dart';
@@ -127,6 +129,10 @@ class _MarketKindPaneViewState extends State<_MarketKindPaneView> {
       subtitle:
           'Grouped by exchange. Load more for the next page of symbols.',
       onOpenMenu: widget.onOpenMenu,
+      trailing: const AgentLaunchButton(
+        intent: AgentLaunchIntent.explainMarketsLiteracy,
+        outline: true,
+      ),
       body: enabledEquities.isEmpty
           ? const AppEmptyView(AppCopy.noMarketSourcesEnabled)
           : QuotesPagingErrorListener(

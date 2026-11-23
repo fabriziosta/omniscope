@@ -10,7 +10,10 @@ import 'settings_option_tiles.dart';
 
 /// Settings → Mandate: user policy agents must respect.
 class MandateSectionBody extends StatefulWidget {
-  const MandateSectionBody({super.key});
+  const MandateSectionBody({super.key, this.subsectionKeys});
+
+  /// Optional scroll anchors keyed by subsection id.
+  final Map<String, GlobalKey>? subsectionKeys;
 
   @override
   State<MandateSectionBody> createState() => _MandateSectionBodyState();
@@ -239,8 +242,9 @@ class _MandateSectionBodyState extends State<MandateSectionBody> {
           style: theme.textTheme.muted,
         ),
         const SizedBox(height: settingsSectionGap),
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'Goal',
+          key: widget.subsectionKeys?['goal'],
           description: 'What agents should optimize for.',
         ),
         const SizedBox(height: 8),
@@ -251,8 +255,9 @@ class _MandateSectionBodyState extends State<MandateSectionBody> {
           hintFor: (goal) => goal.description,
         ),
         const SizedBox(height: settingsSectionGap),
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'Horizon',
+          key: widget.subsectionKeys?['horizon'],
           description: 'How far ahead agents should think.',
         ),
         const SizedBox(height: 8),
@@ -263,8 +268,9 @@ class _MandateSectionBodyState extends State<MandateSectionBody> {
           hintFor: (horizon) => horizon.description,
         ),
         const SizedBox(height: settingsSectionGap),
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'Universe',
+          key: widget.subsectionKeys?['universe'],
           description: 'Which assets agents may put in Invest interest.',
         ),
         const SizedBox(height: 8),
@@ -275,8 +281,9 @@ class _MandateSectionBodyState extends State<MandateSectionBody> {
           hintFor: (universe) => universe.description,
         ),
         const SizedBox(height: settingsSectionGap),
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'Preferred cadence',
+          key: widget.subsectionKeys?['cadence'],
           description:
               'Suggested schedule interval when connecting agents. '
               'Does not change existing connections.',
@@ -290,8 +297,9 @@ class _MandateSectionBodyState extends State<MandateSectionBody> {
               'About every ${interval.label.toLowerCase()}',
         ),
         const SizedBox(height: settingsSectionGap),
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'Risk rails',
+          key: widget.subsectionKeys?['riskRails'],
           description:
               'Hard caps for Invest interest size, Autopilot fills per day '
               '(UTC), optional daily loss stop, and max notional per order.',

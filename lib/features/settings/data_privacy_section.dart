@@ -6,6 +6,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import '../../data/agents/agent_activity_repository.dart';
 import '../../data/agents/agent_app_settings.dart';
 import '../../data/agents/agent_chat_repository.dart';
+import '../../data/agents/agent_memory_repository.dart';
 import '../../data/agents/agents_repository.dart';
 import '../../data/agents/invest_interest_proposal_repository.dart';
 import '../../data/agents/llm_runtime_settings.dart';
@@ -23,13 +24,17 @@ import '../../data/settings/user_config_reload.dart';
 import '../../data/settings/user_config_store.dart';
 import '../../data/venues/venue_catalog.dart';
 import '../../widgets/app_confirm_dialog.dart';
+import '../../widgets/app_dialog.dart';
 import '../../widgets/app_toast.dart';
 import 'portfolio_actions.dart';
 import 'settings_option_tiles.dart';
 
 /// Config file location, backup, and clear-local-data actions.
 class DataPrivacySectionBody extends StatefulWidget {
-  const DataPrivacySectionBody({super.key});
+  const DataPrivacySectionBody({super.key, this.subsectionKeys});
+
+  /// Optional scroll anchors keyed by subsection id.
+  final Map<String, GlobalKey>? subsectionKeys;
 
   @override
   State<DataPrivacySectionBody> createState() => _DataPrivacySectionBodyState();
@@ -68,6 +73,7 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
       llmRuntime: context.read<LlmRuntimeSettings>(),
       agentApp: context.read<AgentAppSettings>(),
       mandate: context.read<MandateSettings>(),
+      agentMemory: context.read<AgentMemoryRepository>(),
       investInterestProposals:
           context.read<InvestInterestProposalRepository>(),
       tradeProposals: context.read<TradeProposalRepository>(),
@@ -134,7 +140,7 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
 
   Future<void> _import() async {
     final controller = TextEditingController();
-    final ok = await showShadDialog<bool>(
+    final ok = await showAppDialog<bool>(
       context: context,
       builder: (context) => ShadDialog(
         title: const Text('Import data file'),
@@ -156,6 +162,7 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
           constraints: const BoxConstraints(maxWidth: 480),
           child: ShadInput(
             controller: controller,
+            autofocus: true,
             placeholder: const Text('Paste JSON…'),
             maxLines: 8,
           ),
@@ -315,6 +322,30 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
     );
   }
 
+  Future<void> _clearSharedMemory() async {
+    final memory = context.read<AgentMemoryRepository>();
+    final count = memory.facts.length;
+    final ok = await confirmDestructiveAction(
+      context,
+      title: 'Clear shared memory?',
+      description: count == 0
+          ? 'Removes every shared agent-memory fact from the data file. '
+              'Chat history is kept. This cannot be undone.'
+          : 'Removes $count shared memory '
+              '${count == 1 ? 'fact' : 'facts'} from the data file. '
+              'Chat history is kept. This cannot be undone.',
+      confirmLabel: 'Clear memory',
+    );
+    if (!ok || !mounted) return;
+    await memory.clearAll();
+    if (!mounted) return;
+    showAppToast(
+      context,
+      title: 'Shared memory cleared',
+      description: 'Agent memory facts were removed from this device.',
+    );
+  }
+
   Future<void> _clearExchangeCredentials() async {
     final secrets = context.read<EnvSecretsRepository>();
     final venues = context.read<VenueCatalog>();
@@ -375,7 +406,10 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
           style: theme.textTheme.muted,
         ),
         const SizedBox(height: 16),
-        const SettingsSubsectionLabel('Data file location'),
+        SettingsSubsectionLabel(
+          'Data file location',
+          key: widget.subsectionKeys?['dataFile'],
+        ),
         const SizedBox(height: 8),
         if (config.supportsCustomPath) ...[
           ShadInput(
@@ -413,7 +447,10 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
           ),
 
         const SizedBox(height: 16),
-        const SettingsSubsectionLabel('Backup'),
+        SettingsSubsectionLabel(
+          'Backup',
+          key: widget.subsectionKeys?['backup'],
+        ),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -435,7 +472,10 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
           style: theme.textTheme.muted,
         ),
         const SizedBox(height: 16),
-        const SettingsSubsectionLabel('Favorites'),
+        SettingsSubsectionLabel(
+          'Favorites',
+          key: widget.subsectionKeys?['favorites'],
+        ),
         const SizedBox(height: 8),
         Align(
           alignment: Alignment.centerLeft,
@@ -445,7 +485,10 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
           ),
         ),
         const SizedBox(height: 16),
-        const SettingsSubsectionLabel('Invest interest'),
+        SettingsSubsectionLabel(
+          'Invest interest',
+          key: widget.subsectionKeys?['investInterest'],
+        ),
         const SizedBox(height: 8),
         Align(
           alignment: Alignment.centerLeft,
@@ -455,7 +498,23 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
           ),
         ),
         const SizedBox(height: 16),
-        const SettingsSubsectionLabel('Agent chats'),
+        SettingsSubsectionLabel(
+          'Shared memory',
+          key: widget.subsectionKeys?['sharedMemory'],
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: ShadButton.outline(
+            onPressed: _clearSharedMemory,
+            child: const Text('Clear shared memory'),
+          ),
+        ),
+        const SizedBox(height: 16),
+        SettingsSubsectionLabel(
+          'Agent chats',
+          key: widget.subsectionKeys?['agentChats'],
+        ),
         const SizedBox(height: 8),
         Align(
           alignment: Alignment.centerLeft,
@@ -465,7 +524,10 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
           ),
         ),
         const SizedBox(height: 16),
-        const SettingsSubsectionLabel('Trade activity'),
+        SettingsSubsectionLabel(
+          'Trade activity',
+          key: widget.subsectionKeys?['tradeActivity'],
+        ),
         const SizedBox(height: 8),
         Align(
           alignment: Alignment.centerLeft,
@@ -475,7 +537,10 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
           ),
         ),
         const SizedBox(height: 16),
-        const SettingsSubsectionLabel('LLM & agents'),
+        SettingsSubsectionLabel(
+          'LLM & agents',
+          key: widget.subsectionKeys?['llmAgents'],
+        ),
         const SizedBox(height: 8),
         Align(
           alignment: Alignment.centerLeft,
@@ -485,7 +550,10 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
           ),
         ),
         const SizedBox(height: 16),
-        const SettingsSubsectionLabel('Practice holdings'),
+        SettingsSubsectionLabel(
+          'Practice holdings',
+          key: widget.subsectionKeys?['practiceHoldings'],
+        ),
         const SizedBox(height: 8),
         Align(
           alignment: Alignment.centerLeft,
@@ -495,7 +563,10 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
           ),
         ),
         const SizedBox(height: 16),
-        const SettingsSubsectionLabel('Exchange credentials'),
+        SettingsSubsectionLabel(
+          'Exchange credentials',
+          key: widget.subsectionKeys?['exchangeCredentials'],
+        ),
         const SizedBox(height: 8),
         Align(
           alignment: Alignment.centerLeft,

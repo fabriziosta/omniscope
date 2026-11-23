@@ -10,7 +10,10 @@ import '../../data/settings/theme_settings.dart';
 import 'settings_option_tiles.dart';
 
 class AppearanceSectionBody extends StatelessWidget {
-  const AppearanceSectionBody({super.key});
+  const AppearanceSectionBody({super.key, this.subsectionKeys});
+
+  /// Optional scroll anchors keyed by [SettingsNavSubsection.id].
+  final Map<String, GlobalKey>? subsectionKeys;
 
   static const _themeOptions = <(ThemeMode, String)>[
     (ThemeMode.system, 'System'),
@@ -42,8 +45,9 @@ class AppearanceSectionBody extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'Brightness',
+          key: subsectionKeys?['brightness'],
           description:
               'Light, dark, or follow the device. Works with any color set.',
         ),
@@ -54,8 +58,9 @@ class AppearanceSectionBody extends StatelessWidget {
           onChanged: themeSettings.setMode,
         ),
         const SizedBox(height: settingsSectionGap),
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'Color set',
+          key: subsectionKeys?['colorSet'],
           description:
               'Brand accents for buttons, icons, and chrome. '
               'Gain and loss numbers stay green and red in every set.',
@@ -70,8 +75,9 @@ class AppearanceSectionBody extends StatelessWidget {
           ),
         ],
         const SizedBox(height: settingsSectionGap),
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'Lists',
+          key: subsectionKeys?['lists'],
           description: 'How dense Markets list rows look.',
         ),
         const SizedBox(height: 8),
@@ -81,8 +87,9 @@ class AppearanceSectionBody extends StatelessWidget {
           onChanged: displaySettings.setListDensity,
         ),
         const SizedBox(height: settingsSectionGap),
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'Numbers',
+          key: subsectionKeys?['numbers'],
           description:
               'How prices appear in Markets, Portfolio, and Asset detail.',
         ),
@@ -93,8 +100,9 @@ class AppearanceSectionBody extends StatelessWidget {
           onChanged: displaySettings.setPriceFormat,
         ),
         const SizedBox(height: settingsSectionGap),
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'Charts',
+          key: subsectionKeys?['charts'],
           description:
               'Default history range when you open an asset. '
               'You can still change it on the chart.',

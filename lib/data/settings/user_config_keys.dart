@@ -9,6 +9,7 @@ abstract final class UserConfigKeys {
   static const llmRuntime = 'llmRuntime';
   static const agentApp = 'agentApp';
   static const agentChats = 'agentChats';
+  static const agentMemory = 'agentMemory';
   static const tradeProposals = 'tradeProposals';
   static const agentActivity = 'agentActivity';
   static const notifications = 'notifications';

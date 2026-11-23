@@ -47,7 +47,10 @@ class MarketContextBuilder {
     return raw;
   }
 
-  Future<String?> buildForSymbol(String symbol) async {
+  Future<String?> buildForSymbol(
+    String symbol, {
+    DateTime? fetchedAt,
+  }) async {
     final sym = symbol.trim().toUpperCase();
     if (sym.isEmpty) return null;
 
@@ -71,7 +74,11 @@ class MarketContextBuilder {
 
     if (quote == null && history.isEmpty) return null;
 
-    final buf = StringBuffer('Market snapshot for $sym (educational):\n');
+    final at = (fetchedAt ?? DateTime.now()).toUtc();
+    final buf = StringBuffer(
+      'Market snapshot (fetched ${at.toIso8601String()}) for $sym '
+      '(educational — use getQuotes/getHistory to refresh):\n',
+    );
     if (quote != null) {
       buf.writeln(
         '- Last: ${formatMoney(quote.price)}'
@@ -99,7 +106,8 @@ class MarketContextBuilder {
       final last = history.last.close;
       final pct = first == 0 ? null : (last - first) / first;
       buf.writeln(
-        '- ~1M range closes: ${formatMoney(first)} → ${formatMoney(last)}'
+        '- ~1M range closes (1d bars): ${formatMoney(first)} → '
+        '${formatMoney(last)}'
         '${pct != null ? ' (${formatPercent(pct)})' : ''}',
       );
       double? hi;

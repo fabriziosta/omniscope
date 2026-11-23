@@ -21,6 +21,9 @@ class CachingMarketDataClient implements MarketDataClient {
   final Duration historyTtl;
   final DateTime Function() _clock;
 
+  /// Underlying client (no TTL). Prefer [FreshMarketDataClient] for agents.
+  MarketDataClient get inner => _inner;
+
   final Map<String, _Timed<Quote>> _quotes = {};
   final Map<String, _Timed<List<Candle>>> _history = {};
   final Map<String, Future<List<Quote>>> _inflightQuoteBatches = {};

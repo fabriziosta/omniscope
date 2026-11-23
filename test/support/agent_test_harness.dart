@@ -1,6 +1,7 @@
 import 'package:omniscope/data/agents/agent_activity_repository.dart';
 import 'package:omniscope/data/agents/agent_app_settings.dart';
 import 'package:omniscope/data/agents/agent_chat_repository.dart';
+import 'package:omniscope/data/agents/agent_memory_repository.dart';
 import 'package:omniscope/data/agents/agents_repository.dart';
 import 'package:omniscope/data/agents/genkit/genkit_agent_runner.dart';
 import 'package:omniscope/data/agents/invest_interest_proposal_repository.dart';
@@ -75,6 +76,7 @@ Future<({
   GenkitAgentRunner? agentRunner,
   FavoritesRepository? favorites,
   MandateSettings? mandate,
+  AgentMemoryRepository? agentMemory,
   InvestInterestProposalRepository? investInterestProposals,
   String reply = 'Test agent reply.',
   Map<String, dynamic>? Function(String lastUser)? delegatedTradeJsonFor,
@@ -103,6 +105,7 @@ Future<({
     appSettings: seeded.appSettings,
     favorites: favorites,
     mandate: mandate,
+    agentMemory: agentMemory,
     investInterestProposals: investInterestProposals,
   );
   return (

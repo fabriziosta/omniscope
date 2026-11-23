@@ -20,7 +20,8 @@ AgentRoleDefinition _role({
 void main() {
   group('AgentRobustness', () {
     test('locked scores for current Genkit roles', () {
-      // W8 + F14 + D14 + G0 + T5 = 41
+      // T derived from AgentToolRegistry ACL.
+      // W8 + F14 + D14 + G0 + T5 (quotesOnly) = 41
       expect(
         AgentRobustness.score(
           _role(
@@ -31,7 +32,7 @@ void main() {
         ),
         41,
       );
-      // W8 + F14 + D14 + G0 + T10 = 46
+      // W8 + F14 + D14 + G0 + T10 (portfolioSnapshot) = 46
       expect(
         AgentRobustness.score(
           _role(
@@ -42,6 +43,7 @@ void main() {
         ),
         46,
       );
+      // W8 + F14 + D14 + G0 + T15 (multiSource) = 51
       expect(
         AgentRobustness.score(
           _role(
@@ -50,9 +52,9 @@ void main() {
             workload: AgentWorkload.investigation,
           ),
         ),
-        46,
+        51,
       );
-      // W20 + F14 + D14 + G20 + T10 = 78
+      // W20 + F14 + D14 + G20 + T15 (multiSource) = 83
       expect(
         AgentRobustness.score(
           _role(
@@ -61,7 +63,55 @@ void main() {
             workload: AgentWorkload.trading,
           ),
         ),
-        78,
+        83,
+      );
+      // W8 + F14 + D14 + G0 + T5 (quotesOnly) = 41
+      expect(
+        AgentRobustness.score(
+          _role(
+            id: 'cryptoSpotGuide',
+            framework: AgentFramework.genkit,
+            workload: AgentWorkload.investigation,
+          ),
+        ),
+        41,
+      );
+      expect(
+        AgentRobustness.score(
+          _role(
+            id: 'marketsLiteracy',
+            framework: AgentFramework.genkit,
+            workload: AgentWorkload.investigation,
+          ),
+        ),
+        41,
+      );
+    });
+
+    test('contextToolsForRole follows registry ACL', () {
+      expect(
+        AgentRobustness.contextToolsForRole('marketResearch'),
+        AgentContextTools.quotesOnly,
+      );
+      expect(
+        AgentRobustness.contextToolsForRole('liveBalanceExplainer'),
+        AgentContextTools.portfolioSnapshot,
+      );
+      expect(
+        AgentRobustness.contextToolsForRole('portfolioGuide'),
+        AgentContextTools.multiSource,
+      );
+      expect(
+        AgentRobustness.contextToolsForRole('intradayTrading'),
+        AgentContextTools.multiSource,
+      );
+      expect(
+        AgentRobustness.contextToolsForRole('cryptoSpotGuide'),
+        AgentContextTools.quotesOnly,
+      );
+      expect(
+        AgentRobustness.contextToolsForRole('marketsLiteracy'),
+        AgentContextTools.quotesOnly,
       );
     });
 

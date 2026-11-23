@@ -10,6 +10,8 @@ import 'overflow_actions_menu.dart';
 ///
 /// When [intent] is [AgentLaunchIntent.investigate] and [showTradeOption] is
 /// true (default), opens a popover with Investigate + Trade check.
+/// When [intent] is [AgentLaunchIntent.explainCryptoSpot] and [showTradeOption]
+/// is true, opens Spot primer + Investigate + Trade check.
 class AgentLaunchButton extends StatelessWidget {
   const AgentLaunchButton({
     super.key,
@@ -39,14 +41,17 @@ class AgentLaunchButton extends StatelessWidget {
   final double? quantity;
   final String? label;
 
-  /// When [intent] is investigate, offer Trade check as a second menu item.
+  /// When [intent] is investigate or crypto spot, offer Trade check (and for
+  /// crypto, Investigate) as additional menu items.
   final bool showTradeOption;
 
   /// Called after a launch attempt (e.g. dismiss a search dialog).
   final VoidCallback? afterLaunch;
 
   bool get _useDualMenu =>
-      intent == AgentLaunchIntent.investigate && showTradeOption;
+      showTradeOption &&
+      (intent == AgentLaunchIntent.investigate ||
+          intent == AgentLaunchIntent.explainCryptoSpot);
 
   Future<void> _launch(BuildContext context, AgentLaunchIntent launchIntent) async {
     await AgentLaunchActions.launch(
@@ -69,6 +74,7 @@ class AgentLaunchButton extends StatelessWidget {
         outline: outline,
         iconOnly: iconOnly,
         label: label ?? intent.ctaLabel,
+        primaryIntent: intent,
         onLaunch: (launchIntent) => _launch(context, launchIntent),
       );
     }
@@ -144,6 +150,7 @@ class _AgentLaunchMenuButton extends StatefulWidget {
     required this.outline,
     required this.iconOnly,
     required this.label,
+    required this.primaryIntent,
     required this.onLaunch,
   });
 
@@ -152,6 +159,7 @@ class _AgentLaunchMenuButton extends StatefulWidget {
   final bool outline;
   final bool iconOnly;
   final String label;
+  final AgentLaunchIntent primaryIntent;
   final Future<void> Function(AgentLaunchIntent intent) onLaunch;
 
   @override
@@ -249,6 +257,7 @@ class _AgentLaunchMenuButtonState extends State<_AgentLaunchMenuButton> {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
+    final crypto = widget.primaryIntent == AgentLaunchIntent.explainCryptoSpot;
     return ShadPopover(
       controller: _controller,
       padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
@@ -258,6 +267,13 @@ class _AgentLaunchMenuButtonState extends State<_AgentLaunchMenuButton> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (crypto)
+              _menuItem(
+                theme: theme,
+                label: AgentLaunchIntent.explainCryptoSpot.ctaLabel,
+                icon: LucideIcons.bitcoin,
+                intent: AgentLaunchIntent.explainCryptoSpot,
+              ),
             _menuItem(
               theme: theme,
               label: AgentLaunchIntent.investigate.ctaLabel,

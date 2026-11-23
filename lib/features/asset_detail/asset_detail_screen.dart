@@ -15,6 +15,7 @@ import '../../data/settings/display_settings.dart';
 import '../../data/agents/agent_launch.dart';
 import '../agents/agent_launch_actions.dart';
 import '../../widgets/agent_launch_button.dart';
+import '../../widgets/app_dialog.dart';
 import '../../widgets/app_error_view.dart';
 import '../../widgets/app_progress.dart';
 import '../../widgets/app_toast.dart';
@@ -24,6 +25,9 @@ import '../../widgets/metric_stat.dart';
 import '../../widgets/price_line_chart.dart';
 import '../../widgets/subscreen_app_bar.dart';
 import 'asset_detail_controller.dart';
+
+/// Venue-style spot pairs use an underscore (e.g. `BTC_USD`).
+bool _isCryptoSpotSymbol(String symbol) => symbol.contains('_');
 
 class AssetDetailScreen extends StatelessWidget {
   const AssetDetailScreen({super.key, required this.symbol});
@@ -85,7 +89,7 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
       destructive: !result.success,
     );
     if (!result.success || !mounted) return;
-    final runCheck = await showShadDialog<bool>(
+    final runCheck = await showAppDialog<bool>(
       context: context,
       builder: (context) => ShadDialog(
         title: const Text('Trade check?'),
@@ -166,7 +170,9 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
               endPadding: 8,
               trailing: AgentLaunchButton(
                 symbol: widget.symbol,
-                intent: AgentLaunchIntent.investigate,
+                intent: _isCryptoSpotSymbol(widget.symbol)
+                    ? AgentLaunchIntent.explainCryptoSpot
+                    : AgentLaunchIntent.investigate,
               ),
             ),
             if (controller.loading)
@@ -246,15 +252,21 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
                             ],
                             const SizedBox(height: 12),
                             Text(
-                              overview ?? AppCopy.assetOverviewFallback,
+                              overview ??
+                                  (_isCryptoSpotSymbol(widget.symbol)
+                                      ? AppCopy.assetOverviewCryptoFallback
+                                      : AppCopy.assetOverviewFallback),
                               style: theme.textTheme.muted,
                             ),
                             if (overview == null) ...[
                               const SizedBox(height: 8),
                               AgentLaunchButton(
                                 symbol: widget.symbol,
-                                intent: AgentLaunchIntent.investigate,
+                                intent: _isCryptoSpotSymbol(widget.symbol)
+                                    ? AgentLaunchIntent.explainCryptoSpot
+                                    : AgentLaunchIntent.explainMarketsLiteracy,
                                 outline: true,
+                                showTradeOption: false,
                               ),
                             ],
                             if (researchLinks.isNotEmpty) ...[

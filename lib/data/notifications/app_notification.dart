@@ -5,6 +5,9 @@ enum AppNotificationKind {
   scheduledAutopilotDone,
   scheduledRunFailed,
   autopilotRiskHalt,
+
+  /// Sticky setup reminder when no LLM API key is configured.
+  configureAgents,
 }
 
 extension AppNotificationKindX on AppNotificationKind {
@@ -14,7 +17,11 @@ extension AppNotificationKindX on AppNotificationKind {
         AppNotificationKind.scheduledAutopilotDone => 'Autopilot',
         AppNotificationKind.scheduledRunFailed => 'Scheduled failed',
         AppNotificationKind.autopilotRiskHalt => 'Autopilot halted',
+        AppNotificationKind.configureAgents => 'Setup',
       };
+
+  /// Sticky kinds stay unread and cannot be dismissed from the inbox.
+  bool get isSticky => this == AppNotificationKind.configureAgents;
 
   static AppNotificationKind parse(String? raw) {
     return AppNotificationKind.values.firstWhere(
@@ -67,6 +74,26 @@ class AppNotification {
   final AppNotificationStatus status;
 
   bool get isActive => status == AppNotificationStatus.active;
+
+  /// Sticky setup reminders stay in the inbox until Agents are configured.
+  bool get isSticky => kind.isSticky;
+
+  /// Stable id for the virtual configure-Agents reminder.
+  static const configureAgentsId = 'an_configure_agents';
+
+  /// Unread, non-dismissible reminder when no LLM endpoint is ready.
+  static AppNotification configureAgentsReminder() {
+    return AppNotification(
+      id: configureAgentsId,
+      kind: AppNotificationKind.configureAgents,
+      roleId: '',
+      createdAt: DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      title: 'Configure an API key',
+      body:
+          'Add an LLM provider key in Settings → Connections to start using Agents.',
+      read: false,
+    );
+  }
 
   AppNotification copyWith({
     String? id,

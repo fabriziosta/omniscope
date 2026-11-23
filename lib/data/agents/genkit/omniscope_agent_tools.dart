@@ -1,15 +1,20 @@
 import 'package:genkit/genkit.dart';
 import 'package:schemantic/schemantic.dart';
 
+import '../../../core/formatting.dart';
 import '../../market/market_data_client.dart';
+import '../../market/models.dart';
 import '../../portfolio/models.dart';
 import '../../settings/mandate_settings.dart';
 import '../../venues/live_venue_capabilities.dart';
+import '../agent_history_query.dart';
+import '../agent_memory.dart';
 import '../agent_pnl_service.dart';
 import '../invest_interest_proposal.dart';
 import '../market_context_builder.dart';
 import '../models.dart';
 import '../trade_proposal.dart';
+import 'agent_tool_registry.dart';
 
 /// Callback that creates a pending Confirm-gated Invest interest proposal.
 typedef ProposeInvestInterestFn = Future<String> Function({
@@ -18,6 +23,15 @@ typedef ProposeInvestInterestFn = Future<String> Function({
   List<String>? setSymbols,
   required String rationale,
 });
+
+/// Store a short shared memory fact (applies immediately).
+typedef RememberFactFn = Future<AgentMemoryFact?> Function(String text);
+
+/// Remove a shared memory fact by id or matching text.
+typedef ForgetFactFn = Future<bool> Function(String idOrText);
+
+/// Compact fleet / Autopilot / Schedule status (no sibling transcripts).
+typedef GetAgentFleetStatusFn = String Function();
 
 /// Dependencies closed over by Genkit tools for one chat turn.
 class OmniscopeAgentToolDeps {
@@ -31,6 +45,11 @@ class OmniscopeAgentToolDeps {
     this.answerMood = AgentAnswerMood.plain,
     this.answerMoodNote,
     this.autopilotEnabled = false,
+    this.memoryEnabled = true,
+    this.memorySummary,
+    this.rememberFact,
+    this.forgetFact,
+    this.getFleetStatus,
     this.proposeInvestInterest,
     this.tradeProposals = const [],
     this.chatId,
@@ -55,6 +74,21 @@ class OmniscopeAgentToolDeps {
 
   /// Per-chat Autopilot (add-only Invest interest + trades).
   final bool autopilotEnabled;
+
+  /// Per-chat Memory (shared facts read/write).
+  final bool memoryEnabled;
+
+  /// Compact shared-memory summary for system prompts (when Memory on).
+  final String? memorySummary;
+
+  /// When set with [memoryEnabled], [rememberFact] tool persists a fact.
+  final RememberFactFn? rememberFact;
+
+  /// When set with [memoryEnabled], [forgetFact] tool removes a fact.
+  final ForgetFactFn? forgetFact;
+
+  /// When set, [getAgentFleetStatus] returns Autopilot / Schedule / rails.
+  final GetAgentFleetStatusFn? getFleetStatus;
 
   /// When set, [proposeInvestInterestDiff] creates a pending proposal.
   final ProposeInvestInterestFn? proposeInvestInterest;
@@ -85,7 +119,8 @@ class OmniscopeAgentTools {
       name: 'getQuotes',
       description:
           'Fetch latest quotes for one or more symbols (equities or crypto '
-          'spot). Input: {"symbols":["AAPL"]} or {"symbol":"AAPL"}.',
+          'spot). Returns price, day change, prev close, name, exchange, and '
+          'source. Input: {"symbols":["AAPL"]} or {"symbol":"AAPL"}.',
       inputSchema: _symbolInput,
       fn: (input, _) async {
         final symbols = _readSymbols(input);
@@ -97,12 +132,7 @@ class OmniscopeAgentTools {
           if (quotes.isEmpty) {
             return .response('No quotes returned for ${symbols.join(", ")}.');
           }
-          final lines = [
-            for (final q in quotes)
-              '${q.symbol}: ${q.price}'
-                  '${q.currency != null ? " ${q.currency}" : ""}'
-                  '${q.changePercent != null ? " (${q.changePercent!.toStringAsFixed(2)}%)" : ""}',
-          ];
+          final lines = [for (final q in quotes) _formatQuoteLine(q)];
           return .response(lines.join('\n'));
         } catch (e) {
           return .response('Quote fetch failed: $e');
@@ -113,8 +143,12 @@ class OmniscopeAgentTools {
     final getHistory = ai.defineTool(
       name: 'getHistory',
       description:
-          'Fetch recent daily history for a symbol. '
-          'Input: {"symbol":"AAPL","range":"1mo"} (range optional).',
+          'Fetch recent price history for a symbol. '
+          'Input: {"symbol":"AAPL","range":"1mo","interval":"1d"}. '
+          'Allowed ranges/intervals: '
+          '1d→5m|15m|1h; 5d→15m|1h; 1mo→1d; 3mo→1d; 1y→1wk|1d. '
+          'Defaults to 1mo @ 1d. Returns summary + up to '
+          '${AgentHistoryQuery.maxRecentBars} recent closes — not a full chart.',
       inputSchema: _symbolInput,
       fn: (input, _) async {
         final map = _asMap(input);
@@ -122,24 +156,26 @@ class OmniscopeAgentTools {
         if (symbol.isEmpty) {
           return .response('Provide symbol.');
         }
-        final range = (map['range'] as String?)?.trim().isNotEmpty == true
-            ? (map['range'] as String).trim()
-            : '1mo';
+        final pair = AgentHistoryQuery.normalize(
+          range: map['range'] as String?,
+          interval: map['interval'] as String?,
+        );
         try {
           final candles = await deps.marketData.getHistory(
             symbol,
-            range: range,
-            interval: '1d',
+            range: pair.range,
+            interval: pair.interval,
           );
           if (candles.isEmpty) {
             return .response('No history for $symbol.');
           }
-          final first = candles.first.close;
-          final last = candles.last.close;
-          final change = first == 0 ? 0.0 : ((last - first) / first) * 100;
           return .response(
-            'History $symbol ($range): ${candles.length} bars; '
-            'open≈$first close≈$last change≈${change.toStringAsFixed(2)}%.',
+            AgentHistoryQuery.formatHistory(
+              symbol: symbol,
+              range: pair.range,
+              interval: pair.interval,
+              candles: candles,
+            ),
           );
         } catch (e) {
           return .response('History fetch failed: $e');
@@ -389,7 +425,25 @@ class OmniscopeAgentTools {
       },
     );
 
-    return [
+    final getAgentFleetStatus = ai.defineTool(
+      name: AgentToolIds.getAgentFleetStatus,
+      description:
+          'Read device-wide operational status: Autopilot-on chats, '
+          'Schedule (enabled / running / next ETA), pending Confirm counts, '
+          'and today\'s Autopilot fill / realized P&L rails. '
+          'No other chat messages. Input: {} (no fields required). '
+          'Call before proposing duplicate trades or Invest interest adds.',
+      inputSchema: _symbolInput,
+      fn: (input, _) async {
+        final get = deps.getFleetStatus;
+        if (get == null) {
+          return .response('Fleet status is not available in this turn.');
+        }
+        return .response(get());
+      },
+    );
+
+    final tools = <Tool<dynamic, dynamic>>[
       getQuotes,
       getHistory,
       getPracticePortfolio,
@@ -398,7 +452,90 @@ class OmniscopeAgentTools {
       getMandate,
       getAgentPnl,
       proposeInvestInterestDiff,
+      getAgentFleetStatus,
     ];
+
+    if (deps.memoryEnabled) {
+      final getAgentMemory = ai.defineTool(
+        name: AgentToolIds.getAgentMemory,
+        description:
+            'Read shared durable facts across Memory-on chats. '
+            'Input: {} (no fields required).',
+        inputSchema: _symbolInput,
+        fn: (input, _) async {
+          final summary = deps.memorySummary?.trim() ?? '';
+          if (summary.isEmpty) {
+            return .response('Shared agent memory is empty.');
+          }
+          return .response(summary);
+        },
+      );
+
+      final rememberFact = ai.defineTool(
+        name: AgentToolIds.rememberFact,
+        description:
+            'Store a short durable fact for other Memory-on chats '
+            '(max 280 chars). Applies immediately — no Confirm. '
+            'Input: {"text":"User prefers ETFs over single stocks"}.',
+        inputSchema: _symbolInput,
+        fn: (input, _) async {
+          final remember = deps.rememberFact;
+          if (remember == null) {
+            return .response('Memory writes are unavailable.');
+          }
+          final map = _asMap(input);
+          final text = map['text']?.toString() ??
+              map['fact']?.toString() ??
+              '';
+          try {
+            final fact = await remember(text);
+            if (fact == null) {
+              return .response(
+                'Could not store fact (empty or over 280 characters).',
+              );
+            }
+            return .response(
+              'Remembered [${fact.id}]: ${fact.text}',
+            );
+          } catch (e) {
+            return .response('Could not remember fact: $e');
+          }
+        },
+      );
+
+      final forgetFact = ai.defineTool(
+        name: AgentToolIds.forgetFact,
+        description:
+            'Remove a shared memory fact by id or matching text. '
+            'Applies immediately. Input: {"id":"m_…"} or {"text":"…"}.',
+        inputSchema: _symbolInput,
+        fn: (input, _) async {
+          final forget = deps.forgetFact;
+          if (forget == null) {
+            return .response('Memory writes are unavailable.');
+          }
+          final map = _asMap(input);
+          final key = (map['id'] ?? map['text'] ?? map['fact'] ?? '')
+              .toString()
+              .trim();
+          if (key.isEmpty) {
+            return .response('Provide id or text to forget.');
+          }
+          try {
+            final ok = await forget(key);
+            return .response(
+              ok ? 'Forgot memory matching "$key".' : 'No matching fact found.',
+            );
+          } catch (e) {
+            return .response('Could not forget fact: $e');
+          }
+        },
+      );
+
+      tools.addAll([getAgentMemory, rememberFact, forgetFact]);
+    }
+
+    return tools;
   }
 
   static List<Tool<dynamic, dynamic>> forRole({
@@ -408,45 +545,10 @@ class OmniscopeAgentTools {
   }) {
     final all = defineAll(ai, deps);
     final byName = {for (final t in all) t.name: t};
-    final names = switch (roleId) {
-      'marketResearch' => const [
-          'getQuotes',
-          'getHistory',
-          'getInvestInterest',
-          'getMandate',
-          'proposeInvestInterestDiff',
-        ],
-      'liveBalanceExplainer' => const [
-          'getLiveBalances',
-          'getQuotes',
-          'getMandate',
-        ],
-      'portfolioGuide' => const [
-          'getPracticePortfolio',
-          'getLiveBalances',
-          'getQuotes',
-          'getInvestInterest',
-          'getMandate',
-          'getAgentPnl',
-          'proposeInvestInterestDiff',
-        ],
-      'intradayTrading' => const [
-          'getQuotes',
-          'getHistory',
-          'getPracticePortfolio',
-          'getLiveBalances',
-          'getInvestInterest',
-          'getMandate',
-          'getAgentPnl',
-          'proposeInvestInterestDiff',
-        ],
-      _ => const [
-          'getQuotes',
-          'getHistory',
-          'getInvestInterest',
-          'getMandate',
-        ],
-    };
+    final names = AgentToolRegistry.toolIdsForRole(
+      roleId,
+      memoryEnabled: deps.memoryEnabled,
+    );
     return [for (final n in names) if (byName[n] != null) byName[n]!];
   }
 
@@ -482,5 +584,28 @@ class OmniscopeAgentTools {
       out.add(s);
     }
     return out;
+  }
+
+  static String _formatQuoteLine(Quote q) {
+    final parts = <String>[
+      '${q.symbol}: ${formatMoney(q.price)}'
+          '${q.currency != null ? ' ${q.currency}' : ''}',
+    ];
+    if (q.changePercent != null) {
+      parts.add('day ${formatPercent(q.changePercent)}');
+    }
+    if (q.previousClose != null) {
+      parts.add('prev ${formatMoney(q.previousClose)}');
+    }
+    if (q.name != null && q.name!.trim().isNotEmpty) {
+      parts.add('name=${q.name!.trim()}');
+    }
+    if (q.exchange != null && q.exchange!.trim().isNotEmpty) {
+      parts.add('ex=${q.exchange!.trim()}');
+    }
+    if (q.dataSource != null && q.dataSource!.trim().isNotEmpty) {
+      parts.add('src=${q.dataSource!.trim()}');
+    }
+    return parts.join(' · ');
   }
 }

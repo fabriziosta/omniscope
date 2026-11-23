@@ -20,10 +20,14 @@ class PortfoliosSectionBody extends StatefulWidget {
   const PortfoliosSectionBody({
     super.key,
     this.onOpenDataSources,
+    this.subsectionKeys,
   });
 
   /// Optional jump to Settings → Data sources (credentials live there).
   final VoidCallback? onOpenDataSources;
+
+  /// Optional scroll anchors keyed by subsection id.
+  final Map<String, GlobalKey>? subsectionKeys;
 
   @override
   State<PortfoliosSectionBody> createState() => _PortfoliosSectionBodyState();
@@ -133,8 +137,9 @@ class _PortfoliosSectionBodyState extends State<PortfoliosSectionBody> {
           ),
         ),
         const SizedBox(height: 16),
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'Starting cash',
+          key: widget.subsectionKeys?['startingCash'],
           description:
               'Used the next time you reset practice holdings. '
               'Saving here does not change your current cash or holdings.',
@@ -156,8 +161,9 @@ class _PortfoliosSectionBodyState extends State<PortfoliosSectionBody> {
           ),
         ),
         const SizedBox(height: 20),
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'Reset practice holdings',
+          key: widget.subsectionKeys?['resetPractice'],
           description:
               'Restores starting cash and clears practice holdings. '
               'Live exchange balances are not affected.',
@@ -171,8 +177,9 @@ class _PortfoliosSectionBodyState extends State<PortfoliosSectionBody> {
           ),
         ),
         const SizedBox(height: 28),
-        const SettingsSubsectionLabel(
+        SettingsSubsectionLabel(
           'Live portfolios',
+          key: widget.subsectionKeys?['livePortfolios'],
           description:
               'Read-only balances from connected exchanges. '
               'Credentials are managed under Data sources.',

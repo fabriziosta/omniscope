@@ -1,3 +1,4 @@
+import 'genkit/agent_tool_registry.dart';
 import 'models.dart';
 
 /// In-app Genkit agent system + Run user prompt source of truth.
@@ -5,6 +6,7 @@ import 'models.dart';
 /// Used by [GenkitAgentRunner] as each role's `defineAgent` system string.
 /// Shared across surfaces is the trade JSON field set in
 /// [TradeProposalLlmSchema.canonicalLlmKeys].
+/// Tool ACL / available-tools lists come from [AgentToolRegistry].
 class AgentRolePrompts {
   AgentRolePrompts._();
 
@@ -17,10 +19,11 @@ class AgentRolePrompts {
       'one code fence. When market or live exchange snapshot data is '
       'provided, treat it as the latest known figures for this conversation '
       'and cite those figures. Never claim an order was already filled '
-      'unless the user confirms it in the app. Call getMandate when sizing '
-      'lists or trades and respect goal, universe, and risk rails. For '
-      'Invest interest, call proposeInvestInterestDiff; do not invent that '
-      'the list already changed unless Autopilot add-only applied it.';
+      'unless the user confirms it in the app. When sizing lists or trades, '
+      'respect Mandate goal, universe, and risk rails (use getMandate if '
+      'available). For Invest interest changes, use '
+      'proposeInvestInterestDiff when that tool is available; do not invent '
+      'that the list already changed unless Autopilot add-only applied it.';
 
   static const _tradeJsonFooter =
       'End your reply with a single fenced JSON block (and nothing after it) '
@@ -40,14 +43,17 @@ class AgentRolePrompts {
             'Produce plain-language research briefs for a symbol or topic: '
             'what the asset is, recent price move, simple risks, and what a '
             'beginner might watch next. Prefer shorter answers with clear '
-            'sections. Call getQuotes, getHistory, getInvestInterest, and '
-            'getMandate when helpful. When the watch universe should change, '
-            'call proposeInvestInterestDiff (prefer add-only when Autopilot '
-            'is on; remove/set still need Confirm). When a discovered symbol warrants '
-            'a trade check and a trading peer is listed under <sub-agents>, '
-            'delegate a focused task (symbol + thesis) instead of inventing '
-            'orders yourself. Do not invent precise fundamentals you were not '
-            'given. Do not emit executable buy/sell JSON yourself.',
+            'sections. When a Market snapshot is prepended to the user message, '
+            'treat those figures as the starting context (do not invent prices). '
+            'Refresh or dig deeper with quotes/history tools — pass an '
+            'appropriate range/interval on history (e.g. 1d/15m for '
+            'intraday moves, 1mo/1d for monthly). When the watch universe '
+            'should change, prefer add-only Invest interest diffs when '
+            'Autopilot is on; remove/set still need Confirm. When a discovered '
+            'symbol warrants a trade check and a trading peer is listed under '
+            '<sub-agents>, delegate a focused task (symbol + thesis) instead '
+            'of inventing orders yourself. Do not invent precise fundamentals '
+            'you were not given. Do not emit executable buy/sell JSON yourself.',
     'liveBalanceExplainer':
         '$_sharedGuardrails Your role is Live Balance Explainer. '
             'Explain the user\'s live exchange snapshot in plain language: '
@@ -55,7 +61,6 @@ class AgentRolePrompts {
             'what each balance line means, and that Portfolio Live is '
             'read-only while Confirm / Autopilot on trading agents can place '
             'orders only when the user opts in. Prefer short sections. '
-            'Call getLiveBalances, getQuotes, and getMandate if helpful. '
             'Do not invent balances you were not given. '
             'Do not suggest executable buy/sell JSON.',
     'portfolioGuide':
@@ -65,56 +70,93 @@ class AgentRolePrompts {
             'and (for Practice) proposed size vs cash and average cost. '
             'Emphasize that Practice money is fake and for learning. '
             'Prefer short sections with concrete figures. '
-            'Call getPracticePortfolio, getLiveBalances, getQuotes, '
-            'getInvestInterest, and getMandate when helpful. Propose Invest '
-            'interest updates with proposeInvestInterestDiff when '
-            'diversification suggests a different watch list (prefer '
-            'add-only under Autopilot; remove/set still need Confirm). When '
-            'a rebalance idea needs a concrete trade check and a trading '
-            'peer is listed under <sub-agents>, delegate a focused task '
-            '(symbol + thesis) instead of inventing orders yourself. '
-            'Do not invent positions. Do not emit executable buy/sell JSON '
-            'yourself.',
+            'Propose Invest interest updates when diversification suggests a '
+            'different watch list (prefer add-only under Autopilot; remove/set '
+            'still need Confirm). When a rebalance idea needs a concrete trade '
+            'check and a trading peer is listed under <sub-agents>, delegate a '
+            'focused task (symbol + thesis) instead of inventing orders '
+            'yourself. Do not invent positions. Do not emit executable '
+            'buy/sell JSON yourself.',
     'intradayTrading':
         '$_sharedGuardrails Your role is Intraday Execution & Risk Control. '
             'Help the user think through size, side, and risk gates for a '
             'Practice or live portfolio suggestion. Emphasize position size '
             'vs available balance and why a trade might be vetoed. '
-            'Use getQuotes, getHistory, getPracticePortfolio, '
-            'getLiveBalances, getInvestInterest, and getMandate when needed. '
-            'You may call proposeInvestInterestDiff to suggest watch-list '
-            'changes (Confirm-gated). When you need a deeper research brief '
-            'and a research peer is listed under <sub-agents>, delegate a '
-            'focused investigation task, then synthesize size and risk. '
+            'When a Market snapshot is prepended, use it as the starting '
+            'prices; refresh with quotes/history (pick interval for the '
+            'horizon — 5m/15m/1h for short windows, 1d for swings). '
+            'You may propose watch-list changes (Confirm-gated) when that '
+            'tool is available. When you need a deeper research brief and a '
+            'research peer is listed under <sub-agents>, delegate a focused '
+            'investigation task, then synthesize size and risk. '
             '$_tradeJsonFooter',
+    'cryptoSpotGuide':
+        '$_sharedGuardrails Your role is Crypto Spot Primer. '
+            'Teach beginners how crypto spot pairs work in Omniscope: '
+            'venue tickers like BTC_USD, base vs quote currency, how a '
+            'spot quote differs from equity tickers, and that Markets crypto '
+            'rows are public market data (not an order ticket by themselves). '
+            'When a Market snapshot is prepended, use those figures. '
+            'Prefer short sections with concrete examples. '
+            'Do not invent exchange fees or order-book depth you were not '
+            'given. Do not emit executable buy/sell JSON.',
+    'marketsLiteracy':
+        '$_sharedGuardrails Your role is Markets & Instruments Tutor. '
+            'Teach how Markets subgroups differ: indices vs ETFs vs stocks '
+            '(and when relevant, how curated watchlists and Favorites / '
+            'Invest interest fit). Explain what a symbol represents in plain '
+            'language — not a full research thesis. Prefer short sections. '
+            'When a Market snapshot is prepended, cite those figures lightly. '
+            'Do not invent fundamentals you were not given. '
+            'Do not emit executable buy/sell JSON.',
   };
 
   static String forRoleId(
     String roleId, {
     List<String> investInterestSymbols = const [],
     String? mandateSummary,
+    String? memorySummary,
     AgentAnswerMood answerMood = AgentAnswerMood.plain,
     String? answerMoodNote,
     bool autopilotEnabled = false,
+    bool memoryEnabled = true,
   }) {
     final base = _byRoleId[roleId] ??
         '$_sharedGuardrails Help the user learn investing. Answer clearly '
             'and stay within educational bounds.';
     return '$base'
+        '${toolsPreamble(roleId, memoryEnabled: memoryEnabled)}'
         '${moodPreamble(mood: answerMood, note: answerMoodNote)}'
         '${mandatePreamble(mandateSummary)}'
         '${investInterestPreamble(investInterestSymbols, autopilotEnabled: autopilotEnabled)}'
+        '${memoryPreamble(memorySummary, memoryEnabled: memoryEnabled)}'
+        '${fleetStatusPreamble(autopilotEnabled: autopilotEnabled, memoryEnabled: memoryEnabled)}'
         '${autopilotPreamble(autopilotEnabled)}';
+  }
+
+  /// Appended from [AgentToolRegistry] so prompt tool lists match ACL.
+  static String toolsPreamble(
+    String roleId, {
+    bool memoryEnabled = true,
+  }) {
+    final block = AgentToolRegistry.describeToolsForRole(
+      roleId,
+      memoryEnabled: memoryEnabled,
+    ).trim();
+    if (block.isEmpty) return '';
+    return ' $block';
   }
 
   /// System prompt for the in-process orchestrator (routes to specialties).
   static String orchestratorSystem({
     List<String> investInterestSymbols = const [],
     String? mandateSummary,
+    String? memorySummary,
     List<String> specialtyRoleIds = const [],
     AgentAnswerMood answerMood = AgentAnswerMood.plain,
     String? answerMoodNote,
     bool autopilotEnabled = false,
+    bool memoryEnabled = true,
   }) {
     final names = specialtyRoleIds.isEmpty
         ? 'the available specialty agents'
@@ -132,6 +174,8 @@ class AgentRolePrompts {
         '${moodPreamble(mood: answerMood, note: answerMoodNote)}'
         '${mandatePreamble(mandateSummary)}'
         '${investInterestPreamble(investInterestSymbols, autopilotEnabled: autopilotEnabled)}'
+        '${memoryPreamble(memorySummary, memoryEnabled: memoryEnabled)}'
+        '${fleetStatusPreamble(autopilotEnabled: autopilotEnabled, memoryEnabled: memoryEnabled)}'
         '${autopilotPreamble(autopilotEnabled)}';
   }
 
@@ -168,6 +212,33 @@ class AgentRolePrompts {
         'auto-submit to the default portfolio.';
   }
 
+  /// Shared cross-chat memory facts (only when Memory is on for this chat).
+  static String memoryPreamble(
+    String? summary, {
+    bool memoryEnabled = true,
+  }) {
+    if (!memoryEnabled) return '';
+    final text = summary?.trim() ?? '';
+    if (text.isEmpty) {
+      return ' Shared agent memory is empty. Use rememberFact for durable '
+          'preferences or conclusions the user may want in other chats; '
+          'call getAgentMemory to re-read; forgetFact to remove.';
+    }
+    return ' $text Call getAgentMemory to re-read. Use rememberFact / '
+        'forgetFact to update (applies immediately across Memory-on chats).';
+  }
+
+  /// Hint to call [getAgentFleetStatus] when Autopilot or Memory is on.
+  static String fleetStatusPreamble({
+    bool autopilotEnabled = false,
+    bool memoryEnabled = true,
+  }) {
+    if (!autopilotEnabled && !memoryEnabled) return '';
+    return ' Call getAgentFleetStatus for Autopilot chats, Schedule, '
+        'pending Confirm counts, and daily fill rails before duplicating '
+        'work (operational status only — not other chat transcripts).';
+  }
+
   /// Appended to the system prompt when the user has invest-interest symbols.
   static String investInterestPreamble(
     List<String> symbols, {
@@ -200,9 +271,8 @@ class AgentRolePrompts {
 
   /// Roles that may propose Confirm-gated Invest interest diffs.
   static bool supportsInvestInterestProposals(String roleId) {
-    return roleId == 'marketResearch' ||
-        roleId == 'portfolioGuide' ||
-        roleId == 'intradayTrading';
+    return AgentToolRegistry.toolIdsForRole(roleId)
+        .contains(AgentToolIds.proposeInvestInterestDiff);
   }
 
   /// Roles that inject live exchange balances even without a trade Run.
@@ -220,9 +290,12 @@ class AgentRolePrompts {
     return roleId == 'portfolioGuide';
   }
 
-  /// Roles that can Run without a symbol (portfolio / venue-level).
+  /// Roles that can Run without a symbol (portfolio / venue / literacy-level).
   static bool allowsRunWithoutSymbol(String roleId) {
-    return roleId == 'liveBalanceExplainer' || roleId == 'portfolioGuide';
+    return roleId == 'liveBalanceExplainer' ||
+        roleId == 'portfolioGuide' ||
+        roleId == 'cryptoSpotGuide' ||
+        roleId == 'marketsLiteracy';
   }
 
   /// Placeholder ticker shown in editable starter drafts for the user to replace.
@@ -241,6 +314,8 @@ class AgentRolePrompts {
       'liveBalanceExplainer' => 'Explain balances',
       'portfolioGuide' => 'Review portfolio',
       'intradayTrading' => 'Trade check',
+      'cryptoSpotGuide' => 'Crypto spot primer',
+      'marketsLiteracy' => 'Markets tutor',
       _ => 'Starter',
     };
   }
@@ -253,6 +328,8 @@ class AgentRolePrompts {
       'portfolioGuide' =>
           'Allocation, concentration, and practice sizing',
       'intradayTrading' => 'Size, side, and risk before you Confirm',
+      'cryptoSpotGuide' => 'Spot pairs, venue tickers, and quote units',
+      'marketsLiteracy' => 'Indices vs ETFs vs stocks, in plain language',
       _ => 'Draft a prompt into the composer',
     };
   }
@@ -378,6 +455,28 @@ class AgentRolePrompts {
           buf.write(' Quantity: $quantityPlaceholder.');
         }
         return buf.toString();
+      case 'cryptoSpotGuide':
+        if (sym.isNotEmpty) {
+          return 'Explain the crypto spot pair $sym in plain language.';
+        }
+        if (forceOptionalSymbolPlaceholder) {
+          return 'Explain crypto spot trading in Omniscope. '
+              'Optional focus: $draftSymbolPlaceholder '
+              '(or delete that sentence).';
+        }
+        return 'Explain crypto spot trading in Omniscope.';
+      case 'marketsLiteracy':
+        if (sym.isNotEmpty) {
+          return 'Explain what kind of instrument $sym is and how it fits '
+              'Markets (indices, ETFs, or stocks).';
+        }
+        if (forceOptionalSymbolPlaceholder) {
+          return 'Explain how Markets subgroups differ (indices vs ETFs vs '
+              'stocks). Optional focus: $draftSymbolPlaceholder '
+              '(or delete that sentence).';
+        }
+        return 'Explain how Markets subgroups differ (indices vs ETFs vs '
+            'stocks).';
       default:
         return 'Investigate $sym.';
     }

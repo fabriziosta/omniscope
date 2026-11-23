@@ -8,6 +8,7 @@ import '../data/agents/invest_interest_proposal_repository.dart';
 import '../data/agents/trade_proposal_repository.dart';
 import '../data/notifications/app_notification.dart';
 import '../data/notifications/app_notification_repository.dart';
+import 'app_dialog.dart';
 import 'app_tooltip.dart';
 
 /// Shell bell + unread badge that opens the stacked attention inbox.
@@ -72,7 +73,7 @@ class NotificationBellButton extends StatelessWidget {
 
 /// Shows the stacked notification inbox dialog.
 Future<void> showNotificationInbox(BuildContext context) {
-  return showShadDialog<void>(
+  return showAppDialog<void>(
     context: context,
     builder: (context) => const _NotificationInboxDialog(),
   );
@@ -86,6 +87,7 @@ class _NotificationInboxDialog extends StatelessWidget {
     final theme = ShadTheme.of(context);
     final repo = context.watch<AppNotificationRepository>();
     final active = repo.active;
+    final canDismissAll = repo.dismissibleActive.isNotEmpty;
     final wide = MediaQuery.sizeOf(context).width >= 720;
 
     return ShadDialog(
@@ -98,11 +100,12 @@ class _NotificationInboxDialog extends StatelessWidget {
         active.isEmpty
             ? 'Scheduled agent runs show up here so you can open '
                 'the chat to confirm or review.'
-            : 'Open a chat to confirm pending suggestions or review a run.',
+            : 'Open a chat to confirm pending suggestions or review a run. '
+                'Setup reminders stay until you add an API key.',
         style: theme.textTheme.muted,
       ),
       actions: [
-        if (active.isNotEmpty)
+        if (canDismissAll)
           ShadButton.outline(
             onPressed: () async {
               await repo.dismissAll();
@@ -154,6 +157,7 @@ class _NotificationRow extends StatelessWidget {
     final shellNav = context.read<ShellNavigationController>();
     final timeLabel = _formatClock(item.createdAt.toLocal());
     final unreadDot = !item.read;
+    final sticky = item.isSticky;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -194,7 +198,9 @@ class _NotificationRow extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${item.kind.label} · $timeLabel',
+                      sticky
+                          ? item.kind.label
+                          : '${item.kind.label} · $timeLabel',
                       style: theme.textTheme.muted.copyWith(fontSize: 11),
                     ),
                   ],
@@ -206,20 +212,28 @@ class _NotificationRow extends StatelessWidget {
           Row(
             children: [
               const Spacer(),
-              ShadButton.ghost(
-                height: 44,
-                onPressed: () async {
-                  await repo.dismiss(item.id);
-                },
-                child: const Text('Dismiss'),
-              ),
-              const SizedBox(width: 4),
+              if (!sticky) ...[
+                ShadButton.ghost(
+                  height: 44,
+                  onPressed: () async {
+                    await repo.dismiss(item.id);
+                  },
+                  child: const Text('Dismiss'),
+                ),
+                const SizedBox(width: 4),
+              ],
               ShadButton(
                 height: 44,
                 onPressed: () async {
-                  await repo.markRead(item.id);
+                  if (!sticky) {
+                    await repo.markRead(item.id);
+                  }
                   if (!context.mounted) return;
                   Navigator.of(context).pop();
+                  if (sticky) {
+                    shellNav.goToSettings(sectionId: 'connections');
+                    return;
+                  }
                   final chatId = _resolveNotificationChatId(context, item);
                   shellNav.goToAgentChat(
                     chatId: chatId,
@@ -228,7 +242,7 @@ class _NotificationRow extends StatelessWidget {
                     notificationId: item.id,
                   );
                 },
-                child: const Text('Open'),
+                child: Text(sticky ? 'Open Settings' : 'Open'),
               ),
             ],
           ),

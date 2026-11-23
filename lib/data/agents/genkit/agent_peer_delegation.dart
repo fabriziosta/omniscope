@@ -43,6 +43,12 @@ abstract final class AgentPeerDelegation {
       'portfolioGuide' =>
         ' Use for allocation, concentration, diversification, and '
             'practice sizing reviews.',
+      'cryptoSpotGuide' =>
+        ' Use to teach crypto spot pairs, venue tickers, and quote units '
+            '(not trade sizing).',
+      'marketsLiteracy' =>
+        ' Use to teach indices vs ETFs vs stocks and how Markets subgroups '
+            'differ (educational, not a research brief).',
       _ => ' Use for specialized help on this role\'s topic.',
     };
     if (base.isEmpty) return handoff.trim();
@@ -78,6 +84,8 @@ abstract final class AgentPeerDelegation {
       'liveBalanceExplainer' => 'Live Balance',
       'portfolioGuide' => 'Portfolio Guide',
       'intradayTrading' => 'Intraday',
+      'cryptoSpotGuide' => 'Crypto Spot',
+      'marketsLiteracy' => 'Markets Literacy',
       'orchestrator' => 'Orchestrator',
       _ => id.isEmpty ? 'Orchestrator' : id,
     };

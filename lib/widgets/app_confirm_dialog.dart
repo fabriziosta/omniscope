@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+import 'app_dialog.dart';
+
 /// Shows a Cancel / destructive-confirm alert. Returns true when confirmed.
 Future<bool> confirmDestructiveAction(
   BuildContext context, {
@@ -9,7 +11,7 @@ Future<bool> confirmDestructiveAction(
   required String confirmLabel,
   String cancelLabel = 'Cancel',
 }) async {
-  final ok = await showShadDialog<bool>(
+  final ok = await showAppDialog<bool>(
     context: context,
     builder: (context) => ShadDialog.alert(
       title: Text(title),

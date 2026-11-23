@@ -12,7 +12,10 @@ import 'settings_option_tiles.dart';
 
 /// LLM API keys/models plus exchange credential summary.
 class ConnectionsSectionBody extends StatelessWidget {
-  const ConnectionsSectionBody({super.key});
+  const ConnectionsSectionBody({super.key, this.subsectionKeys});
+
+  /// Optional scroll anchors keyed by subsection id.
+  final Map<String, GlobalKey>? subsectionKeys;
 
   @override
   Widget build(BuildContext context) {
@@ -48,7 +51,9 @@ class ConnectionsSectionBody extends StatelessWidget {
           style: theme.textTheme.muted,
         ),
         const SizedBox(height: 16),
-        const LlmApiKeysSectionBody(),
+        LlmApiKeysSectionBody(
+          sectionKey: subsectionKeys?['llmKeys'],
+        ),
         if (!hasLlm) ...[
           const SizedBox(height: 12),
           Text(
@@ -56,18 +61,23 @@ class ConnectionsSectionBody extends StatelessWidget {
             style: theme.textTheme.muted,
           ),
         ],
-        if (exchangeNames.isNotEmpty) ...[
-          const SizedBox(height: 20),
-          const SettingsSubsectionLabel(
-            'Exchange credentials',
-            description: 'Configured under Data sources.',
-          ),
-          const SizedBox(height: 8),
+        const SizedBox(height: 20),
+        SettingsSubsectionLabel(
+          'Exchange credentials',
+          key: subsectionKeys?['exchangeCredentials'],
+          description: 'Configured under Data sources.',
+        ),
+        const SizedBox(height: 8),
+        if (exchangeNames.isEmpty)
+          Text(
+            'No exchange credentials configured yet.',
+            style: theme.textTheme.muted,
+          )
+        else
           for (final name in exchangeNames) ...[
             Text(name, style: theme.textTheme.large),
             const SizedBox(height: 4),
           ],
-        ],
       ],
     );
   }

@@ -1,3 +1,4 @@
+import 'genkit/agent_tool_registry.dart';
 import 'models.dart';
 
 /// Pipeline stage count band for [AgentRobustness] depth points.
@@ -30,17 +31,15 @@ enum AgentContextTools {
 }
 
 /// Optional architecture overrides that are not fully encoded in the manifest
-/// (depth, gates, tools).
+/// (depth, gates). Context/tools (T) is derived from [AgentToolRegistry].
 class AgentArchitectureProfile {
   const AgentArchitectureProfile({
     required this.depth,
     required this.riskGates,
-    required this.contextTools,
   });
 
   final AgentPipelineDepth depth;
   final AgentRiskGates riskGates;
-  final AgentContextTools contextTools;
 }
 
 /// Factor breakdown for tests and tooltips.
@@ -79,27 +78,33 @@ class AgentRobustness {
   static const tooltipMessage =
       'Robustness — pipeline complexity and risk controls (1–100).';
 
-  /// Known role architecture profiles (depth / gates / tools).
+  /// Known role architecture profiles (depth / gates).
+  ///
+  /// Context & tools (T) comes from [contextToolsForRole] / [AgentToolRegistry].
   static const Map<String, AgentArchitectureProfile> profiles = {
     'marketResearch': AgentArchitectureProfile(
       depth: AgentPipelineDepth.twoToThree,
       riskGates: AgentRiskGates.none,
-      contextTools: AgentContextTools.quotesOnly,
     ),
     'liveBalanceExplainer': AgentArchitectureProfile(
       depth: AgentPipelineDepth.twoToThree,
       riskGates: AgentRiskGates.none,
-      contextTools: AgentContextTools.portfolioSnapshot,
     ),
     'portfolioGuide': AgentArchitectureProfile(
       depth: AgentPipelineDepth.twoToThree,
       riskGates: AgentRiskGates.none,
-      contextTools: AgentContextTools.portfolioSnapshot,
     ),
     'intradayTrading': AgentArchitectureProfile(
       depth: AgentPipelineDepth.twoToThree,
       riskGates: AgentRiskGates.hardVeto,
-      contextTools: AgentContextTools.portfolioSnapshot,
+    ),
+    'cryptoSpotGuide': AgentArchitectureProfile(
+      depth: AgentPipelineDepth.twoToThree,
+      riskGates: AgentRiskGates.none,
+    ),
+    'marketsLiteracy': AgentArchitectureProfile(
+      depth: AgentPipelineDepth.twoToThree,
+      riskGates: AgentRiskGates.none,
     ),
   };
 
@@ -107,7 +112,6 @@ class AgentRobustness {
       AgentArchitectureProfile(
     depth: AgentPipelineDepth.one,
     riskGates: AgentRiskGates.none,
-    contextTools: AgentContextTools.quotesOnly,
   );
 
   static AgentArchitectureProfile profileFor(String roleId) =>
@@ -122,8 +126,36 @@ class AgentRobustness {
       framework: _frameworkPoints(role.framework),
       depth: _depthPoints(profile.depth),
       riskGates: _riskGatePoints(profile.riskGates),
-      contextTools: _contextToolPoints(profile.contextTools),
+      contextTools: _contextToolPoints(contextToolsForRole(role.id)),
     );
+  }
+
+  /// Derives T-band from [AgentToolRegistry] ACL for [roleId].
+  ///
+  /// - **multiSource** — portfolio plus market quotes/history and
+  ///   invest-interest (or mandate with history depth)
+  /// - **portfolioSnapshot** — any practice/live portfolio tool
+  /// - **quotesOnly** — otherwise (including unknown roles with default tools)
+  static AgentContextTools contextToolsForRole(String roleId) {
+    return contextToolsFromIds(AgentToolRegistry.toolIdsForRole(roleId));
+  }
+
+  static AgentContextTools contextToolsFromIds(Iterable<String> ids) {
+    final tools = ids.toSet();
+    final hasQuotes = tools.contains(AgentToolIds.getQuotes);
+    final hasHistory = tools.contains(AgentToolIds.getHistory);
+    final hasPortfolio = tools.contains(AgentToolIds.getPracticePortfolio) ||
+        tools.contains(AgentToolIds.getLiveBalances);
+    final hasInvest = tools.contains(AgentToolIds.getInvestInterest);
+    final hasMandate = tools.contains(AgentToolIds.getMandate);
+
+    if (hasPortfolio &&
+        (hasQuotes || hasHistory) &&
+        (hasInvest || (hasMandate && hasHistory))) {
+      return AgentContextTools.multiSource;
+    }
+    if (hasPortfolio) return AgentContextTools.portfolioSnapshot;
+    return AgentContextTools.quotesOnly;
   }
 
   static int _workloadPoints(AgentWorkload workload) => switch (workload) {

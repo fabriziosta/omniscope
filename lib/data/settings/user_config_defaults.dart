@@ -106,6 +106,9 @@ abstract final class UserConfigDefaults {
     UserConfigKeys.agentChats: {
       'threads': <dynamic>[],
     },
+    UserConfigKeys.agentMemory: {
+      'facts': <dynamic>[],
+    },
     UserConfigKeys.tradeProposals: {
       'proposals': <dynamic>[],
     },

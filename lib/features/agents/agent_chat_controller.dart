@@ -4,6 +4,9 @@ import '../../data/agents/agent_activity.dart';
 import '../../data/agents/agent_activity_repository.dart';
 import '../../data/agents/agent_app_settings.dart';
 import '../../data/agents/agent_chat_repository.dart';
+import '../../data/agents/agent_fleet_status.dart';
+import '../../data/agents/agent_memory.dart';
+import '../../data/agents/agent_memory_repository.dart';
 import '../../data/agents/agent_role_prompts.dart';
 import '../../data/agents/agents_repository.dart';
 import '../../data/agents/chat_models.dart';
@@ -22,6 +25,7 @@ import '../../data/agents/models.dart';
 import '../../data/agents/trade_proposal.dart';
 import '../../data/agents/trade_proposal_repository.dart';
 import '../../data/crypto/crypto_exchange_registry.dart';
+import '../../data/market/fresh_market_data_client.dart';
 import '../../data/market/market_data_client.dart';
 import '../../data/portfolio/portfolio_catalog.dart';
 import '../../data/portfolio/portfolio_repository.dart';
@@ -89,7 +93,9 @@ class AgentChatController extends ChangeNotifier {
     this._brokerRegistry = BrokerExchangeRegistry.empty,
     this._favorites,
     this._mandate,
+    this._agentMemory,
     this._investInterestProposals,
+    this._scheduleInFlight,
   });
 
   final String chatId;
@@ -109,7 +115,11 @@ class AgentChatController extends ChangeNotifier {
   final AgentAppSettings _appSettings;
   final FavoritesRepository? _favorites;
   final MandateSettings? _mandate;
+  final AgentMemoryRepository? _agentMemory;
   final InvestInterestProposalRepository? _investInterestProposals;
+
+  /// Optional Schedule batch in-flight probe (UI / coordinator).
+  final bool Function()? _scheduleInFlight;
 
   late final TradeProposalActions _proposalActions = TradeProposalActions(
     appSettings: _appSettings,
@@ -224,7 +234,7 @@ class AgentChatController extends ChangeNotifier {
     String? side,
     double? quantity,
     String? content,
-  }) {
+  }) async {
     if (roleId == 'intradayTrading' && !_tradeExecutor.canTrade) {
       return _blockNoExchange();
     }
@@ -236,7 +246,7 @@ class AgentChatController extends ChangeNotifier {
             text: override,
           );
     if (placeholderError != null) {
-      return Future.value(AgentChatSendFailed(placeholderError));
+      return AgentChatSendFailed(placeholderError);
     }
     final sym = symbol.trim();
     final prompt = override.isNotEmpty
@@ -252,21 +262,28 @@ class AgentChatController extends ChangeNotifier {
         (sym.isNotEmpty ? sym.toUpperCase() : null);
     if ((hint == null || hint.isEmpty) &&
         !AgentRolePrompts.allowsRunWithoutSymbol(roleId)) {
-      return Future.value(
-        const AgentChatSendFailed('Enter a symbol to Run.'),
-      );
+      return const AgentChatSendFailed('Enter a symbol to Run.');
     }
     if (roleId == 'liveBalanceExplainer' &&
         resolveLiveBalanceExchangeId(exchangeId) == null) {
-      return Future.value(
-        const AgentChatSendFailed(
-          'Connect a live exchange under Settings → Data sources to explain '
-          'balances.',
-        ),
+      return const AgentChatSendFailed(
+        'Connect a live exchange under Settings → Data sources to explain '
+        'balances.',
       );
     }
+
+    var messageContent = prompt;
+    if (hint != null && hint.isNotEmpty) {
+      final snapshot = await MarketContextBuilder(
+        FreshMarketDataClient(_marketData),
+      ).buildForSymbol(hint);
+      if (snapshot != null && snapshot.isNotEmpty) {
+        messageContent = '$snapshot\n\n---\n\n$prompt';
+      }
+    }
+
     return sendUserMessage(
-      content: prompt,
+      content: messageContent,
       kind: AgentChatMessageKind.run,
       symbolHint: hint,
       exchangeId: exchangeId,
@@ -354,10 +371,12 @@ class AgentChatController extends ChangeNotifier {
 
       InvestInterestProposal? pendingInvestInterest;
       final investInterestRepo = _investInterestProposals;
-      final chatAutopilot =
-          _chats.threadFor(chatId).autopilotEnabled;
+      final thread = _chats.threadFor(chatId);
+      final chatAutopilot = thread.autopilotEnabled;
+      final chatMemory = thread.memoryEnabled;
+      final memoryRepo = chatMemory ? _agentMemory : null;
       final toolDeps = OmniscopeAgentToolDeps(
-        marketData: _marketData,
+        marketData: FreshMarketDataClient(_marketData),
         practice: _portfolio.state,
         liveVenue: liveVenue,
         symbolHint: hint,
@@ -367,6 +386,28 @@ class AgentChatController extends ChangeNotifier {
         answerMood: _appSettings.answerMood,
         answerMoodNote: _appSettings.answerMoodNote,
         autopilotEnabled: chatAutopilot,
+        memoryEnabled: chatMemory,
+        memorySummary: memoryRepo?.toAgentSummary(),
+        rememberFact: memoryRepo != null
+            ? (text) => memoryRepo.addFact(
+                  text,
+                  source: AgentMemorySource.agent,
+                )
+            : null,
+        forgetFact: memoryRepo != null
+            ? (idOrText) => memoryRepo.removeFact(idOrText)
+            : null,
+        getFleetStatus: () => AgentFleetStatus.build(
+              threads: _chats.threads,
+              app: _appSettings,
+              tradeProposals: _proposals.proposals,
+              investInterestProposals:
+                  investInterestRepo?.proposals ?? const [],
+              mandate: _mandate,
+              now: DateTime.now().toUtc(),
+              scheduleRunning: _scheduleInFlight?.call() ?? false,
+              currentChatId: chatId,
+            ).toAgentSummary(),
         tradeProposals: _proposals.proposals,
         chatId: chatId,
         proposeInvestInterest: investInterestRepo != null
@@ -427,11 +468,10 @@ class AgentChatController extends ChangeNotifier {
           ),
       ];
 
-      final thread = _chats.threadFor(chatId);
       final stopwatch = Stopwatch()..start();
       final result = await _agentRunner.complete(
         endpoint: endpoint,
-        messages: thread.messages,
+        messages: _chats.threadFor(chatId).messages,
         toolDeps: toolDeps,
         specialties: specialties,
         runtime: _llmRuntime,

@@ -94,16 +94,34 @@ class QuoteListTile extends StatelessWidget {
             marked: investMarked,
           )
         : null;
+    final isCryptoRow = cryptoExchangeId != null;
+    final launchIntent = isCryptoRow
+        ? AgentLaunchIntent.explainCryptoSpot
+        : AgentLaunchIntent.investigate;
     final investigateButton = showInvestigate
         ? AgentLaunchButton(
             symbol: quote.symbol,
-            intent: AgentLaunchIntent.investigate,
+            intent: launchIntent,
+            exchangeId: cryptoExchangeId,
             iconOnly: true,
           )
         : null;
 
     final overflowActions = <OverflowAction>[
       if (showInvestigate) ...[
+        if (isCryptoRow)
+          OverflowAction(
+            label: AgentLaunchIntent.explainCryptoSpot.ctaLabel,
+            icon: LucideIcons.bitcoin,
+            onTap: () {
+              AgentLaunchActions.launch(
+                context,
+                intent: AgentLaunchIntent.explainCryptoSpot,
+                symbol: quote.symbol,
+                exchangeId: cryptoExchangeId,
+              );
+            },
+          ),
         OverflowAction(
           label: AgentLaunchIntent.investigate.ctaLabel,
           icon: LucideIcons.sparkles,
