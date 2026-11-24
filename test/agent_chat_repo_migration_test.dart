@@ -225,4 +225,68 @@ void main() {
     await repo.migrateGlobalAutopilotIfNeeded(app);
     expect(repo.threadFor(created.chatId).autopilotEnabled, isFalse);
   });
+
+  test('focusSymbols JSON round-trip, pin/unpin, and cap', () async {
+    final withFocus = AgentChatThread(
+      chatId: 'c_focus',
+      title: 'Focus',
+      messages: const [],
+      updatedAt: DateTime.utc(2026, 1, 1),
+      focusSymbols: const ['btc_usd', 'AAPL', 'AAPL', ''],
+    );
+    final parsed = AgentChatThread.fromJson(withFocus.toJson());
+    expect(parsed.focusSymbols, ['BTC_USD', 'AAPL']);
+    expect(withFocus.toJson()['focusSymbols'], ['BTC_USD', 'AAPL']);
+
+    final empty = AgentChatThread.empty(chatId: 'c_empty');
+    expect(empty.focusSymbols, isEmpty);
+    expect(empty.toJson().containsKey('focusSymbols'), isFalse);
+
+    final store = await memoryConfig();
+    final repo = AgentChatRepository(store: store);
+    await repo.load();
+    final created = await repo.createChat(title: 'Pins');
+    final before = created.updatedAt;
+
+    final pinned = await repo.pinFocusSymbols(
+      created.chatId,
+      ['eth_usd', 'AAPL', 'ETH_USD'],
+    );
+    expect(pinned.focusSymbols, ['ETH_USD', 'AAPL']);
+    expect(pinned.updatedAt, before);
+
+    final many = List.generate(
+      AgentChatThread.maxFocusSymbols + 3,
+      (i) => 'S$i',
+    );
+    final capped = await repo.pinFocusSymbols(created.chatId, many);
+    expect(capped.focusSymbols, hasLength(AgentChatThread.maxFocusSymbols));
+    expect(capped.focusSymbols.first, isNot('ETH_USD'));
+    expect(capped.focusSymbols.last, 'S${many.length - 1}');
+
+    final unpinned = await repo.unpinFocusSymbols(
+      created.chatId,
+      [capped.focusSymbols.last],
+    );
+    expect(unpinned.focusSymbols, isNot(contains(capped.focusSymbols.last)));
+    expect(unpinned.focusSymbols.length, AgentChatThread.maxFocusSymbols - 1);
+
+    final replaced = await repo.setFocusSymbols(created.chatId, ['MSFT']);
+    expect(replaced.focusSymbols, ['MSFT']);
+
+    final again = AgentChatRepository(store: store);
+    await again.load();
+    expect(again.threadFor(created.chatId).focusSymbols, ['MSFT']);
+
+    await repo.append(
+      chatId: created.chatId,
+      message: AgentChatMessage(
+        id: 'm1',
+        role: AgentChatRole.user,
+        content: 'Hi',
+        createdAt: DateTime.utc(2026, 1, 2),
+      ),
+    );
+    expect(repo.threadFor(created.chatId).focusSymbols, ['MSFT']);
+  });
 }

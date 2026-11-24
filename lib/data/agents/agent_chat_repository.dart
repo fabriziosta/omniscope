@@ -227,6 +227,74 @@ class AgentChatRepository extends ChangeNotifier {
     return setMemoryEnabled(chatId, enabled: !existing.memoryEnabled);
   }
 
+  /// Replaces this chat's focus symbols. Does not bump [updatedAt].
+  Future<AgentChatThread> setFocusSymbols(
+    String chatId,
+    List<String> symbols,
+  ) async {
+    final existing = _state.byId(chatId);
+    if (existing == null) return _state.threadFor(chatId);
+    final nextSymbols = AgentChatThread.normalizeFocusSymbols(symbols);
+    if (_sameFocusSymbols(existing.focusSymbols, nextSymbols)) {
+      return existing;
+    }
+    final next = existing.copyWith(focusSymbols: nextSymbols);
+    _state = _state.withThread(next);
+    await _persist();
+    notifyListeners();
+    return next;
+  }
+
+  /// Appends symbols to this chat's focus list (deduped, capped). No [updatedAt].
+  Future<AgentChatThread> pinFocusSymbols(
+    String chatId,
+    Iterable<String> symbols,
+  ) async {
+    final existing = _state.byId(chatId);
+    if (existing == null) return _state.threadFor(chatId);
+    final nextSymbols = AgentChatThread.mergeFocusSymbols(
+      existing.focusSymbols,
+      symbols,
+    );
+    if (_sameFocusSymbols(existing.focusSymbols, nextSymbols)) {
+      return existing;
+    }
+    final next = existing.copyWith(focusSymbols: nextSymbols);
+    _state = _state.withThread(next);
+    await _persist();
+    notifyListeners();
+    return next;
+  }
+
+  /// Removes symbols from this chat's focus list. Does not bump [updatedAt].
+  Future<AgentChatThread> unpinFocusSymbols(
+    String chatId,
+    Iterable<String> symbols,
+  ) async {
+    final existing = _state.byId(chatId);
+    if (existing == null) return _state.threadFor(chatId);
+    final nextSymbols = AgentChatThread.withoutFocusSymbols(
+      existing.focusSymbols,
+      symbols,
+    );
+    if (_sameFocusSymbols(existing.focusSymbols, nextSymbols)) {
+      return existing;
+    }
+    final next = existing.copyWith(focusSymbols: nextSymbols);
+    _state = _state.withThread(next);
+    await _persist();
+    notifyListeners();
+    return next;
+  }
+
+  static bool _sameFocusSymbols(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
   Future<AgentChatThread> append({
     required String chatId,
     required AgentChatMessage message,
@@ -256,6 +324,7 @@ class AgentChatRepository extends ChangeNotifier {
       pinned: existing.pinned,
       autopilotEnabled: existing.autopilotEnabled,
       memoryEnabled: existing.memoryEnabled,
+      focusSymbols: existing.focusSymbols,
       legacyRoleId: existing.legacyRoleId,
     );
     _state = _state.withThread(thread);

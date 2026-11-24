@@ -141,6 +141,7 @@ class GenkitAgentRunner {
         system: AgentRolePrompts.forRoleId(
           spec.roleId,
           investInterestSymbols: toolDeps.investInterestSymbols,
+          focusSymbols: toolDeps.focusSymbols,
           mandateSummary: toolDeps.mandate?.toAgentSummary(),
           memorySummary: toolDeps.memorySummary,
           answerMood: toolDeps.answerMood,
@@ -177,6 +178,7 @@ class GenkitAgentRunner {
           'and synthesizes a clear answer.',
       system: AgentRolePrompts.orchestratorSystem(
         investInterestSymbols: toolDeps.investInterestSymbols,
+        focusSymbols: toolDeps.focusSymbols,
         mandateSummary: toolDeps.mandate?.toAgentSummary(),
         memorySummary: toolDeps.memorySummary,
         specialtyRoleIds: [for (final s in specialties) s.roleId],

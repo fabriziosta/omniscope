@@ -33,6 +33,14 @@ typedef ForgetFactFn = Future<bool> Function(String idOrText);
 /// Compact fleet / Autopilot / Schedule status (no sibling transcripts).
 typedef GetAgentFleetStatusFn = String Function();
 
+/// Pin symbols onto this chat's focus list (applies immediately).
+typedef PinChatSymbolsFn = Future<List<String>> Function(List<String> symbols);
+
+/// Unpin symbols from this chat's focus list (applies immediately).
+typedef UnpinChatSymbolsFn = Future<List<String>> Function(
+  List<String> symbols,
+);
+
 /// Dependencies closed over by Genkit tools for one chat turn.
 class OmniscopeAgentToolDeps {
   const OmniscopeAgentToolDeps({
@@ -41,6 +49,7 @@ class OmniscopeAgentToolDeps {
     this.liveVenue,
     this.symbolHint,
     this.investInterestSymbols = const [],
+    this.focusSymbols = const [],
     this.mandate,
     this.answerMood = AgentAnswerMood.plain,
     this.answerMoodNote,
@@ -50,6 +59,8 @@ class OmniscopeAgentToolDeps {
     this.rememberFact,
     this.forgetFact,
     this.getFleetStatus,
+    this.pinChatSymbols,
+    this.unpinChatSymbols,
     this.proposeInvestInterest,
     this.tradeProposals = const [],
     this.chatId,
@@ -62,6 +73,9 @@ class OmniscopeAgentToolDeps {
 
   /// User's Markets → Invest interest symbols for this turn.
   final List<String> investInterestSymbols;
+
+  /// This chat's focus symbols (investigated / traded in-thread).
+  final List<String> focusSymbols;
 
   /// User investment policy (Settings → Mandate).
   final MandateSettings? mandate;
@@ -89,6 +103,12 @@ class OmniscopeAgentToolDeps {
 
   /// When set, [getAgentFleetStatus] returns Autopilot / Schedule / rails.
   final GetAgentFleetStatusFn? getFleetStatus;
+
+  /// When set, [pinChatSymbols] tool appends to this chat's focus list.
+  final PinChatSymbolsFn? pinChatSymbols;
+
+  /// When set, [unpinChatSymbols] tool removes from this chat's focus list.
+  final UnpinChatSymbolsFn? unpinChatSymbols;
 
   /// When set, [proposeInvestInterestDiff] creates a pending proposal.
   final ProposeInvestInterestFn? proposeInvestInterest;
@@ -258,8 +278,9 @@ class OmniscopeAgentTools {
         if (symbols.isEmpty) {
           return .response(
             'Invest interest list is empty. Propose changes with '
-            'proposeInvestInterestDiff (user Confirms in Activity), or the '
-            'user can add symbols under Markets → Invest interest.',
+            'proposeInvestInterestDiff (user taps Confirm under the '
+            'proposal card in chat), or the user can add symbols under '
+            'Markets → Invest interest.',
           );
         }
         return .response('Invest interest: ${symbols.join(', ')}');
@@ -350,8 +371,9 @@ class OmniscopeAgentTools {
               '(non-empty add, empty remove, no set) from investigation '
               'roles may apply without Confirm; remove/set still need '
               'Confirm. Prefer add-only when suggesting new symbols. ' : ''}'
-          'Otherwise the user Confirms in chat / Activity — do not claim '
-          'the list already changed unless Autopilot applied an add.',
+          'Otherwise the user taps Confirm under the proposal card in this '
+          'chat — do not claim the list already changed unless Autopilot '
+          'applied an add. Activity is read-only archive (Open chat).',
       inputSchema: _symbolInput,
       fn: (input, _) async {
         final propose = deps.proposeInvestInterest;
@@ -443,6 +465,87 @@ class OmniscopeAgentTools {
       },
     );
 
+    final getChatFocusSymbols = ai.defineTool(
+      name: AgentToolIds.getChatFocusSymbols,
+      description:
+          'Read symbols pinned for THIS chat only (focus list shown above '
+          'the composer). Not Markets → Invest interest. '
+          'Input: {} (no fields required).',
+      inputSchema: _symbolInput,
+      fn: (input, _) async {
+        final symbols = [
+          for (final s in deps.focusSymbols)
+            if (s.trim().isNotEmpty) s.trim().toUpperCase(),
+        ];
+        if (symbols.isEmpty) {
+          return .response(
+            'This chat has no focus symbols yet. Pin with pinChatSymbols '
+            'when you investigate or trade a concrete ticker.',
+          );
+        }
+        return .response('Chat focus symbols: ${symbols.join(', ')}.');
+      },
+    );
+
+    final pinChatSymbols = ai.defineTool(
+      name: AgentToolIds.pinChatSymbols,
+      description:
+          'Pin symbols onto THIS chat focus list (chips above composer). '
+          'Applies immediately — no Confirm. Cap 12; oldest drop. '
+          'Not Invest interest. Input: {"symbols":["AAPL","ETH_USD"]}.',
+      inputSchema: _symbolInput,
+      fn: (input, _) async {
+        final pin = deps.pinChatSymbols;
+        if (pin == null) {
+          return .response('Chat focus symbols are not available.');
+        }
+        final symbols = _readSymbols(input);
+        if (symbols.isEmpty) {
+          return .response(
+            'Provide symbols, e.g. {"symbols":["AAPL","ETH_USD"]}.',
+          );
+        }
+        try {
+          final next = await pin(symbols);
+          return .response(
+            next.isEmpty
+                ? 'Focus list is empty after pin.'
+                : 'Chat focus symbols now: ${next.join(', ')}.',
+          );
+        } catch (e) {
+          return .response('Could not pin symbols: $e');
+        }
+      },
+    );
+
+    final unpinChatSymbols = ai.defineTool(
+      name: AgentToolIds.unpinChatSymbols,
+      description:
+          'Unpin symbols from THIS chat focus list. Applies immediately. '
+          'Input: {"symbols":["AAPL"]}.',
+      inputSchema: _symbolInput,
+      fn: (input, _) async {
+        final unpin = deps.unpinChatSymbols;
+        if (unpin == null) {
+          return .response('Chat focus symbols are not available.');
+        }
+        final symbols = _readSymbols(input);
+        if (symbols.isEmpty) {
+          return .response('Provide symbols to unpin, e.g. {"symbols":["AAPL"]}.');
+        }
+        try {
+          final next = await unpin(symbols);
+          return .response(
+            next.isEmpty
+                ? 'Chat focus list is now empty.'
+                : 'Chat focus symbols now: ${next.join(', ')}.',
+          );
+        } catch (e) {
+          return .response('Could not unpin symbols: $e');
+        }
+      },
+    );
+
     final tools = <Tool<dynamic, dynamic>>[
       getQuotes,
       getHistory,
@@ -453,6 +556,9 @@ class OmniscopeAgentTools {
       getAgentPnl,
       proposeInvestInterestDiff,
       getAgentFleetStatus,
+      getChatFocusSymbols,
+      pinChatSymbols,
+      unpinChatSymbols,
     ];
 
     if (deps.memoryEnabled) {

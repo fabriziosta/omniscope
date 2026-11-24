@@ -382,6 +382,7 @@ class AgentChatController extends ChangeNotifier {
         symbolHint: hint,
         investInterestSymbols:
             _favorites?.investInterestSymbols ?? const [],
+        focusSymbols: thread.focusSymbols,
         mandate: _mandate,
         answerMood: _appSettings.answerMood,
         answerMoodNote: _appSettings.answerMoodNote,
@@ -408,6 +409,14 @@ class AgentChatController extends ChangeNotifier {
               scheduleRunning: _scheduleInFlight?.call() ?? false,
               currentChatId: chatId,
             ).toAgentSummary(),
+        pinChatSymbols: (symbols) async {
+          final next = await _chats.pinFocusSymbols(chatId, symbols);
+          return next.focusSymbols;
+        },
+        unpinChatSymbols: (symbols) async {
+          final next = await _chats.unpinFocusSymbols(chatId, symbols);
+          return next.focusSymbols;
+        },
         tradeProposals: _proposals.proposals,
         chatId: chatId,
         proposeInvestInterest: investInterestRepo != null
@@ -429,6 +438,7 @@ class AgentChatController extends ChangeNotifier {
                 );
                 await investInterestRepo.upsert(proposal);
                 pendingInvestInterest = proposal;
+                await _pinFocusFromInvestInterest(proposal);
                 await _activity.add(
                   AgentActivityEvent(
                     id: AgentActivityEvent.newId(),
@@ -448,8 +458,9 @@ class AgentChatController extends ChangeNotifier {
                         '(Autopilot may apply without Confirm): '
                         '${proposal.summaryLabel}.'
                     : 'Proposed Invest interest change '
-                        '(pending Confirm in this chat): '
-                        '${proposal.summaryLabel}. '
+                        '(pending Confirm — user must tap Confirm under '
+                        'the proposal card in this chat, not reply in text '
+                        'or use Activity): ${proposal.summaryLabel}. '
                         'Do not claim the list already changed.';
               }
             : null,
@@ -493,6 +504,9 @@ class AgentChatController extends ChangeNotifier {
           fallbackSymbol: hint,
         );
         await _proposals.upsert(proposal);
+        if (proposal.symbol.trim().isNotEmpty) {
+          await _chats.pinFocusSymbols(chatId, [proposal.symbol]);
+        }
         await _activity.add(
           AgentActivityEvent(
             id: AgentActivityEvent.newId(),
@@ -522,6 +536,7 @@ class AgentChatController extends ChangeNotifier {
           if (ii.isActionable) {
             await investInterestRepo.upsert(ii);
             pendingInvestInterest = ii;
+            await _pinFocusFromInvestInterest(ii);
             await _activity.add(
               AgentActivityEvent(
                 id: AgentActivityEvent.newId(),
@@ -679,6 +694,17 @@ class AgentChatController extends ChangeNotifier {
     await actions.confirm(proposal.id, autopilot: true);
   }
 
+  Future<void> _pinFocusFromInvestInterest(
+    InvestInterestProposal proposal,
+  ) async {
+    final symbols = <String>[
+      ...proposal.add,
+      if (proposal.setSymbols != null) ...proposal.setSymbols!,
+    ];
+    if (symbols.isEmpty) return;
+    await _chats.pinFocusSymbols(chatId, symbols);
+  }
+
   Future<String?> confirmProposal(
     String proposalId, {
     bool autopilot = false,
@@ -736,6 +762,21 @@ class AgentChatController extends ChangeNotifier {
     notifyListeners();
     try {
       return await actions.dismiss(proposalId);
+    } finally {
+      _actingOnProposal = false;
+      notifyListeners();
+    }
+  }
+
+  /// When Autopilot turns on for this chat, apply pending add-only Invest
+  /// interest proposals (same rules as apply-at-send).
+  Future<int> applyPendingAutopilotInvestInterest() async {
+    final actions = _investInterestActions;
+    if (actions == null) return 0;
+    _actingOnProposal = true;
+    notifyListeners();
+    try {
+      return await actions.applyPendingAutopilotAddsForChat(chatId);
     } finally {
       _actingOnProposal = false;
       notifyListeners();

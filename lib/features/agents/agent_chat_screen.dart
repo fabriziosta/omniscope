@@ -369,11 +369,20 @@ class _AgentChatViewState extends State<_AgentChatView> {
       }
     }
     await chats.setAutopilotEnabled(thread.chatId, enabled: next);
+    var appliedIi = 0;
+    if (next && mounted) {
+      appliedIi = await context
+          .read<AgentChatController>()
+          .applyPendingAutopilotInvestInterest();
+    }
     if (!mounted) return;
     showAppToast(
       context,
       description: next
-          ? 'Autopilot on for this chat'
+          ? (appliedIi > 0
+              ? 'Autopilot on · applied $appliedIi Invest interest '
+                  '${appliedIi == 1 ? 'add' : 'adds'}'
+              : 'Autopilot on for this chat')
           : 'Autopilot off for this chat',
     );
   }
@@ -643,6 +652,13 @@ class _AgentChatViewState extends State<_AgentChatView> {
                           EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       child: AppProgress(),
                     ),
+                  if (thread.focusSymbols.isNotEmpty)
+                    _FocusSymbolChips(
+                      symbols: thread.focusSymbols,
+                      onUnpin: (symbol) => context
+                          .read<AgentChatRepository>()
+                          .unpinFocusSymbols(widget.chatId, [symbol]),
+                    ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     child: Row(
@@ -678,6 +694,105 @@ class _AgentChatViewState extends State<_AgentChatView> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Focus symbols for this chat — shown just above the composer.
+class _FocusSymbolChips extends StatelessWidget {
+  const _FocusSymbolChips({
+    required this.symbols,
+    required this.onUnpin,
+  });
+
+  final List<String> symbols;
+  final ValueChanged<String> onUnpin;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'In this chat',
+            style: theme.textTheme.muted.copyWith(fontSize: 11),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final symbol in symbols)
+                _FocusSymbolChip(
+                  symbol: symbol,
+                  onUnpin: () => onUnpin(symbol),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FocusSymbolChip extends StatelessWidget {
+  const _FocusSymbolChip({
+    required this.symbol,
+    required this.onUnpin,
+  });
+
+  final String symbol;
+  final VoidCallback onUnpin;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.only(left: 4, right: 2),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondary.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: theme.colorScheme.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ShadButton.ghost(
+            size: ShadButtonSize.sm,
+            height: 36,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            onPressed: () {
+              pushFadePage(context, AssetDetailScreen(symbol: symbol));
+            },
+            child: Text(
+              symbol,
+              style: theme.textTheme.small.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          AppTooltip(
+            message: 'Unpin $symbol',
+            child: ShadButton.ghost(
+              size: ShadButtonSize.sm,
+              width: 36,
+              height: 36,
+              padding: EdgeInsets.zero,
+              onPressed: onUnpin,
+              child: Icon(
+                LucideIcons.x,
+                size: 14,
+                color: theme.colorScheme.mutedForeground,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -994,12 +1109,18 @@ class _ChatBubble extends StatelessWidget {
                       if (isUser)
                         Text(
                           message.content,
-                          style: theme.textTheme.p.copyWith(color: fg),
+                          style: theme.textTheme.small.copyWith(
+                            color: fg,
+                            height: 1.4,
+                          ),
                         )
                       else
                         AgentMarkdownBody(
                           data: message.content,
-                          style: theme.textTheme.p.copyWith(color: fg),
+                          style: theme.textTheme.small.copyWith(
+                            color: fg,
+                            height: 1.4,
+                          ),
                         ),
                     ],
                   ),
@@ -1063,19 +1184,25 @@ class _ChatBubble extends StatelessWidget {
                   ),
                 ),
               ),
+            // Keep Confirm / Dismiss out of the chat SelectionArea so taps
+            // are not swallowed by text-selection gestures.
             if (proposal != null)
-              _TradeProposalCard(
-                proposal: proposal!,
-                onConfirm: onConfirm,
-                onDismiss: onDismiss,
-                busy: busy,
+              SelectionContainer.disabled(
+                child: _TradeProposalCard(
+                  proposal: proposal!,
+                  onConfirm: onConfirm,
+                  onDismiss: onDismiss,
+                  busy: busy,
+                ),
               ),
             if (investInterestProposal != null)
-              _InvestInterestProposalCard(
-                proposal: investInterestProposal!,
-                onConfirm: onConfirm,
-                onDismiss: onDismiss,
-                busy: busy,
+              SelectionContainer.disabled(
+                child: _InvestInterestProposalCard(
+                  proposal: investInterestProposal!,
+                  onConfirm: onConfirm,
+                  onDismiss: onDismiss,
+                  busy: busy,
+                ),
               ),
           ],
         ),
@@ -1280,6 +1407,16 @@ class _InvestInterestProposalCard extends StatelessWidget {
             'Invest interest · ${proposal.status.label}',
             style: theme.textTheme.muted,
           ),
+          if (onConfirm != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Tap Confirm below to apply this change.',
+              style: theme.textTheme.small.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
           if (proposal.add.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(

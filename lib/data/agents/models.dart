@@ -67,16 +67,20 @@ extension AgentAnswerMoodX on AgentAnswerMood {
   /// Instruction fragment injected into Genkit system prompts.
   String get systemInstruction => switch (this) {
         AgentAnswerMood.plain =>
-          'Answer mood: keep language plain and non-intimidating.',
+          'Answer mood: keep language plain, conversational, and '
+              'non-intimidating — like a helpful person in chat, not a document.',
         AgentAnswerMood.concise =>
-          'Answer mood: be concise and dense; prefer short sections and '
-              'fewer filler words while staying clear.',
+          'Answer mood: be concise and dense; prefer short paragraphs and '
+              'fewer filler words while staying clear; still avoid document '
+              'headings.',
         AgentAnswerMood.coaching =>
-          'Answer mood: use an encouraging tutor voice; reassure beginners '
-              'and explain why steps matter without being patronizing.',
+          'Answer mood: use an encouraging tutor voice in chat; reassure '
+              'beginners and explain why steps matter without being '
+              'patronizing or writing a lesson outline.',
         AgentAnswerMood.formal =>
           'Answer mood: use a more professional tone while staying in plain '
-              'English; avoid slang and casual asides.',
+              'conversational English; avoid slang, casual asides, and '
+              'document-style headings.',
       };
 
   static AgentAnswerMood parse(String? raw) {

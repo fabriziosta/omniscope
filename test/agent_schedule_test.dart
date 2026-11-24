@@ -146,13 +146,15 @@ void main() {
   });
 
   group('AgentRolePrompts invest interest', () {
-    test('shared guardrails require Markdown replies', () {
+    test('shared guardrails prefer conversational chat replies', () {
       final role = AgentRolePrompts.forRoleId('marketResearch');
-      expect(role, contains('Always format replies as Markdown'));
-      expect(role, contains('do not wrap the entire answer in one code fence'));
+      expect(role, contains('helpful person in a chat'));
+      expect(role, contains('Avoid Markdown headings'));
+      expect(role, contains('Do not wrap the entire answer in one code fence'));
 
       final orch = AgentRolePrompts.orchestratorSystem();
-      expect(orch, contains('Always format replies as Markdown'));
+      expect(orch, contains('helpful person in a chat'));
+      expect(orch, contains('Avoid Markdown headings'));
     });
 
     test('preamble empty when no symbols', () {

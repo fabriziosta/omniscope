@@ -42,6 +42,10 @@ class AgentLaunchActions {
           ),
         ))
             .chatId;
+    final sym = initialSymbol?.trim();
+    if (sym != null && sym.isNotEmpty) {
+      await chats.pinFocusSymbols(id, [sym]);
+    }
     if (!context.mounted) return;
     context.read<ShellNavigationController>().goToAgentChat(
           chatId: id,

@@ -247,5 +247,79 @@ Here is a watchlist tweak.
         InvestInterestProposalStatus.pending,
       );
     });
+
+    test('autopilot accepts orchestrator add-only proposals', () async {
+      final h = await harness();
+      final proposal = InvestInterestProposal.fromToolInput(
+        {
+          'add': ['ETH_USD'],
+          'rationale': 'Freeform orchestrator chat',
+        },
+        roleId: 'orchestrator',
+        chatId: 'c_orch_1',
+      );
+      await h.proposals.upsert(proposal);
+      expect(
+        InvestInterestProposalActions.isAutopilotAddOnlyEligible(proposal),
+        isTrue,
+      );
+      final err = await h.actions.confirm(proposal.id, autopilot: true);
+      expect(err, isNull);
+      expect(
+        h.proposals.byId(proposal.id)!.status,
+        InvestInterestProposalStatus.confirmed,
+      );
+      expect(h.favorites.investInterestSymbols, contains('ETH_USD'));
+    });
+
+    test('applyPendingAutopilotAddsForChat flushes add-only only', () async {
+      final h = await harness();
+      final addOnly = InvestInterestProposal.fromToolInput(
+        {
+          'add': ['ETH_USD'],
+          'rationale': 'Add ETH',
+        },
+        roleId: 'orchestrator',
+        chatId: 'c_flush_1',
+      );
+      final withRemove = InvestInterestProposal.fromToolInput(
+        {
+          'add': ['SOL_USD'],
+          'remove': ['MSFT'],
+          'rationale': 'Needs Confirm',
+        },
+        roleId: 'marketResearch',
+        chatId: 'c_flush_1',
+      );
+      final otherChat = InvestInterestProposal.fromToolInput(
+        {
+          'add': ['AAPL'],
+          'rationale': 'Other chat',
+        },
+        roleId: 'marketResearch',
+        chatId: 'c_flush_2',
+      );
+      await h.proposals.upsert(addOnly);
+      await h.proposals.upsert(withRemove);
+      await h.proposals.upsert(otherChat);
+
+      final applied =
+          await h.actions.applyPendingAutopilotAddsForChat('c_flush_1');
+      expect(applied, 1);
+      expect(
+        h.proposals.byId(addOnly.id)!.status,
+        InvestInterestProposalStatus.confirmed,
+      );
+      expect(
+        h.proposals.byId(withRemove.id)!.status,
+        InvestInterestProposalStatus.pending,
+      );
+      expect(
+        h.proposals.byId(otherChat.id)!.status,
+        InvestInterestProposalStatus.pending,
+      );
+      expect(h.favorites.investInterestSymbols, contains('ETH_USD'));
+      expect(h.favorites.investInterestSymbols, isNot(contains('SOL_USD')));
+    });
   });
 }

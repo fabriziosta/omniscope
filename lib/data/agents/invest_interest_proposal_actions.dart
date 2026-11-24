@@ -121,8 +121,36 @@ class InvestInterestProposalActions {
   }
 
   /// Investigation roles that may Autopilot-apply Invest interest adds.
+  ///
+  /// Freeform orchestrator chat stamps proposals as `orchestrator` when the
+  /// tool runs before a specialty id is known — treat that the same as
+  /// investigation for add-only Autopilot.
   static bool supportsInvestigationAutopilot(String roleId) {
-    return roleId == 'marketResearch' || roleId == 'portfolioGuide';
+    return roleId == 'marketResearch' ||
+        roleId == 'portfolioGuide' ||
+        roleId == 'orchestrator';
+  }
+
+  /// Pending actionable proposals created in [chatId].
+  List<InvestInterestProposal> pendingForChat(String chatId) {
+    final id = chatId.trim();
+    if (id.isEmpty) return const [];
+    return [
+      for (final p in _proposals.proposals)
+        if (p.chatId == id && p.isActionable) p,
+    ];
+  }
+
+  /// When Autopilot turns on mid-chat, apply pending add-only proposals for
+  /// that chat (same rules as apply-at-send). Returns how many applied.
+  Future<int> applyPendingAutopilotAddsForChat(String chatId) async {
+    var applied = 0;
+    for (final proposal in pendingForChat(chatId)) {
+      if (!isAutopilotAddOnlyEligible(proposal)) continue;
+      final err = await confirm(proposal.id, autopilot: true);
+      if (err == null) applied++;
+    }
+    return applied;
   }
 
   Future<void> _applyAddOnly(InvestInterestProposal proposal) async {

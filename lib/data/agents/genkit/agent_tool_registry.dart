@@ -12,6 +12,9 @@ abstract final class AgentToolIds {
   static const rememberFact = 'rememberFact';
   static const forgetFact = 'forgetFact';
   static const getAgentFleetStatus = 'getAgentFleetStatus';
+  static const getChatFocusSymbols = 'getChatFocusSymbols';
+  static const pinChatSymbols = 'pinChatSymbols';
+  static const unpinChatSymbols = 'unpinChatSymbols';
 
   static const all = <String>[
     getQuotes,
@@ -26,6 +29,9 @@ abstract final class AgentToolIds {
     rememberFact,
     forgetFact,
     getAgentFleetStatus,
+    getChatFocusSymbols,
+    pinChatSymbols,
+    unpinChatSymbols,
   ];
 
   /// Shared-memory tools (only when the chat has Memory on).
@@ -33,6 +39,13 @@ abstract final class AgentToolIds {
     getAgentMemory,
     rememberFact,
     forgetFact,
+  ];
+
+  /// Per-chat focus symbol tools (always available).
+  static const focusSymbolToolIds = <String>[
+    getChatFocusSymbols,
+    pinChatSymbols,
+    unpinChatSymbols,
   ];
 }
 
@@ -66,6 +79,9 @@ class AgentToolRegistry {
     AgentToolIds.rememberFact,
     AgentToolIds.forgetFact,
     AgentToolIds.getAgentFleetStatus,
+    AgentToolIds.getChatFocusSymbols,
+    AgentToolIds.pinChatSymbols,
+    AgentToolIds.unpinChatSymbols,
   ];
 
   static const List<AgentToolDefinition> catalog = [
@@ -121,6 +137,18 @@ class AgentToolRegistry {
       shortDescription:
           'Autopilot chats, Schedule, pending Confirm, and daily fill rails',
     ),
+    AgentToolDefinition(
+      id: AgentToolIds.getChatFocusSymbols,
+      shortDescription: 'Symbols pinned for this chat (not Invest interest)',
+    ),
+    AgentToolDefinition(
+      id: AgentToolIds.pinChatSymbols,
+      shortDescription: 'Pin symbols to this chat focus list (immediate)',
+    ),
+    AgentToolDefinition(
+      id: AgentToolIds.unpinChatSymbols,
+      shortDescription: 'Unpin symbols from this chat focus list (immediate)',
+    ),
   ];
 
   /// Role id → ordered tool ids granted to that specialty.
@@ -134,6 +162,9 @@ class AgentToolRegistry {
       AgentToolIds.rememberFact,
       AgentToolIds.forgetFact,
       AgentToolIds.getAgentFleetStatus,
+      AgentToolIds.getChatFocusSymbols,
+      AgentToolIds.pinChatSymbols,
+      AgentToolIds.unpinChatSymbols,
       AgentToolIds.proposeInvestInterestDiff,
     ],
     'liveBalanceExplainer': [
@@ -144,6 +175,9 @@ class AgentToolRegistry {
       AgentToolIds.rememberFact,
       AgentToolIds.forgetFact,
       AgentToolIds.getAgentFleetStatus,
+      AgentToolIds.getChatFocusSymbols,
+      AgentToolIds.pinChatSymbols,
+      AgentToolIds.unpinChatSymbols,
     ],
     'portfolioGuide': [
       AgentToolIds.getPracticePortfolio,
@@ -156,6 +190,9 @@ class AgentToolRegistry {
       AgentToolIds.rememberFact,
       AgentToolIds.forgetFact,
       AgentToolIds.getAgentFleetStatus,
+      AgentToolIds.getChatFocusSymbols,
+      AgentToolIds.pinChatSymbols,
+      AgentToolIds.unpinChatSymbols,
       AgentToolIds.proposeInvestInterestDiff,
     ],
     'intradayTrading': [
@@ -170,6 +207,9 @@ class AgentToolRegistry {
       AgentToolIds.rememberFact,
       AgentToolIds.forgetFact,
       AgentToolIds.getAgentFleetStatus,
+      AgentToolIds.getChatFocusSymbols,
+      AgentToolIds.pinChatSymbols,
+      AgentToolIds.unpinChatSymbols,
       AgentToolIds.proposeInvestInterestDiff,
     ],
     'cryptoSpotGuide': [
@@ -181,6 +221,9 @@ class AgentToolRegistry {
       AgentToolIds.rememberFact,
       AgentToolIds.forgetFact,
       AgentToolIds.getAgentFleetStatus,
+      AgentToolIds.getChatFocusSymbols,
+      AgentToolIds.pinChatSymbols,
+      AgentToolIds.unpinChatSymbols,
     ],
     'marketsLiteracy': [
       AgentToolIds.getQuotes,
@@ -191,6 +234,9 @@ class AgentToolRegistry {
       AgentToolIds.rememberFact,
       AgentToolIds.forgetFact,
       AgentToolIds.getAgentFleetStatus,
+      AgentToolIds.getChatFocusSymbols,
+      AgentToolIds.pinChatSymbols,
+      AgentToolIds.unpinChatSymbols,
     ],
   };
 

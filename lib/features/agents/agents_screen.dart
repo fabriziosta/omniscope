@@ -4,12 +4,17 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../core/formatting.dart';
 import '../../core/shell_navigation.dart';
+import '../../data/agents/agent_activity_repository.dart';
 import '../../data/agents/agent_app_settings.dart';
 import '../../data/agents/agent_chat_repository.dart';
 import '../../data/agents/chat_models.dart';
+import '../../data/agents/invest_interest_proposal_actions.dart';
+import '../../data/agents/invest_interest_proposal_repository.dart';
 import '../../data/agents/llm_model_router.dart';
 import '../../data/agents/llm_runtime_settings.dart';
 import '../../data/settings/env_secrets_repository.dart';
+import '../../data/settings/favorites_repository.dart';
+import '../../data/settings/mandate_settings.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/app_empty_view.dart';
 import '../../widgets/app_text.dart';
@@ -237,11 +242,25 @@ class _AgentsScreenState extends State<AgentsScreen> {
       }
     }
     await chats.setAutopilotEnabled(thread.chatId, enabled: next);
+    var appliedIi = 0;
+    if (next && mounted) {
+      final actions = InvestInterestProposalActions(
+        proposals: context.read<InvestInterestProposalRepository>(),
+        activity: context.read<AgentActivityRepository>(),
+        favorites: context.read<FavoritesRepository>(),
+        mandate: context.read<MandateSettings>(),
+      );
+      appliedIi =
+          await actions.applyPendingAutopilotAddsForChat(thread.chatId);
+    }
     if (!mounted) return;
     showAppToast(
       context,
       description: next
-          ? 'Autopilot on for this chat'
+          ? (appliedIi > 0
+              ? 'Autopilot on · applied $appliedIi Invest interest '
+                  '${appliedIi == 1 ? 'add' : 'adds'}'
+              : 'Autopilot on for this chat')
           : 'Autopilot off for this chat',
     );
   }

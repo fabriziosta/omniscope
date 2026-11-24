@@ -23,6 +23,9 @@ void main() {
           AgentToolIds.rememberFact,
           AgentToolIds.forgetFact,
           AgentToolIds.getAgentFleetStatus,
+          AgentToolIds.getChatFocusSymbols,
+          AgentToolIds.pinChatSymbols,
+          AgentToolIds.unpinChatSymbols,
           AgentToolIds.proposeInvestInterestDiff,
         ],
       );
@@ -36,6 +39,9 @@ void main() {
           AgentToolIds.rememberFact,
           AgentToolIds.forgetFact,
           AgentToolIds.getAgentFleetStatus,
+          AgentToolIds.getChatFocusSymbols,
+          AgentToolIds.pinChatSymbols,
+          AgentToolIds.unpinChatSymbols,
         ],
       );
       expect(
@@ -46,6 +52,9 @@ void main() {
           AgentToolIds.getAgentPnl,
           AgentToolIds.getAgentMemory,
           AgentToolIds.getAgentFleetStatus,
+          AgentToolIds.getChatFocusSymbols,
+          AgentToolIds.pinChatSymbols,
+          AgentToolIds.unpinChatSymbols,
           AgentToolIds.proposeInvestInterestDiff,
         ]),
       );
@@ -54,6 +63,7 @@ void main() {
         containsAll([
           AgentToolIds.getHistory,
           AgentToolIds.getAgentFleetStatus,
+          AgentToolIds.pinChatSymbols,
         ]),
       );
       expect(
@@ -67,6 +77,9 @@ void main() {
           AgentToolIds.rememberFact,
           AgentToolIds.forgetFact,
           AgentToolIds.getAgentFleetStatus,
+          AgentToolIds.getChatFocusSymbols,
+          AgentToolIds.pinChatSymbols,
+          AgentToolIds.unpinChatSymbols,
         ],
       );
       expect(
@@ -90,6 +103,13 @@ void main() {
           memoryEnabled: false,
         ),
         contains(AgentToolIds.getAgentFleetStatus),
+      );
+      expect(
+        AgentToolRegistry.toolIdsForRole(
+          'marketResearch',
+          memoryEnabled: false,
+        ),
+        contains(AgentToolIds.pinChatSymbols),
       );
     });
 
@@ -123,6 +143,10 @@ void main() {
           'cryptoSpotGuide',
           'marketsLiteracy',
         ],
+      );
+      expect(
+        AgentToolRegistry.rolesForTool(AgentToolIds.pinChatSymbols),
+        AgentToolRegistry.rolesForTool(AgentToolIds.getAgentFleetStatus),
       );
     });
 

@@ -151,8 +151,12 @@ class AgentChatThread {
     this.pinned = false,
     this.autopilotEnabled = false,
     this.memoryEnabled = true,
+    this.focusSymbols = const [],
     this.legacyRoleId,
   });
+
+  /// Soft cap on [focusSymbols] so chip rows and prompts stay small.
+  static const maxFocusSymbols = 12;
 
   final String chatId;
   final String title;
@@ -169,6 +173,10 @@ class AgentChatThread {
   /// When true, this chat may read/write the shared agent memory store.
   /// Default on; omit in JSON when true, write `false` when off.
   final bool memoryEnabled;
+
+  /// Ordered symbols this chat is focusing on (investigated / traded).
+  /// Distinct from Markets → Invest interest. Capped at [maxFocusSymbols].
+  final List<String> focusSymbols;
 
   /// Present when migrated from a legacy per-role thread.
   final String? legacyRoleId;
@@ -201,6 +209,7 @@ class AgentChatThread {
     bool? pinned,
     bool? autopilotEnabled,
     bool? memoryEnabled,
+    List<String>? focusSymbols,
     String? legacyRoleId,
     bool clearLegacyRoleId = false,
   }) {
@@ -212,6 +221,7 @@ class AgentChatThread {
       pinned: pinned ?? this.pinned,
       autopilotEnabled: autopilotEnabled ?? this.autopilotEnabled,
       memoryEnabled: memoryEnabled ?? this.memoryEnabled,
+      focusSymbols: focusSymbols ?? this.focusSymbols,
       legacyRoleId:
           clearLegacyRoleId ? null : (legacyRoleId ?? this.legacyRoleId),
     );
@@ -226,6 +236,8 @@ class AgentChatThread {
         if (autopilotEnabled) 'autopilotEnabled': true,
         // Default on: only persist when explicitly off.
         if (!memoryEnabled) 'memoryEnabled': false,
+        if (focusSymbols.isNotEmpty)
+          'focusSymbols': normalizeFocusSymbols(focusSymbols),
         if (legacyRoleId != null) 'legacyRoleId': legacyRoleId,
         // Keep roleId for older readers during transition.
         if (legacyRoleId != null) 'roleId': legacyRoleId,
@@ -265,6 +277,7 @@ class AgentChatThread {
       pinned: json['pinned'] == true,
       autopilotEnabled: json['autopilotEnabled'] == true,
       memoryEnabled: json['memoryEnabled'] != false,
+      focusSymbols: normalizeFocusSymbols(json['focusSymbols']),
       legacyRoleId: legacyRoleId,
     );
   }
@@ -274,6 +287,7 @@ class AgentChatThread {
     String title = 'New chat',
     bool autopilotEnabled = false,
     bool memoryEnabled = true,
+    List<String> focusSymbols = const [],
   }) {
     return AgentChatThread(
       chatId: chatId,
@@ -282,10 +296,61 @@ class AgentChatThread {
       updatedAt: DateTime.fromMillisecondsSinceEpoch(0),
       autopilotEnabled: autopilotEnabled,
       memoryEnabled: memoryEnabled,
+      focusSymbols: normalizeFocusSymbols(focusSymbols),
     );
   }
 
   static String newChatId() => 'c_${DateTime.now().microsecondsSinceEpoch}';
+
+  /// Uppercase, dedupe, and cap focus symbols (oldest dropped when over cap).
+  static List<String> normalizeFocusSymbols(Object? raw) {
+    final out = <String>[];
+    final seen = <String>{};
+    final items = raw is List ? raw : const [];
+    for (final item in items) {
+      final s = item?.toString().trim().toUpperCase() ?? '';
+      if (s.isEmpty || !seen.add(s)) continue;
+      out.add(s);
+    }
+    if (out.length <= maxFocusSymbols) return List.unmodifiable(out);
+    return List.unmodifiable(
+      out.sublist(out.length - maxFocusSymbols),
+    );
+  }
+
+  /// Append [toAdd] onto [current], deduped, capped at [maxFocusSymbols].
+  static List<String> mergeFocusSymbols(
+    List<String> current,
+    Iterable<String> toAdd,
+  ) {
+    final out = <String>[];
+    final seen = <String>{};
+    for (final raw in [...current, ...toAdd]) {
+      final s = raw.trim().toUpperCase();
+      if (s.isEmpty || !seen.add(s)) continue;
+      out.add(s);
+    }
+    if (out.length <= maxFocusSymbols) return List.unmodifiable(out);
+    return List.unmodifiable(
+      out.sublist(out.length - maxFocusSymbols),
+    );
+  }
+
+  /// Remove [toRemove] from [current].
+  static List<String> withoutFocusSymbols(
+    List<String> current,
+    Iterable<String> toRemove,
+  ) {
+    final drop = <String>{
+      for (final raw in toRemove)
+        if (raw.trim().isNotEmpty) raw.trim().toUpperCase(),
+    };
+    if (drop.isEmpty) return normalizeFocusSymbols(current);
+    return List.unmodifiable([
+      for (final s in normalizeFocusSymbols(current))
+        if (!drop.contains(s)) s,
+    ]);
+  }
 }
 
 class AgentChatsState {
