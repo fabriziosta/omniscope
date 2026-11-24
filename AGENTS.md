@@ -92,6 +92,7 @@ lib/
   core/                     # shared pure helpers (formatting, constants, fade routes)
   data/<domain>/            # models, repositories, API clients
   features/<feature>/       # screens, feature-local widgets, screen-scoped controllers
+                            # (landing = cold-start / brand-tap Home)
   widgets/                  # shared presentational widgets
 ```
 
@@ -99,7 +100,7 @@ lib/
 - Map provider-specific JSON **inside** the Yahoo / crypto exchange client, not in widgets.
 - Feature folders own their screens; shared chart stays under `widgets/`.
 - **Screen-scoped `ChangeNotifier`s** (provided at the route/screen with `ChangeNotifierProvider`, not in `main.dart`) own feature async: [`QuotesListController`](lib/features/quotes/quotes_list_controller.dart), [`PortfolioScreenController`](lib/features/portfolio/portfolio_screen_controller.dart), [`AssetDetailController`](lib/features/asset_detail/asset_detail_controller.dart), [`AgentChatController`](lib/features/agents/agent_chat_controller.dart). Use load-generation tokens so stale responses are ignored.
-- Shared chrome: `TabPageHeader`, `SubscreenAppBar`, `AppEmptyView`, `QuotesAsyncBody`, `MetricStat`, `SummaryWell`, `ThemedAccordionItem`, [`MasterDetailShell`](lib/widgets/master_detail_shell.dart) / `MasterDetailNavList` / `MasterDetailNavTile` / `MasterDetailContentPane` (Markets, Portfolio, Settings, Agents — content always visible; burger toggles nav — push layout at ≥720, overlay drawer below), `pushFadePage` / `FadePageRoute`, [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart) (in-context Investigate / Trade check), [`SymbolSearchButton`](lib/widgets/symbol_search.dart) (shell header curated symbol search → asset detail). Prefer [`showAppToast`](lib/widgets/app_toast.dart) over raw `ShadToaster`.
+- Shared chrome: `TabPageHeader`, `SubscreenAppBar`, `AppEmptyView`, `QuotesAsyncBody`, `MetricStat`, `SummaryWell`, `ThemedAccordionItem`, [`MasterDetailShell`](lib/widgets/master_detail_shell.dart) / `MasterDetailNavList` / `MasterDetailNavTile` / `MasterDetailContentPane` (Markets, Portfolio, Settings, Agents — content always visible; burger toggles nav — push layout at ≥720, overlay drawer below), `pushFadePage` / `FadePageRoute`, [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart) (in-context Investigate / Trade check), [`SymbolSearchButton`](lib/widgets/symbol_search.dart) (shell header curated symbol search → asset detail), [`LandingScreen`](lib/features/landing/landing_screen.dart) (cold start + brand tap via [`ShellNavigationController`](lib/core/shell_navigation.dart)). Prefer [`showAppToast`](lib/widgets/app_toast.dart) over raw `ShadToaster`.
 - Quote lists (Markets equity kinds + crypto exchange spot) always go through [`MarketDataClient`](lib/data/market/market_data_client.dart) — never call `CryptoExchangeClient.getQuotes` from UI.
 
 ## Market data — always use `MarketDataClient`
@@ -428,7 +429,7 @@ Canonical tokens live in [`lib/core/brand_colors.dart`](lib/core/brand_colors.da
 - Trade feedback: `ShadToaster` + `ShadToast` (use `.destructive` for failures).
 - Theme: slate neutrals + brand primary/secondary via `BrandColors` in `app.dart`.
 - Keep copy plain — this product is for people who find finance intimidating.
-- Shared brand mark: [`lib/widgets/app_placeholder_icon.dart`](lib/widgets/app_placeholder_icon.dart) in a compact shell header (transparent [`assets/brand/app_icon_foreground.png`](assets/brand/app_icon_foreground.png) on `colorScheme.secondary`; launcher master remains [`assets/brand/app_icon.png`](assets/brand/app_icon.png)).
+- Shared brand mark: [`lib/widgets/app_placeholder_icon.dart`](lib/widgets/app_placeholder_icon.dart) in a compact shell header (transparent [`assets/brand/app_icon_foreground.png`](assets/brand/app_icon_foreground.png) on `colorScheme.secondary`; launcher master remains [`assets/brand/app_icon.png`](assets/brand/app_icon.png)). Tapping the icon or **Omniscope** title opens the landing / Home surface ([`LandingScreen`](lib/features/landing/landing_screen.dart)); every cold start lands there ([`ShellNavigationController.goToLanding`](lib/core/shell_navigation.dart)).
 - Launcher / favicon / splash pipeline: edit masters under `assets/brand/`, then run `make icons` (or [`tool/regen_icons.sh`](tool/regen_icons.sh)) — Android / iOS / macOS / Web / Windows via `flutter_launcher_icons`, Linux `linux/runner/resources/`, plus Android / iOS / Web splash via `flutter_native_splash` (Teal `#CCFBF1` / `#134E4A`; desktop has no native splash).
 
 ## Commands

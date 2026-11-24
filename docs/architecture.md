@@ -15,7 +15,7 @@ lib/
   data/venues/              # VenueCatalog, shared live portfolio models
   data/portfolio/           # local paper portfolio (shared_preferences)
   data/agents/              # connections, chat threads, GenkitAgentRunner, catalog
-  features/markets|crypto|asset_detail|portfolio|agents|shell/
+  features/landing|markets|crypto|asset_detail|portfolio|agents|shell/
   widgets/                  # chart + brand mark
 assets/brand/               # master app icon (launchers + Android/iOS/Web splash)
 assets/agents/              # manifest.json (roles) + llm_models.json
@@ -53,5 +53,9 @@ That runs:
 - [`flutter_native_splash`](https://pub.dev/packages/flutter_native_splash) — branded Teal splash for **Android, iOS, and Web** (including Android 12+). Desktop (Linux / Windows / macOS) has no native OS splash; window/launcher icons still come from the same masters.
 
 [`lib/main.dart`](../lib/main.dart) keeps the native splash visible with `FlutterNativeSplash.preserve` until config/repos finish loading, then calls `remove` before `runApp`.
+
+## Landing / Home
+
+Every cold start opens the in-app landing ([`LandingScreen`](../lib/features/landing/landing_screen.dart)) via [`ShellNavigationController.showLanding`](../lib/core/shell_navigation.dart) (default `true`). It is **not** a sixth bottom tab: brand icon / Omniscope title in the shell header call `goToLanding()`; tab presses and deep-links clear landing. Android back after brand tap dismisses to the last tab when the user has already entered a tab this session.
 
 Selectable LLM models live in [`assets/agents/llm_models.json`](../assets/agents/llm_models.json); roles in [`assets/agents/manifest.json`](../assets/agents/manifest.json). In-app agents use Genkit Dart — see [`AGENTS.md`](../AGENTS.md).

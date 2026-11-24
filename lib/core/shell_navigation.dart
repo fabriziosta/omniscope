@@ -32,11 +32,19 @@ class ShellNavigationController extends ChangeNotifier {
   static const settingsTabIndex = 4;
 
   var _tabIndex = marketsTabIndex;
+  var _showLanding = true;
+  var _hasEnteredTab = false;
   String? _pendingActivityProposalId;
   String? _pendingSettingsSectionId;
   PendingAgentChatOpen? _pendingAgentChatOpen;
 
   int get tabIndex => _tabIndex;
+
+  /// Cold-start and brand-tap Home surface (not a bottom tab).
+  bool get showLanding => _showLanding;
+
+  /// True after the user has opened any tab this session (for back-from-landing).
+  bool get hasEnteredTab => _hasEnteredTab;
 
   String? get pendingActivityProposalId => _pendingActivityProposalId;
 
@@ -44,22 +52,36 @@ class ShellNavigationController extends ChangeNotifier {
 
   PendingAgentChatOpen? get pendingAgentChatOpen => _pendingAgentChatOpen;
 
+  /// Show the landing / Home surface (brand icon or title).
+  void goToLanding() {
+    if (_showLanding) return;
+    _showLanding = true;
+    notifyListeners();
+  }
+
+  /// Hide landing and restore the last tab (Android back after brand tap).
+  void dismissLanding() {
+    if (!_showLanding) return;
+    _showLanding = false;
+    notifyListeners();
+  }
+
   void selectTab(int index) {
-    if (_tabIndex == index) return;
+    if (_tabIndex == index && !_showLanding) return;
+    _showLanding = false;
+    _hasEnteredTab = true;
     _tabIndex = index;
     notifyListeners();
   }
 
   /// Switch to Agents tab.
   void goToAgents() {
-    _tabIndex = agentsTabIndex;
-    notifyListeners();
+    _enterTab(agentsTabIndex);
   }
 
   void goToActivity({String? proposalId}) {
     _pendingActivityProposalId = proposalId;
-    _tabIndex = activityTabIndex;
-    notifyListeners();
+    _enterTab(activityTabIndex);
   }
 
   /// Switch to Agents and open/create a chat (e.g. from a shell notification).
@@ -84,13 +106,18 @@ class ShellNavigationController extends ChangeNotifier {
       initialSide: initialSide,
       initialQuantity: initialQuantity,
     );
-    _tabIndex = agentsTabIndex;
-    notifyListeners();
+    _enterTab(agentsTabIndex);
   }
 
   void goToSettings({String? sectionId}) {
     _pendingSettingsSectionId = sectionId;
-    _tabIndex = settingsTabIndex;
+    _enterTab(settingsTabIndex);
+  }
+
+  void _enterTab(int index) {
+    _showLanding = false;
+    _hasEnteredTab = true;
+    _tabIndex = index;
     notifyListeners();
   }
 

@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 
 import '../core/app_error_controller.dart';
+import '../core/shell_navigation.dart';
 import 'app_fatal_error_screen.dart';
 
 /// Replaces the navigator subtree with [AppFatalErrorScreen] when fatal.
@@ -17,7 +18,12 @@ class AppErrorGate extends StatelessWidget {
   Widget build(BuildContext context) {
     final errors = context.watch<AppErrorController>();
     if (errors.isActive) {
-      return AppFatalErrorScreen(onGoHome: errors.goHome);
+      return AppFatalErrorScreen(
+        onGoHome: () {
+          errors.goHome();
+          context.read<ShellNavigationController>().goToLanding();
+        },
+      );
     }
     return child ?? const SizedBox.shrink();
   }
