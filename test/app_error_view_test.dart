@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscope/core/app_error_controller.dart';
 import 'package:omniscope/core/app_error_handling.dart';
+import 'package:omniscope/core/shell_navigation.dart';
 import 'package:omniscope/widgets/app_error_gate.dart';
 import 'package:omniscope/widgets/app_error_view.dart';
 import 'package:omniscope/widgets/app_fatal_error_screen.dart';
@@ -45,10 +46,17 @@ void main() {
   testWidgets('uncaught async error shows fatal overlay', (tester) async {
     final navigatorKey = GlobalKey<NavigatorState>();
     final errors = AppErrorController(navigatorKey: navigatorKey);
+    final shellNav = ShellNavigationController()
+      ..selectTab(ShellNavigationController.marketsTabIndex);
 
     await tester.pumpWidget(
-      ChangeNotifierProvider<AppErrorController>.value(
-        value: errors,
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AppErrorController>.value(value: errors),
+          ChangeNotifierProvider<ShellNavigationController>.value(
+            value: shellNav,
+          ),
+        ],
         child: ShadApp(
           navigatorKey: navigatorKey,
           builder: (context, child) => AppErrorGate(child: child),
@@ -61,6 +69,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Home marker'), findsOneWidget);
+    expect(shellNav.showLanding, isFalse);
 
     errors.reportUnhandled(StateError('secret async boom'), StackTrace.current);
     await tester.pumpAndSettle();
@@ -77,5 +86,6 @@ void main() {
     expect(errors.isActive, isFalse);
     expect(find.byType(AppFatalErrorScreen), findsNothing);
     expect(find.text('Home marker'), findsOneWidget);
+    expect(shellNav.showLanding, isTrue);
   });
 }
