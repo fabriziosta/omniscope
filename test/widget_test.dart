@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscope/app.dart';
+import 'package:omniscope/core/app_copy.dart';
 import 'package:omniscope/core/app_error_controller.dart';
 import 'package:omniscope/core/app_info.dart';
 import 'package:omniscope/core/shell_navigation.dart';
@@ -161,7 +162,10 @@ class _FakeCryptoExchangeClient
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  Future<void> pumpApp(WidgetTester tester) async {
+  Future<ShellNavigationController> pumpApp(
+    WidgetTester tester, {
+    bool openMarkets = true,
+  }) async {
     final config = await memoryConfig();
     final portfolio = PortfolioRepository(store: config);
     await portfolio.load();
@@ -191,6 +195,7 @@ void main() {
     await agentActivity.load();
     final appNotifications = AppNotificationRepository(store: config);
     await appNotifications.load();
+    final shellNav = ShellNavigationController();
 
     await tester.binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -296,8 +301,8 @@ void main() {
             value: dataSourceSettings,
           ),
           ChangeNotifierProvider<AppErrorController>.value(value: appErrors),
-          ChangeNotifierProvider<ShellNavigationController>(
-            create: (_) => ShellNavigationController(),
+          ChangeNotifierProvider<ShellNavigationController>.value(
+            value: shellNav,
           ),
           ChangeNotifierProvider<AgentScheduleCoordinator>.value(
             value: agentSchedule,
@@ -311,11 +316,27 @@ void main() {
     // HomeShell resumes the schedule on first frame; stop it for widget tests.
     agentSchedule.pause();
     addTearDown(agentSchedule.dispose);
+    if (openMarkets) {
+      shellNav.selectTab(ShellNavigationController.marketsTabIndex);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    return shellNav;
   }
 
   testWidgets('shell tabs: markets, portfolio, activity, agents, settings',
       (tester) async {
-    await pumpApp(tester);
+    final shellNav = await pumpApp(tester, openMarkets: false);
+
+    expect(shellNav.showLanding, isTrue);
+    expect(find.text(AppCopy.tagline), findsOneWidget);
+    expect(find.text(AppCopy.landingSupport), findsOneWidget);
+    expect(find.text(AppCopy.tabTooltipMarkets), findsOneWidget);
+
+    shellNav.selectTab(ShellNavigationController.marketsTabIndex);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(shellNav.showLanding, isFalse);
 
     expect(find.text('Markets'), findsWidgets);
     expect(find.text('Portfolio'), findsWidgets);

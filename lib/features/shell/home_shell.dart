@@ -20,6 +20,7 @@ import '../activity/activity_screen.dart';
 import '../agents/agent_schedule_coordinator.dart';
 import '../agents/agents_screen.dart';
 import '../asset_detail/asset_detail_screen.dart';
+import '../landing/landing_screen.dart';
 import '../markets/markets_screen.dart';
 import '../portfolio/portfolio_screen.dart';
 import '../settings/settings_screen.dart';
@@ -104,7 +105,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   void _onTabPressed(int tabIndex) {
     final shellNav = context.read<ShellNavigationController>();
-    if (shellNav.tabIndex == tabIndex) {
+    if (!shellNav.showLanding && shellNav.tabIndex == tabIndex) {
       _tabNavigatorKeys[tabIndex]
           .currentState
           ?.popUntil((route) => route.isFirst);
@@ -118,10 +119,31 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     return nav != null && nav.canPop();
   }
 
+  void _openSymbolFromSearch(String symbol, int tabIndex) {
+    final shellNav = context.read<ShellNavigationController>();
+    if (shellNav.showLanding) {
+      shellNav.selectTab(ShellNavigationController.marketsTabIndex);
+      tabIndex = ShellNavigationController.marketsTabIndex;
+    }
+    // Nested navigator may not be mounted until after the tab switch rebuilds.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final nav = _tabNavigatorKeys[tabIndex].currentState;
+      if (nav == null) return;
+      nav.push<void>(
+        FadePageRoute<void>(
+          builder: (_) => AssetDetailScreen(symbol: symbol),
+        ),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final index = context.watch<ShellNavigationController>().tabIndex;
+    final shellNav = context.watch<ShellNavigationController>();
+    final index = shellNav.tabIndex;
+    final showLanding = shellNav.showLanding;
     final pendingCount =
         context.watch<TradeProposalRepository>().pendingActionableCount +
             context
@@ -133,15 +155,25 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     return InTabBackScope(
       registry: _inTabBack,
       child: PopScope(
-        // Always intercept: navigator → in-tab master–detail → exit.
+        // Always intercept: landing → navigator → in-tab master–detail → exit.
         canPop: false,
         onPopInvokedWithResult: (didPop, _) {
           if (didPop) return;
-          if (_activeTabCanPop(index)) {
-            _tabNavigatorKeys[index].currentState?.maybePop();
+          final nav = context.read<ShellNavigationController>();
+          if (nav.showLanding) {
+            if (nav.hasEnteredTab) {
+              nav.dismissLanding();
+              return;
+            }
+            SystemNavigator.pop();
             return;
           }
-          if (_inTabBack.handle(index)) return;
+          final tab = nav.tabIndex;
+          if (_activeTabCanPop(tab)) {
+            _tabNavigatorKeys[tab].currentState?.maybePop();
+            return;
+          }
+          if (_inTabBack.handle(tab)) return;
           SystemNavigator.pop();
         },
         child: ColoredBox(
@@ -153,27 +185,39 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 // reachable on phones; brand wordmark stays wide-only.
                 _ShellHeader(
                   showBrand: wide,
-                  onSymbolSelected: (symbol) {
-                    final nav = _tabNavigatorKeys[index].currentState;
-                    if (nav == null) return;
-                    nav.push<void>(
-                      FadePageRoute<void>(
-                        builder: (_) => AssetDetailScreen(symbol: symbol),
-                      ),
-                    );
-                  },
+                  onBrandTap: () =>
+                      context.read<ShellNavigationController>().goToLanding(),
+                  onSymbolSelected: (symbol) =>
+                      _openSymbolFromSearch(symbol, index),
                 ),
                 Expanded(
-                  child: IndexedStack(
-                    index: index,
+                  child: Stack(
+                    fit: StackFit.expand,
                     children: [
-                      for (var i = 0; i < _pages.length; i++)
-                        _TabNavigator(
-                          tabIndex: i,
-                          navigatorKey: _tabNavigatorKeys[i],
-                          observer: _tabObservers[i],
-                          root: _pages[i],
+                      // Keep tab navigators mounted so brand → landing → back
+                      // does not reset Markets / Agents state. Skip building
+                      // them on the initial cold-start landing so quote-fetch
+                      // timers are not started until the user opens a tab.
+                      if (!showLanding || shellNav.hasEnteredTab)
+                        Offstage(
+                          offstage: showLanding,
+                          child: TickerMode(
+                            enabled: !showLanding,
+                            child: IndexedStack(
+                              index: index,
+                              children: [
+                                for (var i = 0; i < _pages.length; i++)
+                                  _TabNavigator(
+                                    tabIndex: i,
+                                    navigatorKey: _tabNavigatorKeys[i],
+                                    observer: _tabObservers[i],
+                                    root: _pages[i],
+                                  ),
+                              ],
+                            ),
+                          ),
                         ),
+                      if (showLanding) const LandingScreen(),
                     ],
                   ),
                 ),
@@ -193,7 +237,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                             label: entry.$2,
                             tooltip: entry.$3,
                             icon: entry.$4,
-                            selected: index == entry.$1,
+                            selected:
+                                !showLanding && index == entry.$1,
                             badgeCount: entry.$1 ==
                                     ShellNavigationController.agentsTabIndex
                                 ? pendingCount
@@ -279,10 +324,12 @@ class _TabRouteObserver extends NavigatorObserver {
 class _ShellHeader extends StatelessWidget {
   const _ShellHeader({
     required this.showBrand,
+    required this.onBrandTap,
     required this.onSymbolSelected,
   });
 
   final bool showBrand;
+  final VoidCallback onBrandTap;
   final ValueChanged<String> onSymbolSelected;
 
   @override
@@ -295,21 +342,31 @@ class _ShellHeader extends StatelessWidget {
         height: 40,
         child: Row(
           children: [
-            if (showBrand) ...[
-              const AppPlaceholderIcon(size: 24),
-              const SizedBox(width: 10),
-              Text(
-                'Omniscope',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: theme.textTheme.large.fontSize ?? 18,
-                  fontWeight: FontWeight.w600,
-                  height: theme.textTheme.large.height,
-                  color: theme.colorScheme.foreground,
+            MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onBrandTap,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AppPlaceholderIcon(size: showBrand ? 24 : 22),
+                    if (showBrand) ...[
+                      const SizedBox(width: 10),
+                      Text(
+                        'Omniscope',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: theme.textTheme.large.fontSize ?? 18,
+                          fontWeight: FontWeight.w600,
+                          height: theme.textTheme.large.height,
+                          color: theme.colorScheme.foreground,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-            ] else ...[
-              const AppPlaceholderIcon(size: 22),
-            ],
+            ),
             const Spacer(),
             SymbolSearchButton(onSymbolSelected: onSymbolSelected),
             const NotificationBellButton(),
