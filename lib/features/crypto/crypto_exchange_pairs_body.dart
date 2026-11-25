@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 
@@ -14,9 +12,9 @@ import '../../widgets/app_empty_view.dart';
 import '../../widgets/master_detail_shell.dart';
 import '../../widgets/quote_list_tile.dart';
 import '../../widgets/quotes_async_body.dart';
-import '../../widgets/quotes_filter_field.dart';
 import '../../widgets/quotes_load_more_bar.dart';
 import '../../widgets/quotes_paging_error_listener.dart';
+import '../../widgets/symbol_search.dart';
 import '../asset_detail/asset_detail_screen.dart';
 import '../quotes/quotes_list_controller.dart';
 
@@ -64,7 +62,7 @@ class CryptoExchangePairsPane extends StatelessWidget {
   }
 }
 
-class _CryptoExchangePairsPaneView extends StatefulWidget {
+class _CryptoExchangePairsPaneView extends StatelessWidget {
   const _CryptoExchangePairsPaneView({
     required this.displayName,
     required this.exchangeId,
@@ -75,32 +73,7 @@ class _CryptoExchangePairsPaneView extends StatefulWidget {
   final String exchangeId;
   final VoidCallback onOpenMenu;
 
-  @override
-  State<_CryptoExchangePairsPaneView> createState() =>
-      _CryptoExchangePairsPaneViewState();
-}
-
-class _CryptoExchangePairsPaneViewState
-    extends State<_CryptoExchangePairsPaneView> {
-  final _filterController = TextEditingController();
-  Timer? _filterDebounce;
-
-  @override
-  void dispose() {
-    _filterDebounce?.cancel();
-    _filterController.dispose();
-    super.dispose();
-  }
-
-  void _onFilterChanged(String value) {
-    _filterDebounce?.cancel();
-    _filterDebounce = Timer(const Duration(milliseconds: 250), () {
-      if (!mounted) return;
-      context.read<QuotesListController>().setSymbolQuery(value);
-    });
-  }
-
-  void _openAsset(String symbol) {
+  void _openAsset(BuildContext context, String symbol) {
     pushFadePage(context, AssetDetailScreen(symbol: symbol));
   }
 
@@ -109,17 +82,16 @@ class _CryptoExchangePairsPaneViewState
     final density = context.watch<DisplaySettings>().listDensity;
     final compact = density == ListDensity.compact;
     final gap = compact ? 4.0 : 8.0;
-    final controller = context.watch<QuotesListController>();
 
     return MasterDetailContentPane(
       title: 'Spot pairs',
       subtitle:
-          '${widget.displayName} spot USD pairs (public market data). '
+          '$displayName spot USD pairs (public market data). '
           'Load more to browse additional instruments.',
-      onOpenMenu: widget.onOpenMenu,
+      onOpenMenu: onOpenMenu,
       trailing: AgentLaunchButton(
         intent: AgentLaunchIntent.explainCryptoSpot,
-        exchangeId: widget.exchangeId,
+        exchangeId: exchangeId,
         outline: true,
         showTradeOption: false,
       ),
@@ -127,20 +99,15 @@ class _CryptoExchangePairsPaneViewState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            QuotesFilterField(
-              controller: _filterController,
-              onChanged: _onFilterChanged,
+            SymbolSearchBar(
+              onSymbolSelected: (symbol) => _openAsset(context, symbol),
             ),
             Expanded(
               child: QuotesAsyncBody(
                 errorTitle: 'Could not load crypto',
                 builder: (context, quotes) {
                   if (quotes.isEmpty) {
-                    return AppEmptyView(
-                      controller.symbolQuery.isEmpty
-                          ? AppCopy.noQuotes
-                          : AppCopy.noQuotesMatchFilter,
-                    );
+                    return const AppEmptyView(AppCopy.noQuotes);
                   }
                   return ListView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -157,8 +124,8 @@ class _CryptoExchangePairsPaneViewState
                         child: QuoteListTile(
                           quote: quote,
                           density: density,
-                          cryptoExchangeId: widget.exchangeId,
-                          onTap: () => _openAsset(quote.symbol),
+                          cryptoExchangeId: exchangeId,
+                          onTap: () => _openAsset(context, quote.symbol),
                         ),
                       );
                     },

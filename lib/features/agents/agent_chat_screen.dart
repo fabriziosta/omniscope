@@ -23,7 +23,6 @@ import '../../data/agents/llm_runtime_settings.dart';
 import '../../data/agents/trade_proposal.dart';
 import '../../data/agents/trade_proposal_repository.dart';
 import '../../data/crypto/crypto_exchange_registry.dart';
-import '../../data/market/known_app_symbols.dart';
 import '../../data/market/market_data_client.dart';
 import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/data_source_settings.dart';
@@ -719,12 +718,12 @@ class _FocusSymbolChips extends StatelessWidget {
         children: [
           Text(
             'In this chat',
-            style: theme.textTheme.muted.copyWith(fontSize: 11),
+            style: theme.textTheme.muted.copyWith(fontSize: 10),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: 6,
+            runSpacing: 6,
             children: [
               for (final symbol in symbols)
                 _FocusSymbolChip(
@@ -752,11 +751,11 @@ class _FocusSymbolChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
     return Container(
-      height: 44,
-      padding: const EdgeInsets.only(left: 4, right: 2),
+      height: 28,
+      padding: const EdgeInsets.only(left: 2, right: 0),
       decoration: BoxDecoration(
         color: theme.colorScheme.secondary.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(22),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: theme.colorScheme.border),
       ),
       child: Row(
@@ -764,14 +763,15 @@ class _FocusSymbolChip extends StatelessWidget {
         children: [
           ShadButton.ghost(
             size: ShadButtonSize.sm,
-            height: 36,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+            height: 24,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             onPressed: () {
               pushFadePage(context, AssetDetailScreen(symbol: symbol));
             },
             child: Text(
               symbol,
               style: theme.textTheme.small.copyWith(
+                fontSize: 12,
                 color: theme.colorScheme.primary,
                 fontWeight: FontWeight.w600,
               ),
@@ -781,13 +781,13 @@ class _FocusSymbolChip extends StatelessWidget {
             message: 'Unpin $symbol',
             child: ShadButton.ghost(
               size: ShadButtonSize.sm,
-              width: 36,
-              height: 36,
+              width: 24,
+              height: 24,
               padding: EdgeInsets.zero,
               onPressed: onUnpin,
               child: Icon(
                 LucideIcons.x,
-                size: 14,
+                size: 12,
                 color: theme.colorScheme.mutedForeground,
               ),
             ),
@@ -1024,21 +1024,6 @@ class _ChatBubble extends StatelessWidget {
     );
   }
 
-  List<String> _matchedSymbols(BuildContext context) {
-    try {
-      final known = knownAppSymbols(
-        cryptoRegistry: context.read<CryptoExchangeRegistry>(),
-        favorites: context.read<FavoritesRepository>(),
-        portfolio: context.read<PortfolioRepository>(),
-        dataSources: context.read<DataSourceSettings>(),
-      );
-      return matchingKnownSymbolsInText(message.content, known: known);
-    } catch (_) {
-      // Providers may be absent in isolated tests.
-      return const [];
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
@@ -1053,8 +1038,6 @@ class _ChatBubble extends StatelessWidget {
     final showAssistantMeta = !isUser &&
         (message.content.trim().isNotEmpty ||
             message.generationMetaLabel != null);
-    final matchedSymbols = _matchedSymbols(context);
-    final showAssetLinks = matchedSymbols.isNotEmpty;
 
     return Align(
       alignment: align,
@@ -1069,7 +1052,7 @@ class _ChatBubble extends StatelessWidget {
             Container(
               margin: EdgeInsets.only(
                 top: 6,
-                bottom: (showAssistantMeta || showAssetLinks) ? 2 : 6,
+                bottom: showAssistantMeta ? 2 : 6,
               ),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
@@ -1127,26 +1110,6 @@ class _ChatBubble extends StatelessWidget {
                 ),
               ),
             ),
-            if (showAssetLinks)
-              SelectionContainer.disabled(
-                child: Padding(
-                  padding: EdgeInsets.only(
-                    left: isUser ? 0 : 2,
-                    right: isUser ? 2 : 0,
-                    bottom: showAssistantMeta ? 2 : 6,
-                  ),
-                  child: Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    alignment:
-                        isUser ? WrapAlignment.end : WrapAlignment.start,
-                    children: [
-                      for (final symbol in matchedSymbols)
-                        _ChatAssetLink(symbol: symbol),
-                    ],
-                  ),
-                ),
-              ),
             if (showAssistantMeta)
               SelectionContainer.disabled(
                 child: Padding(
@@ -1204,46 +1167,6 @@ class _ChatBubble extends StatelessWidget {
                   busy: busy,
                 ),
               ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ChatAssetLink extends StatelessWidget {
-  const _ChatAssetLink({required this.symbol});
-
-  final String symbol;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    return AppTooltip(
-      message: 'Open $symbol details',
-      child: ShadButton.ghost(
-        size: ShadButtonSize.sm,
-        height: 32,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        onPressed: () {
-          pushFadePage(context, AssetDetailScreen(symbol: symbol));
-        },
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              LucideIcons.lineChart,
-              size: 14,
-              color: theme.colorScheme.primary,
-            ),
-            const SizedBox(width: 6),
-            Text(
-              symbol,
-              style: theme.textTheme.small.copyWith(
-                color: theme.colorScheme.primary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
           ],
         ),
       ),

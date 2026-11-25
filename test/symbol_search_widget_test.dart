@@ -87,7 +87,8 @@ void main() {
     await tester.tap(find.byType(SymbolSearchButton));
     await tester.pumpAndSettle();
 
-    expect(find.text(AppCopy.symbolSearchHint), findsOneWidget);
+    // Hint appears in the dialog field (and would also appear on SymbolSearchBar).
+    expect(find.text(AppCopy.symbolSearchHint), findsWidgets);
 
     // Search field should take focus immediately (desktop caret / mobile keyboard).
     final editable = tester.widget<EditableText>(find.byType(EditableText));

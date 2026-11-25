@@ -2,26 +2,13 @@
 abstract final class AppCopy {
   static const tagline = 'My trusted learning and trading buddy';
 
-  /// Landing / Home support line under the tagline.
-  static const landingSupport =
-      'Learn investing and personal finance on this device — no accounts, '
-      'your keys stay local.';
-
-  /// Short educational disclaimer under landing shortcuts.
-  static const landingDisclaimer =
-      'Not financial advice. Paper trading is simulated.';
-
-  static const landingTryInvestigate = 'Try Investigate';
-
-  static const landingOpenConnections = 'Add an LLM key';
-
   /// Bottom-nav hover / long-press hints (plain language, not just the label).
-  static const tabTooltipMarkets =
-      'Browse favorites, equities, and spot crypto by exchange';
   static const tabTooltipPortfolio =
       'Practice paper trading and live exchange balances';
+  static const tabTooltipMarkets =
+      'Browse favorites, equities, and spot crypto by exchange';
   static const tabTooltipActivity =
-      'Confirm pending agent suggestions and review past operations';
+      'Alerts, pending suggestions, and past agent operations';
   static const tabTooltipAgents =
       'Connect AI helpers and open chat';
   static const tabTooltipSettings =

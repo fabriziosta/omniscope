@@ -1,4 +1,4 @@
-/// Kind of in-app attention notification (shell bell inbox).
+/// Kind of in-app attention alert (Activity → Alerts).
 enum AppNotificationKind {
   scheduledRunCompleted,
   scheduledProposalPending,
@@ -45,7 +45,7 @@ extension AppNotificationStatusX on AppNotificationStatus {
   }
 }
 
-/// Durable in-app notification for the shell attention inbox.
+/// Durable in-app alert shown under Activity → Alerts.
 class AppNotification {
   const AppNotification({
     required this.id,

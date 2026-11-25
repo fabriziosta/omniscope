@@ -54,6 +54,22 @@ Desk note: buy a little.
       expect(TradeProposal.fromJson(proposal.toJson()).chatId, 'c_trade_1');
     });
 
+    test('parses string fractional quantity from LLM JSON', () {
+      final proposal = TradeProposal.fromLlmJson(
+        {
+          'ticker': 'BTC_USD',
+          'action': 'buy',
+          'quantity': '0.01',
+          'rationale': 'affordable fraction',
+          'risk_approved': true,
+        },
+        roleId: 'intradayTrading',
+        exchangeId: 'practice',
+      );
+      expect(proposal.quantity, 0.01);
+      expect(proposal.isActionable, isTrue);
+    });
+
     test('hold is not actionable', () {
       final proposal = TradeProposal.fromLlmJson(
         {

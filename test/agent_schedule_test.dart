@@ -8,6 +8,7 @@ import 'package:omniscope/data/agents/agent_role_catalog.dart';
 import 'package:omniscope/data/agents/agent_role_prompts.dart';
 import 'package:omniscope/data/agents/agents_repository.dart';
 import 'package:omniscope/data/agents/models.dart';
+import 'package:omniscope/data/agents/invest_interest_proposal_repository.dart';
 import 'package:omniscope/data/agents/schedule_chat_binding.dart';
 import 'package:omniscope/data/agents/trade_proposal_repository.dart';
 import 'package:omniscope/data/crypto/crypto_exchange_registry.dart';
@@ -482,10 +483,13 @@ void main() {
           AgentActivityRepository activity,
           AgentChatRepository chats,
           AppNotificationRepository notifications,
+          InvestInterestProposalRepository investInterest,
           AgentAppSettings agentApp,
           ValueGetter<int> agentCalls,
           List<String> wakeMessages,
-        })> harness() async {
+        })> harness({
+      String Function(String lastUser)? replyFor,
+    }) async {
       final store = await memoryConfig();
       final roles = AgentRoleCatalog.parse(_manifestFixture);
       final agents = AgentsRepository(store: store, roleCatalog: roles);
@@ -507,6 +511,8 @@ void main() {
       await chats.load();
       final proposals = TradeProposalRepository(store: store);
       await proposals.load();
+      final investInterest = InvestInterestProposalRepository(store: store);
+      await investInterest.load();
       final activity = AgentActivityRepository(store: store);
       await activity.load();
       final notifications = AppNotificationRepository(store: store);
@@ -527,6 +533,7 @@ void main() {
           replyFor: (lastUser) {
             calls++;
             wakeMessages.add(lastUser);
+            if (replyFor != null) return replyFor(lastUser);
             return 'Scheduled brief';
           },
         ),
@@ -547,6 +554,7 @@ void main() {
         secrets: secrets,
         llmRuntime: llmRuntime,
         appSettings: agentApp,
+        investInterestProposals: investInterest,
         pollInterval: const Duration(hours: 24),
       );
       return (
@@ -556,6 +564,7 @@ void main() {
         activity: activity,
         chats: chats,
         notifications: notifications,
+        investInterest: investInterest,
         agentApp: agentApp,
         agentCalls: () => calls,
         wakeMessages: wakeMessages,
@@ -665,6 +674,36 @@ void main() {
       expect(h.agentCalls(), 4);
       expect(h.chats.threads, hasLength(1));
       expect(h.agentApp.scheduleChatId, h.chats.threads.single.chatId);
+
+      h.coord.dispose();
+    });
+
+    test('skips Activity Alerts when a pending proposal is created', () async {
+      final h = await harness(
+        replyFor: (_) => '''
+Review done.
+
+```json
+{"type":"invest_interest","add":["NVDA"],"rationale":"Add growth name"}
+```
+''',
+      );
+
+      await h.agentApp.setSchedule(
+        enabled: true,
+        interval: AgentScheduleInterval.hour1,
+        symbols: const ['AAPL'],
+        useInvestInterest: false,
+      );
+
+      h.coord.debugMarkResumed();
+      final now = DateTime.utc(2026, 8, 1, 10);
+      await h.coord.tick(now: now);
+
+      expect(h.agentCalls(), 1);
+      expect(h.investInterest.pendingActionable, isNotEmpty);
+      expect(h.notifications.active, isEmpty);
+      expect(h.notifications.unreadCount, 0);
 
       h.coord.dispose();
     });

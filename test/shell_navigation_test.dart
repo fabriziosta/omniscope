@@ -2,69 +2,55 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscope/core/shell_navigation.dart';
 
 void main() {
-  group('ShellNavigationController landing', () {
-    test('cold start shows landing on Markets tab index', () {
+  group('ShellNavigationController home', () {
+    test('cold start opens Home (Portfolio) tab', () {
       final nav = ShellNavigationController();
-      expect(nav.showLanding, isTrue);
-      expect(nav.hasEnteredTab, isFalse);
-      expect(nav.tabIndex, ShellNavigationController.marketsTabIndex);
-    });
-
-    test('selectTab hides landing and marks entered', () {
-      final nav = ShellNavigationController();
-      nav.selectTab(ShellNavigationController.portfolioTabIndex);
-      expect(nav.showLanding, isFalse);
-      expect(nav.hasEnteredTab, isTrue);
+      expect(nav.tabIndex, ShellNavigationController.homeTabIndex);
       expect(nav.tabIndex, ShellNavigationController.portfolioTabIndex);
     });
 
-    test('selectTab while on landing with same index still dismisses', () {
+    test('selectTab switches tabs', () {
       final nav = ShellNavigationController();
-      expect(nav.tabIndex, ShellNavigationController.marketsTabIndex);
       nav.selectTab(ShellNavigationController.marketsTabIndex);
-      expect(nav.showLanding, isFalse);
-      expect(nav.hasEnteredTab, isTrue);
+      expect(nav.tabIndex, ShellNavigationController.marketsTabIndex);
     });
 
-    test('goToLanding restores landing without changing tab', () {
+    test('selectTab is no-op when already on that tab', () {
+      final nav = ShellNavigationController();
+      var notified = 0;
+      nav.addListener(() => notified++);
+      nav.selectTab(ShellNavigationController.homeTabIndex);
+      expect(notified, 0);
+      expect(nav.tabIndex, ShellNavigationController.homeTabIndex);
+    });
+
+    test('goToHome selects Home tab', () {
       final nav = ShellNavigationController();
       nav.selectTab(ShellNavigationController.agentsTabIndex);
-      nav.goToLanding();
-      expect(nav.showLanding, isTrue);
-      expect(nav.tabIndex, ShellNavigationController.agentsTabIndex);
-      expect(nav.hasEnteredTab, isTrue);
+      nav.goToHome();
+      expect(nav.tabIndex, ShellNavigationController.homeTabIndex);
     });
 
-    test('dismissLanding restores last tab', () {
-      final nav = ShellNavigationController();
-      nav.selectTab(ShellNavigationController.settingsTabIndex);
-      nav.goToLanding();
-      nav.dismissLanding();
-      expect(nav.showLanding, isFalse);
-      expect(nav.tabIndex, ShellNavigationController.settingsTabIndex);
-    });
-
-    test('deep-links clear landing', () {
+    test('deep-links switch tabs and queue pending payloads', () {
       final nav = ShellNavigationController();
       nav.goToAgents();
-      expect(nav.showLanding, isFalse);
       expect(nav.tabIndex, ShellNavigationController.agentsTabIndex);
 
-      nav.goToLanding();
       nav.goToActivity(proposalId: 'p1');
-      expect(nav.showLanding, isFalse);
       expect(nav.tabIndex, ShellNavigationController.activityTabIndex);
       expect(nav.takePendingActivityProposalId(), 'p1');
+      expect(nav.takePendingActivityOpenAlerts(), isFalse);
 
-      nav.goToLanding();
+      nav.goToActivity(openAlerts: true);
+      expect(nav.tabIndex, ShellNavigationController.activityTabIndex);
+      expect(nav.takePendingActivityOpenAlerts(), isTrue);
+      expect(nav.takePendingActivityOpenAlerts(), isFalse);
+
       nav.goToSettings(sectionId: 'connections');
-      expect(nav.showLanding, isFalse);
       expect(nav.tabIndex, ShellNavigationController.settingsTabIndex);
       expect(nav.takePendingSettingsSectionId(), 'connections');
 
-      nav.goToLanding();
       nav.goToAgentChat(chatId: 'c1');
-      expect(nav.showLanding, isFalse);
       expect(nav.tabIndex, ShellNavigationController.agentsTabIndex);
       expect(nav.takePendingAgentChatOpen()?.chatId, 'c1');
     });

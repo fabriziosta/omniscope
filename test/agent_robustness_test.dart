@@ -54,7 +54,7 @@ void main() {
         ),
         51,
       );
-      // W20 + F14 + D14 + G20 + T15 (multiSource) = 83
+      // W20 + F14 + D20 + G20 + T15 (multiSource) = 89
       expect(
         AgentRobustness.score(
           _role(
@@ -63,7 +63,7 @@ void main() {
             workload: AgentWorkload.trading,
           ),
         ),
-        83,
+        89,
       );
       // W8 + F14 + D14 + G0 + T5 (quotesOnly) = 41
       expect(

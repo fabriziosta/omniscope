@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscope/data/agents/market_context_builder.dart';
+import 'package:omniscope/data/portfolio/models.dart';
 
 import 'support/fake_market_data_client.dart';
 
@@ -36,5 +37,31 @@ void main() {
     final client = FakeMarketDataClient(emptyQuotes: true, emptyHistory: true);
     final text = await MarketContextBuilder(client).buildForSymbol('ZZZ');
     expect(text, isNull);
+  });
+
+  test('practice context includes max buyable fractional hint for focus symbol',
+      () {
+    final text = MarketContextBuilder(FakeMarketDataClient())
+        .buildPracticePortfolioContext(
+      state: const PortfolioState(cash: 10000, holdings: []),
+      symbolHint: 'BTC_USD',
+      lastPrices: const {'BTC_USD': 90000},
+    );
+    expect(text, isNotNull);
+    expect(text!, contains('Max buyable BTC_USD'));
+    expect(text, contains('prefer fractional quantity when this is below 1'));
+    expect(text, contains('~0.111111'));
+  });
+
+  test('buildForTradingSymbol quotes focus symbol for max buyable even with empty holdings',
+      () async {
+    final client = FakeMarketDataClient(basePrice: 90000);
+    final text = await MarketContextBuilder(client).buildForTradingSymbol(
+      symbol: 'BTC_USD',
+      practiceState: const PortfolioState(cash: 10000, holdings: []),
+    );
+    expect(text, isNotNull);
+    expect(text!, contains('Max buyable BTC_USD'));
+    expect(text, contains('prefer fractional'));
   });
 }

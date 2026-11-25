@@ -409,6 +409,31 @@ class AgentChatController extends ChangeNotifier {
               scheduleRunning: _scheduleInFlight?.call() ?? false,
               currentChatId: chatId,
             ).toAgentSummary(),
+        setChatAutopilot: ({required bool enabled}) async {
+          if (enabled) {
+            final block = _chats.autopilotEnableBlockReason(chatId);
+            if (block != null) return block;
+          }
+          final next = await _chats.setAutopilotEnabled(
+            chatId,
+            enabled: enabled,
+          );
+          if (enabled && !next.autopilotEnabled) {
+            return _chats.autopilotEnableBlockReason(chatId) ??
+                'Could not enable Autopilot.';
+          }
+          if (enabled) {
+            final applied = await applyPendingAutopilotInvestInterest();
+            if (applied > 0) {
+              return 'Autopilot ON for this chat (pinned). Applied $applied '
+                  'pending Invest interest '
+                  '${applied == 1 ? 'add' : 'adds'}.';
+            }
+            return 'Autopilot ON for this chat (pinned). Risk-approved trades '
+                'and add-only Invest interest may apply without Confirm.';
+          }
+          return 'Autopilot OFF for this chat. Confirm is required again.';
+        },
         pinChatSymbols: (symbols) async {
           final next = await _chats.pinFocusSymbols(chatId, symbols);
           return next.focusSymbols;
@@ -449,10 +474,12 @@ class AgentChatController extends ChangeNotifier {
                     summary: proposal.summaryLabel,
                   ),
                 );
-                final mayAutopilot = chatAutopilot &&
-                    InvestInterestProposalActions.isAutopilotAddOnlyEligible(
-                      proposal,
-                    );
+                final mayAutopilot =
+                    _chats.threadFor(chatId).autopilotEnabled &&
+                        InvestInterestProposalActions
+                            .isAutopilotAddOnlyEligible(
+                          proposal,
+                        );
                 return mayAutopilot
                     ? 'Proposed Invest interest add '
                         '(Autopilot may apply without Confirm): '
@@ -581,15 +608,18 @@ class AgentChatController extends ChangeNotifier {
         ),
       );
 
+      // Re-read: setChatAutopilot may have enabled Autopilot mid-turn.
+      final autopilotNow = _chats.threadFor(chatId).autopilotEnabled;
+
       if (proposal != null &&
-          chatAutopilot &&
+          autopilotNow &&
           proposal.isActionable) {
         await _maybeAutopilot(proposal);
         proposal = _proposals.byId(proposal.id) ?? proposal;
       }
 
       if (pendingInvestInterest != null &&
-          chatAutopilot &&
+          autopilotNow &&
           InvestInterestProposalActions.isAutopilotAddOnlyEligible(
             pendingInvestInterest!,
           )) {

@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -18,10 +16,10 @@ import '../../widgets/app_text.dart';
 import '../../widgets/master_detail_shell.dart';
 import '../../widgets/quote_list_tile.dart';
 import '../../widgets/quotes_async_body.dart';
-import '../../widgets/quotes_filter_field.dart';
 import '../../widgets/quotes_load_more_bar.dart';
 import '../../widgets/quotes_paging_error_listener.dart';
 import '../../widgets/section_caption.dart';
+import '../../widgets/symbol_search.dart';
 import '../../widgets/themed_accordion_item.dart';
 import '../asset_detail/asset_detail_screen.dart';
 import '../quotes/quotes_list_controller.dart';
@@ -71,8 +69,6 @@ class _MarketKindPaneView extends StatefulWidget {
 
 class _MarketKindPaneViewState extends State<_MarketKindPaneView> {
   DataSourceSettings? _dataSources;
-  final _filterController = TextEditingController();
-  Timer? _filterDebounce;
 
   @override
   void didChangeDependencies() {
@@ -86,8 +82,6 @@ class _MarketKindPaneViewState extends State<_MarketKindPaneView> {
 
   @override
   void dispose() {
-    _filterDebounce?.cancel();
-    _filterController.dispose();
     _dataSources?.removeListener(_onDataSourcesChanged);
     super.dispose();
   }
@@ -103,14 +97,6 @@ class _MarketKindPaneViewState extends State<_MarketKindPaneView> {
     }
   }
 
-  void _onFilterChanged(String value) {
-    _filterDebounce?.cancel();
-    _filterDebounce = Timer(const Duration(milliseconds: 250), () {
-      if (!mounted) return;
-      context.read<QuotesListController>().setSymbolQuery(value);
-    });
-  }
-
   void _openAsset(String symbol) {
     pushFadePage(context, AssetDetailScreen(symbol: symbol));
   }
@@ -121,7 +107,6 @@ class _MarketKindPaneViewState extends State<_MarketKindPaneView> {
     final equities = context.watch<EquityDataSourceRegistry>();
     final enabledEquities =
         equities.enabledWhere(dataSources.isMarketEnabled);
-    final controller = context.watch<QuotesListController>();
     final title = widget.kind.label;
 
     return MasterDetailContentPane(
@@ -139,10 +124,7 @@ class _MarketKindPaneViewState extends State<_MarketKindPaneView> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  QuotesFilterField(
-                    controller: _filterController,
-                    onChanged: _onFilterChanged,
-                  ),
+                  SymbolSearchBar(onSymbolSelected: _openAsset),
                   Expanded(
                     child: QuotesAsyncBody(
                       errorTitle: 'Could not load $title',
@@ -153,11 +135,7 @@ class _MarketKindPaneViewState extends State<_MarketKindPaneView> {
                         final group =
                             matching.isEmpty ? null : matching.first;
                         if (group == null || group.exchanges.isEmpty) {
-                          return AppEmptyView(
-                            controller.symbolQuery.isEmpty
-                                ? AppCopy.noQuotes
-                                : AppCopy.noQuotesMatchFilter,
-                          );
+                          return const AppEmptyView(AppCopy.noQuotes);
                         }
 
                         return ListView(

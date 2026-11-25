@@ -251,7 +251,7 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
       title: 'Clear proposals and activity?',
       description:
           'Removes saved agent trade and Invest interest proposals, the '
-          'Activity tab timeline, and shell notifications on this device. '
+          'Activity tab timeline, and Activity Alerts on this device. '
           'Chat history is kept. This cannot be undone.',
       confirmLabel: 'Clear activity',
     );
@@ -270,7 +270,7 @@ class _DataPrivacySectionBodyState extends State<DataPrivacySectionBody> {
       context,
       title: 'Activity cleared',
       description:
-          'Proposals, agent activity, and notifications were removed.',
+          'Proposals, agent activity, and alerts were removed.',
     );
   }
 

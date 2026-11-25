@@ -21,7 +21,7 @@ class AppErrorGate extends StatelessWidget {
       return AppFatalErrorScreen(
         onGoHome: () {
           errors.goHome();
-          context.read<ShellNavigationController>().goToLanding();
+          context.read<ShellNavigationController>().goToHome();
         },
       );
     }

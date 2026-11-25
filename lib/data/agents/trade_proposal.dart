@@ -247,6 +247,15 @@ class TradeProposal {
 
   static String newId() => 'tp_${DateTime.now().microsecondsSinceEpoch}';
 
+  /// Parses LLM / JSON quantity (num or numeric string). Invalid → 0.
+  static double parseQuantity(Object? raw) {
+    if (raw is num) return raw.toDouble();
+    if (raw is String) {
+      return double.tryParse(raw.trim()) ?? 0;
+    }
+    return 0;
+  }
+
   /// Build from LLM JSON fields (ticker/action or symbol/side).
   factory TradeProposal.fromLlmJson(
     Map<String, dynamic> json, {
@@ -266,7 +275,7 @@ class TradeProposal {
           json['side'] as String? ?? json['action'] as String?,
         ) ??
         TradeProposalSide.hold;
-    final qty = (json['quantity'] as num?)?.toDouble() ?? 0;
+    final qty = parseQuantity(json['quantity']);
     final rationale = (json['rationale'] as String? ?? '').trim();
     final risk = json['riskApproved'] as bool? ??
         json['risk_approved'] as bool? ??

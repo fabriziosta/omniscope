@@ -29,6 +29,35 @@ void main() {
       'delegate_to_omniscope_intradayTrading',
     );
     expect(AgentPeerDelegation.orchestratorName, 'omniscope_orchestrator');
+    expect(
+      AgentPeerDelegation.tradingNestedPeerRoleIds,
+      ['marketResearch', 'portfolioGuide'],
+    );
+  });
+
+  test('peerDescription covers trading handoffs', () {
+    final trading = AgentPeerDelegation.peerDescription(
+      roleId: 'intradayTrading',
+      catalogDescription: 'Trade sizing',
+    );
+    expect(trading, contains('Invest interest'));
+    expect(trading, contains('getHistory'));
+    expect(trading, contains('Market Research'));
+    expect(trading, contains('trade JSON'));
+
+    final research = AgentPeerDelegation.peerDescription(
+      roleId: 'marketResearch',
+      catalogDescription: 'Research',
+    );
+    expect(research, contains('opportunity search'));
+    expect(research, contains('pre-buy/sell'));
+
+    final portfolio = AgentPeerDelegation.peerDescription(
+      roleId: 'portfolioGuide',
+      catalogDescription: 'Allocation',
+    );
+    expect(portfolio, contains('concentration'));
+    expect(portfolio, contains('sell'));
   });
 
   test('extractDelegatedTradeJson from tool outputs', () {

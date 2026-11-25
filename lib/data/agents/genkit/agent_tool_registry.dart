@@ -12,6 +12,7 @@ abstract final class AgentToolIds {
   static const rememberFact = 'rememberFact';
   static const forgetFact = 'forgetFact';
   static const getAgentFleetStatus = 'getAgentFleetStatus';
+  static const setChatAutopilot = 'setChatAutopilot';
   static const getChatFocusSymbols = 'getChatFocusSymbols';
   static const pinChatSymbols = 'pinChatSymbols';
   static const unpinChatSymbols = 'unpinChatSymbols';
@@ -29,6 +30,7 @@ abstract final class AgentToolIds {
     rememberFact,
     forgetFact,
     getAgentFleetStatus,
+    setChatAutopilot,
     getChatFocusSymbols,
     pinChatSymbols,
     unpinChatSymbols,
@@ -79,6 +81,7 @@ class AgentToolRegistry {
     AgentToolIds.rememberFact,
     AgentToolIds.forgetFact,
     AgentToolIds.getAgentFleetStatus,
+    AgentToolIds.setChatAutopilot,
     AgentToolIds.getChatFocusSymbols,
     AgentToolIds.pinChatSymbols,
     AgentToolIds.unpinChatSymbols,
@@ -138,6 +141,11 @@ class AgentToolRegistry {
           'Autopilot chats, Schedule, pending Confirm, and daily fill rails',
     ),
     AgentToolDefinition(
+      id: AgentToolIds.setChatAutopilot,
+      shortDescription:
+          'Enable or disable Autopilot for this chat (immediate)',
+    ),
+    AgentToolDefinition(
       id: AgentToolIds.getChatFocusSymbols,
       shortDescription: 'Symbols pinned for this chat (not Invest interest)',
     ),
@@ -162,6 +170,7 @@ class AgentToolRegistry {
       AgentToolIds.rememberFact,
       AgentToolIds.forgetFact,
       AgentToolIds.getAgentFleetStatus,
+      AgentToolIds.setChatAutopilot,
       AgentToolIds.getChatFocusSymbols,
       AgentToolIds.pinChatSymbols,
       AgentToolIds.unpinChatSymbols,
@@ -175,6 +184,7 @@ class AgentToolRegistry {
       AgentToolIds.rememberFact,
       AgentToolIds.forgetFact,
       AgentToolIds.getAgentFleetStatus,
+      AgentToolIds.setChatAutopilot,
       AgentToolIds.getChatFocusSymbols,
       AgentToolIds.pinChatSymbols,
       AgentToolIds.unpinChatSymbols,
@@ -190,6 +200,7 @@ class AgentToolRegistry {
       AgentToolIds.rememberFact,
       AgentToolIds.forgetFact,
       AgentToolIds.getAgentFleetStatus,
+      AgentToolIds.setChatAutopilot,
       AgentToolIds.getChatFocusSymbols,
       AgentToolIds.pinChatSymbols,
       AgentToolIds.unpinChatSymbols,
@@ -207,6 +218,7 @@ class AgentToolRegistry {
       AgentToolIds.rememberFact,
       AgentToolIds.forgetFact,
       AgentToolIds.getAgentFleetStatus,
+      AgentToolIds.setChatAutopilot,
       AgentToolIds.getChatFocusSymbols,
       AgentToolIds.pinChatSymbols,
       AgentToolIds.unpinChatSymbols,
@@ -221,6 +233,7 @@ class AgentToolRegistry {
       AgentToolIds.rememberFact,
       AgentToolIds.forgetFact,
       AgentToolIds.getAgentFleetStatus,
+      AgentToolIds.setChatAutopilot,
       AgentToolIds.getChatFocusSymbols,
       AgentToolIds.pinChatSymbols,
       AgentToolIds.unpinChatSymbols,
@@ -234,6 +247,7 @@ class AgentToolRegistry {
       AgentToolIds.rememberFact,
       AgentToolIds.forgetFact,
       AgentToolIds.getAgentFleetStatus,
+      AgentToolIds.setChatAutopilot,
       AgentToolIds.getChatFocusSymbols,
       AgentToolIds.pinChatSymbols,
       AgentToolIds.unpinChatSymbols,

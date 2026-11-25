@@ -121,7 +121,17 @@ class GenkitAgentRunner {
     final primaryModel = built.model;
 
     final peerNames = <String>[];
-    for (final spec in specialties) {
+    final enabledRoleIds = {for (final s in specialties) s.roleId};
+
+    // Register non-trading peers first so trading can nested-delegate to them.
+    final orderedSpecs = [
+      for (final spec in specialties)
+        if (spec.roleId != 'intradayTrading') spec,
+      for (final spec in specialties)
+        if (spec.roleId == 'intradayTrading') spec,
+    ];
+
+    for (final spec in orderedSpecs) {
       final peerTools = OmniscopeAgentTools.forRole(
         ai: ai,
         roleId: spec.roleId,
@@ -135,6 +145,23 @@ class GenkitAgentRunner {
               provider: endpoint.provider,
               weight: weight,
             );
+
+      final nestedPeerNames = <String>[
+        if (spec.roleId == 'intradayTrading')
+          for (final peerId in AgentPeerDelegation.tradingNestedPeerRoleIds)
+            if (enabledRoleIds.contains(peerId))
+              AgentPeerDelegation.agentName(peerId),
+      ];
+      final specialtyUse = <GenerateMiddlewareRef>[
+        retry(),
+        if (nestedPeerNames.isNotEmpty)
+          agents(
+            agents: nestedPeerNames,
+            maxDelegations: 3,
+            historyLength: 2,
+          ),
+      ];
+
       ai.defineAgent(
         name: AgentPeerDelegation.agentName(spec.roleId),
         description: spec.description,
@@ -155,7 +182,7 @@ class GenkitAgentRunner {
           primaryModel: primaryModel,
           specialtyModelId: specialtyModelId,
         ),
-        use: [retry()],
+        use: specialtyUse,
         maxTurns: 8,
       );
       peerNames.add(AgentPeerDelegation.agentName(spec.roleId));

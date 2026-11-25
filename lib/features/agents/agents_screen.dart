@@ -15,6 +15,7 @@ import '../../data/agents/llm_runtime_settings.dart';
 import '../../data/settings/env_secrets_repository.dart';
 import '../../data/settings/favorites_repository.dart';
 import '../../data/settings/mandate_settings.dart';
+import '../../widgets/app_confirm_dialog.dart';
 import '../../widgets/app_dialog.dart';
 import '../../widgets/app_empty_view.dart';
 import '../../widgets/app_text.dart';
@@ -210,6 +211,20 @@ class _AgentsScreenState extends State<AgentsScreen> {
     final id = thread.chatId;
     final wasScheduleChat =
         context.read<AgentAppSettings>().scheduleChatId == id;
+    if (thread.pinned) {
+      final ok = await confirmDestructiveAction(
+        context,
+        title: 'Delete pinned chat?',
+        description: wasScheduleChat
+            ? '“${thread.title}” is pinned and linked to Schedule. '
+                'Deleting it removes the conversation and stops Schedule. '
+                'This cannot be undone.'
+            : '“${thread.title}” is pinned. Deleting it removes the '
+                'conversation from this device. This cannot be undone.',
+        confirmLabel: 'Delete',
+      );
+      if (!ok || !mounted) return;
+    }
     await chats.deleteChat(id);
     if (!mounted) return;
     if (wasScheduleChat) {
