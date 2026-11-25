@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-/// Queued deep-link to open an agent chat (notifications, Activity, CTAs).
+/// Queued deep-link to open an agent chat (Activity Alerts, CTAs).
 class PendingAgentChatOpen {
   const PendingAgentChatOpen({
     this.chatId,
@@ -25,26 +25,24 @@ class PendingAgentChatOpen {
 
 /// Bottom-tab selection for [HomeShell], including deep-links from feature CTAs.
 class ShellNavigationController extends ChangeNotifier {
-  static const marketsTabIndex = 0;
-  static const portfolioTabIndex = 1;
-  static const activityTabIndex = 2;
-  static const agentsTabIndex = 3;
+  /// Portfolio / Home tab (cold start).
+  static const homeTabIndex = 0;
+
+  /// Alias for [homeTabIndex] — same tab hosts PortfolioScreen.
+  static const portfolioTabIndex = homeTabIndex;
+
+  static const marketsTabIndex = 1;
+  static const agentsTabIndex = 2;
+  static const activityTabIndex = 3;
   static const settingsTabIndex = 4;
 
-  var _tabIndex = marketsTabIndex;
-  var _showLanding = true;
-  var _hasEnteredTab = false;
+  var _tabIndex = homeTabIndex;
   String? _pendingActivityProposalId;
+  var _pendingActivityOpenAlerts = false;
   String? _pendingSettingsSectionId;
   PendingAgentChatOpen? _pendingAgentChatOpen;
 
   int get tabIndex => _tabIndex;
-
-  /// Cold-start and brand-tap Home surface (not a bottom tab).
-  bool get showLanding => _showLanding;
-
-  /// True after the user has opened any tab this session (for back-from-landing).
-  bool get hasEnteredTab => _hasEnteredTab;
 
   String? get pendingActivityProposalId => _pendingActivityProposalId;
 
@@ -52,24 +50,13 @@ class ShellNavigationController extends ChangeNotifier {
 
   PendingAgentChatOpen? get pendingAgentChatOpen => _pendingAgentChatOpen;
 
-  /// Show the landing / Home surface (brand icon or title).
-  void goToLanding() {
-    if (_showLanding) return;
-    _showLanding = true;
-    notifyListeners();
-  }
-
-  /// Hide landing and restore the last tab (Android back after brand tap).
-  void dismissLanding() {
-    if (!_showLanding) return;
-    _showLanding = false;
-    notifyListeners();
+  /// Switch to Home (Portfolio) — brand icon / title and fatal-error "Go home".
+  void goToHome() {
+    _enterTab(homeTabIndex);
   }
 
   void selectTab(int index) {
-    if (_tabIndex == index && !_showLanding) return;
-    _showLanding = false;
-    _hasEnteredTab = true;
+    if (_tabIndex == index) return;
     _tabIndex = index;
     notifyListeners();
   }
@@ -79,12 +66,13 @@ class ShellNavigationController extends ChangeNotifier {
     _enterTab(agentsTabIndex);
   }
 
-  void goToActivity({String? proposalId}) {
+  void goToActivity({String? proposalId, bool openAlerts = false}) {
     _pendingActivityProposalId = proposalId;
+    _pendingActivityOpenAlerts = openAlerts;
     _enterTab(activityTabIndex);
   }
 
-  /// Switch to Agents and open/create a chat (e.g. from a shell notification).
+  /// Switch to Agents and open/create a chat (e.g. from Activity Alerts).
   void goToAgentChat({
     String? chatId,
     String? roleId,
@@ -115,8 +103,7 @@ class ShellNavigationController extends ChangeNotifier {
   }
 
   void _enterTab(int index) {
-    _showLanding = false;
-    _hasEnteredTab = true;
+    // Always notify so pending deep-link consumers refresh even on same tab.
     _tabIndex = index;
     notifyListeners();
   }
@@ -125,6 +112,12 @@ class ShellNavigationController extends ChangeNotifier {
     final id = _pendingActivityProposalId;
     _pendingActivityProposalId = null;
     return id;
+  }
+
+  bool takePendingActivityOpenAlerts() {
+    final open = _pendingActivityOpenAlerts;
+    _pendingActivityOpenAlerts = false;
+    return open;
   }
 
   String? takePendingSettingsSectionId() {

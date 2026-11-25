@@ -33,6 +33,10 @@ typedef ForgetFactFn = Future<bool> Function(String idOrText);
 /// Compact fleet / Autopilot / Schedule status (no sibling transcripts).
 typedef GetAgentFleetStatusFn = String Function();
 
+/// Enable or disable Autopilot for this chat (applies immediately).
+/// Returns a short status message for the model (success or block reason).
+typedef SetChatAutopilotFn = Future<String> Function({required bool enabled});
+
 /// Pin symbols onto this chat's focus list (applies immediately).
 typedef PinChatSymbolsFn = Future<List<String>> Function(List<String> symbols);
 
@@ -59,6 +63,7 @@ class OmniscopeAgentToolDeps {
     this.rememberFact,
     this.forgetFact,
     this.getFleetStatus,
+    this.setChatAutopilot,
     this.pinChatSymbols,
     this.unpinChatSymbols,
     this.proposeInvestInterest,
@@ -103,6 +108,9 @@ class OmniscopeAgentToolDeps {
 
   /// When set, [getAgentFleetStatus] returns Autopilot / Schedule / rails.
   final GetAgentFleetStatusFn? getFleetStatus;
+
+  /// When set, [setChatAutopilot] enables/disables Autopilot for this chat.
+  final SetChatAutopilotFn? setChatAutopilot;
 
   /// When set, [pinChatSymbols] tool appends to this chat's focus list.
   final PinChatSymbolsFn? pinChatSymbols;
@@ -218,11 +226,14 @@ class OmniscopeAgentTools {
         final hint = (map['symbol'] as String?)?.trim().toUpperCase() ??
             deps.symbolHint;
         Map<String, double>? lastPrices;
-        if (state.holdings.isNotEmpty) {
+        final quoteSymbols = <String>{
+          for (final h in state.holdings) h.symbol,
+          if (hint != null && hint.trim().isNotEmpty) hint.trim().toUpperCase(),
+        };
+        if (quoteSymbols.isNotEmpty) {
           try {
-            final quotes = await deps.marketData.getQuotes([
-              for (final h in state.holdings) h.symbol,
-            ]);
+            final quotes =
+                await deps.marketData.getQuotes(quoteSymbols.toList());
             lastPrices = {for (final q in quotes) q.symbol: q.price};
           } catch (_) {}
         }
@@ -312,7 +323,8 @@ class OmniscopeAgentTools {
           'Read realized profit/loss for agent fills on a symbol. '
           'Input: {"symbol":"AAPL"} for this chat, or '
           '{"symbol":"AAPL","roleId":"intradayTrading"} for a specialty '
-          'lifetime rollup. Educational only — not live brokerage P&L.',
+          'lifetime rollup. In-app agent fill P&L — not a substitute for '
+          'the venue\'s official brokerage statement.',
       inputSchema: _symbolInput,
       fn: (input, _) async {
         final map = _asMap(input);
@@ -396,7 +408,7 @@ class OmniscopeAgentTools {
             'Provide add/remove lists, or a set list to replace Invest interest.',
           );
         }
-        // Soft universe hint (hard filter is educational; Confirm applies as-is
+        // Soft universe hint (Confirm still applies the proposal as-is
         // within maxSymbols).
         final mandate = deps.mandate;
         if (mandate != null && mandate.universe != MandateUniverse.both) {
@@ -454,7 +466,9 @@ class OmniscopeAgentTools {
           'Schedule (enabled / running / next ETA), pending Confirm counts, '
           'and today\'s Autopilot fill / realized P&L rails. '
           'No other chat messages. Input: {} (no fields required). '
-          'Call before proposing duplicate trades or Invest interest adds.',
+          'Call before proposing duplicate trades or Invest interest adds. '
+          'Do not use this instead of setChatAutopilot when the user asks '
+          'to turn Autopilot on or off.',
       inputSchema: _symbolInput,
       fn: (input, _) async {
         final get = deps.getFleetStatus;
@@ -462,6 +476,36 @@ class OmniscopeAgentTools {
           return .response('Fleet status is not available in this turn.');
         }
         return .response(get());
+      },
+    );
+
+    final setChatAutopilot = ai.defineTool(
+      name: AgentToolIds.setChatAutopilot,
+      description:
+          'Enable or disable Autopilot for THIS chat only. Applies '
+          'immediately (also available via the Autopilot pill). '
+          'When enabling, risk-approved trades and add-only Invest interest '
+          'may apply without Confirm; at most 5 chats may have Autopilot on. '
+          'Input: {"enabled":true} or {"enabled":false}. '
+          'When the user asks to enable Autopilot, call this — do not only '
+          'check fleet status or ask them to tap the pill first.',
+      inputSchema: _symbolInput,
+      fn: (input, _) async {
+        final set = deps.setChatAutopilot;
+        if (set == null) {
+          return .response('Autopilot control is not available in this turn.');
+        }
+        final enabled = _readBool(_asMap(input)['enabled']);
+        if (enabled == null) {
+          return .response(
+            'Provide enabled as true or false, e.g. {"enabled":true}.',
+          );
+        }
+        try {
+          return .response(await set(enabled: enabled));
+        } catch (e) {
+          return .response('Could not update Autopilot: $e');
+        }
       },
     );
 
@@ -556,6 +600,7 @@ class OmniscopeAgentTools {
       getAgentPnl,
       proposeInvestInterestDiff,
       getAgentFleetStatus,
+      setChatAutopilot,
       getChatFocusSymbols,
       pinChatSymbols,
       unpinChatSymbols,
@@ -664,6 +709,20 @@ class OmniscopeAgentTools {
       return input.map((k, v) => MapEntry(k.toString(), v));
     }
     return const {};
+  }
+
+  /// Parses true/false from bool, 1/0, or common string tokens.
+  static bool? _readBool(Object? raw) {
+    if (raw is bool) return raw;
+    if (raw is num) {
+      if (raw == 1) return true;
+      if (raw == 0) return false;
+      return null;
+    }
+    final s = raw?.toString().trim().toLowerCase() ?? '';
+    if (s == 'true' || s == 'yes' || s == 'on' || s == '1') return true;
+    if (s == 'false' || s == 'no' || s == 'off' || s == '0') return false;
+    return null;
   }
 
   static List<String> _readSymbols(dynamic input) {

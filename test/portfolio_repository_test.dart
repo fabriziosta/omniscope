@@ -44,4 +44,37 @@ void main() {
     await again.load();
     expect(again.startingCash, 25000);
   });
+
+  test('Practice allows fractional BTC when cash cannot cover a whole coin',
+      () async {
+    final store = await memoryConfig();
+    final repo = PortfolioRepository(store: store);
+    await repo.load();
+    expect(repo.state.cash, PortfolioState.defaultStartingCash);
+
+    const btcPrice = 90000.0;
+    final whole = await repo.buy(
+      symbol: 'BTC_USD',
+      shares: 1,
+      price: btcPrice,
+    );
+    expect(whole.success, isFalse);
+    expect(whole.error, contains('Not enough cash'));
+    expect(repo.state.holdings, isEmpty);
+    expect(repo.state.cash, PortfolioState.defaultStartingCash);
+
+    final fractional = await repo.buy(
+      symbol: 'BTC_USD',
+      shares: 0.01,
+      price: btcPrice,
+    );
+    expect(fractional.success, isTrue);
+    expect(repo.state.holdings, hasLength(1));
+    expect(repo.state.holdings.single.symbol, 'BTC_USD');
+    expect(repo.state.holdings.single.shares, closeTo(0.01, 1e-9));
+    expect(
+      repo.state.cash,
+      closeTo(PortfolioState.defaultStartingCash - 900, 1e-6),
+    );
+  });
 }

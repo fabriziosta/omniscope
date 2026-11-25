@@ -18,7 +18,7 @@ import 'app_text.dart';
 import 'app_tooltip.dart';
 import 'tappable_nav_row.dart';
 
-/// Shell search control — opens curated symbol search dialog.
+/// Icon-only control — opens curated symbol search dialog.
 class SymbolSearchButton extends StatelessWidget {
   const SymbolSearchButton({
     super.key,
@@ -39,11 +39,7 @@ class SymbolSearchButton extends StatelessWidget {
         width: 44,
         height: 44,
         padding: EdgeInsets.zero,
-        onPressed: () async {
-          final symbol = await showSymbolSearch(context);
-          if (symbol == null || symbol.isEmpty) return;
-          onSymbolSelected(symbol);
-        },
+        onPressed: () => _launchSymbolSearch(context, onSymbolSelected),
         child: Icon(
           LucideIcons.search,
           size: 20,
@@ -52,6 +48,79 @@ class SymbolSearchButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Sticky chrome strip under a Markets pane title — tap (lens or field) opens
+/// the curated symbol search dialog (same flow as [SymbolSearchButton]).
+class SymbolSearchBar extends StatelessWidget {
+  const SymbolSearchBar({
+    super.key,
+    required this.onSymbolSelected,
+  });
+
+  /// Called after the dialog closes with the chosen symbol.
+  final ValueChanged<String> onSymbolSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+
+    // Background fill only — no bottom rule or drop shadow (shadow paints
+    // over the list without reserving layout space and hides the first rows).
+    return ColoredBox(
+      color: theme.colorScheme.background,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _launchSymbolSearch(context, onSymbolSelected),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.background,
+                  border: Border.all(color: theme.colorScheme.border),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: [
+                      Icon(
+                        LucideIcons.search,
+                        size: 16,
+                        color: theme.colorScheme.mutedForeground,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          AppCopy.symbolSearchHint,
+                          style: theme.textTheme.muted,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _launchSymbolSearch(
+  BuildContext context,
+  ValueChanged<String> onSymbolSelected,
+) async {
+  final symbol = await showSymbolSearch(context);
+  if (symbol == null || symbol.isEmpty) return;
+  onSymbolSelected(symbol);
 }
 
 /// Shows curated symbol search; returns the selected symbol or null.

@@ -69,7 +69,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('Home marker'), findsOneWidget);
-    expect(shellNav.showLanding, isFalse);
+    expect(shellNav.tabIndex, ShellNavigationController.marketsTabIndex);
 
     errors.reportUnhandled(StateError('secret async boom'), StackTrace.current);
     await tester.pumpAndSettle();
@@ -86,6 +86,6 @@ void main() {
     expect(errors.isActive, isFalse);
     expect(find.byType(AppFatalErrorScreen), findsNothing);
     expect(find.text('Home marker'), findsOneWidget);
-    expect(shellNav.showLanding, isTrue);
+    expect(shellNav.tabIndex, ShellNavigationController.homeTabIndex);
   });
 }

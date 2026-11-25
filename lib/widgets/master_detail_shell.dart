@@ -8,7 +8,7 @@ import 'app_text.dart';
 import 'app_tooltip.dart';
 import 'in_tab_back.dart';
 
-/// Master–detail layout for shell tabs (Markets, Portfolio, Activity, Agents,
+/// Master–detail layout for shell tabs (Home, Markets, Agents, Activity,
 /// Settings).
 ///
 /// Content is always shown. Switching to this shell's bottom tab opens the

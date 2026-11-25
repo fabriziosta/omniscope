@@ -334,7 +334,20 @@ void main() {
           side: 'buy',
           quantity: 5,
         ),
-        'Trade check for MSFT. Side: buy. Quantity: 5.0.',
+        'Trade check for MSFT. Chart it vs Invest interest / Mandate; '
+        'ask Market Research to evaluate before any buy/sell. '
+        'Side: buy. Quantity: 5.0.',
+      );
+      expect(
+        AgentRolePrompts.runUserPrompt(
+          roleId: 'intradayTrading',
+          symbol: '',
+        ),
+        allOf(
+          contains('Invest interest charts'),
+          contains('Market Research'),
+          isNot(contains(AgentRolePrompts.draftSymbolPlaceholder)),
+        ),
       );
       expect(
         AgentRolePrompts.runChipLabel('liveBalanceExplainer'),
@@ -374,6 +387,15 @@ void main() {
         ),
       );
       expect(
+        AgentRolePrompts.runUserPromptDraft(roleId: 'intradayTrading'),
+        allOf(
+          contains('Invest interest charts'),
+          contains(AgentRolePrompts.draftSymbolPlaceholder),
+          isNot(contains(AgentRolePrompts.draftSidePlaceholder)),
+          isNot(contains(AgentRolePrompts.draftQuantityPlaceholder)),
+        ),
+      );
+      expect(
         AgentRolePrompts.runUserPromptDraft(roleId: 'portfolioGuide'),
         contains(AgentRolePrompts.draftSymbolPlaceholder),
       );
@@ -384,7 +406,7 @@ void main() {
       expect(AgentRolePrompts.allowsRunWithoutSymbol('liveBalanceExplainer'), isTrue);
       expect(AgentRolePrompts.allowsRunWithoutSymbol('portfolioGuide'), isTrue);
       expect(AgentRolePrompts.allowsRunWithoutSymbol('marketResearch'), isTrue);
-      expect(AgentRolePrompts.allowsRunWithoutSymbol('intradayTrading'), isFalse);
+      expect(AgentRolePrompts.allowsRunWithoutSymbol('intradayTrading'), isTrue);
     });
 
     test('flags unresolved draft placeholders', () {
@@ -407,9 +429,11 @@ void main() {
       expect(
         AgentRolePrompts.unresolvedDraftPlaceholderMessage(
           roleId: 'intradayTrading',
-          text: 'Trade check for SYMBOL. Side: buy. Quantity: 1.',
+          text:
+              'Trade check: scan Invest interest charts. '
+              'Optional focus: SYMBOL (or delete that sentence).',
         ),
-        contains('SYMBOL'),
+        isNull,
       );
       expect(
         AgentRolePrompts.unresolvedDraftPlaceholderMessage(
@@ -580,7 +604,58 @@ void main() {
       expect(messages.first.content, content);
     });
 
-    test('rejects Trade check without a ticker', () async {
+    test('allows Trade check Invest interest scan without a ticker', () async {
+      final store = await memoryConfig();
+      final roles = await AgentRoleCatalog.load();
+      final agents = AgentsRepository(store: store, roleCatalog: roles);
+      await agents.load(roleCatalog: roles);
+      final chats = AgentChatRepository(store: store);
+      await chats.load();
+      final proposals = TradeProposalRepository(store: store);
+      await proposals.load();
+      final activity = AgentActivityRepository(store: store);
+      await activity.load();
+      final dataSources = DataSourceSettings(store: store);
+      await dataSources.load();
+      final portfolio = PortfolioRepository(store: store);
+      await portfolio.load();
+      final market = FakeMarketDataClient();
+      final tradeExecutor = RoutingTradeExecutor(
+        cryptoRegistry: const CryptoExchangeRegistry([]),
+        brokerRegistry: BrokerExchangeRegistry.empty,
+        dataSources: dataSources,
+        portfolio: portfolio,
+        marketData: market,
+      );
+      final harness = await buildAgentChatController(
+        store: store,
+        agents: agents,
+        chats: chats,
+        marketData: market,
+        tradeExecutor: tradeExecutor,
+        proposals: proposals,
+        activity: activity,
+        cryptoRegistry: const CryptoExchangeRegistry([]),
+        dataSources: dataSources,
+        portfolio: portfolio,
+        reply: 'No setup in Invest interest; asking research for ideas.',
+      );
+
+      final content = AgentRolePrompts.runUserPrompt(
+        roleId: 'intradayTrading',
+        symbol: '',
+      );
+      final result = await harness.controller.sendStarter(
+        roleId: 'intradayTrading',
+        content: content,
+      );
+      expect(result, isA<AgentChatSendOk>());
+      final messages = chats.threadFor(harness.chatId).messages;
+      expect(messages, isNotEmpty);
+      expect(messages.first.content, content);
+    });
+
+    test('rejects Trade check with unresolved side placeholder', () async {
       final store = await memoryConfig();
       final roles = await AgentRoleCatalog.load();
       final agents = AgentsRepository(store: store, roleCatalog: roles);
@@ -618,7 +693,7 @@ void main() {
 
       final result = await harness.controller.sendStarter(
         roleId: 'intradayTrading',
-        content: 'Trade check for SYMBOL. Side: buy. Quantity: 1.',
+        content: 'Trade check for AAPL. Side: buy|sell. Quantity: 1.',
       );
       expect(result, isA<AgentChatSendFailed>());
       expect(chats.threadFor(harness.chatId).messages, isEmpty);

@@ -77,7 +77,7 @@ class MarketContextBuilder {
     final at = (fetchedAt ?? DateTime.now()).toUtc();
     final buf = StringBuffer(
       'Market snapshot (fetched ${at.toIso8601String()}) for $sym '
-      '(educational — use getQuotes/getHistory to refresh):\n',
+      '(use getQuotes/getHistory to refresh):\n',
     );
     if (quote != null) {
       buf.writeln(
@@ -128,7 +128,7 @@ class MarketContextBuilder {
     return buf.toString().trimRight();
   }
 
-  /// Practice paper cash / holdings for coaching / allocation / trading.
+  /// Practice (simulated paper) cash / holdings for allocation / trading.
   ///
   /// When [listAllHoldings] is true, list the full book (up to 24) and optionally
   /// include mark-to-market weights from [lastPrices].
@@ -140,8 +140,8 @@ class MarketContextBuilder {
   }) {
     final buf = StringBuffer(
       'Practice portfolio context '
-      '(id=${PortfolioDescriptor.practiceId}; educational — user must Confirm '
-      'in app; fake money only):\n',
+      '(id=${PortfolioDescriptor.practiceId}; simulated paper cash — user must '
+      'Confirm in app):\n',
     );
     buf.writeln('- Cash: ${formatMoney(state.cash)}');
     final hint = symbolHint?.trim().toUpperCase();
@@ -197,7 +197,30 @@ class MarketContextBuilder {
     } else if (state.holdings.isEmpty) {
       buf.writeln('- Holdings: none');
     }
+
+    // Affordability hint so trading agents size fractional crypto / shares.
+    if (hint != null &&
+        hint.isNotEmpty &&
+        lastPrices != null &&
+        state.cash > 0) {
+      final px = lastPrices[hint];
+      if (px != null && px > 0) {
+        final maxQty = state.cash / px;
+        buf.writeln(
+          '- Max buyable $hint at last ${formatMoney(px)} with cash '
+          '${formatMoney(state.cash)}: ~${_formatMaxBuyableQty(maxQty)} '
+          '(prefer fractional quantity when this is below 1)',
+        );
+      }
+    }
     return buf.toString().trimRight();
+  }
+
+  static String _formatMaxBuyableQty(double qty) {
+    if (qty >= 100) return qty.toStringAsFixed(2);
+    if (qty >= 1) return qty.toStringAsFixed(4);
+    if (qty >= 0.01) return qty.toStringAsFixed(6);
+    return qty.toStringAsExponential(3);
   }
 
   /// Append live exchange balances for trading / balance-explainer roles.
@@ -219,8 +242,8 @@ class MarketContextBuilder {
 
     final buf = StringBuffer(
       'Live exchange context for ${snapshot.exchangeName} '
-      '(id=${snapshot.exchangeId}; educational — Portfolio Live is read-only; '
-      'user must Confirm in app before any order):\n',
+      '(id=${snapshot.exchangeId}; may be real funds — Portfolio Live UI is '
+      'read-only; user must Confirm in app before any order):\n',
     );
     if (snapshot.totalValue != null) {
       buf.writeln(
@@ -292,17 +315,28 @@ class MarketContextBuilder {
     LiveVenueCapabilities? exchangeClient,
     PortfolioState? practiceState,
   }) async {
-    final market = await buildForSymbol(symbol);
+    final sym = symbol.trim().toUpperCase();
+    final market = await buildForSymbol(sym);
     String? portfolioCtx;
     if (practiceState != null) {
+      Map<String, double>? lastPrices;
+      try {
+        final quotes = await _client.getQuotes([
+          sym,
+          for (final h in practiceState.holdings)
+            if (h.symbol != sym) h.symbol,
+        ]);
+        lastPrices = {for (final q in quotes) q.symbol: q.price};
+      } catch (_) {}
       portfolioCtx = buildPracticePortfolioContext(
         state: practiceState,
-        symbolHint: symbol,
+        symbolHint: sym,
+        lastPrices: lastPrices,
       );
     } else if (exchangeClient != null) {
       portfolioCtx = await buildLiveExchangeContext(
         client: exchangeClient,
-        symbolHint: symbol,
+        symbolHint: sym,
       );
     }
     if (market == null && portfolioCtx == null) return null;

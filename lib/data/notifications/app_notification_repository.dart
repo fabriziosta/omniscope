@@ -5,10 +5,11 @@ import '../settings/user_config_keys.dart';
 import '../settings/user_config_store.dart';
 import 'app_notification.dart';
 
-/// Persisted shell attention inbox (scheduled Runs, Confirm prompts, Autopilot).
+/// Persisted Activity → Alerts attention store (scheduled Runs, Autopilot halt).
 ///
 /// Also surfaces a virtual sticky [AppNotificationKind.configureAgents]
 /// reminder when no LLM API key is configured (not stored in the config slice).
+/// Pending Confirm proposals live under Activity → Pending instead.
 class AppNotificationRepository extends ChangeNotifier {
   AppNotificationRepository({this.store});
 

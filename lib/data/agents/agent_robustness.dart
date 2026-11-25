@@ -95,7 +95,7 @@ class AgentRobustness {
       riskGates: AgentRiskGates.none,
     ),
     'intradayTrading': AgentArchitectureProfile(
-      depth: AgentPipelineDepth.twoToThree,
+      depth: AgentPipelineDepth.fourToSix,
       riskGates: AgentRiskGates.hardVeto,
     ),
     'cryptoSpotGuide': AgentArchitectureProfile(

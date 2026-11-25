@@ -15,7 +15,7 @@ lib/
   data/venues/              # VenueCatalog, shared live portfolio models
   data/portfolio/           # local paper portfolio (shared_preferences)
   data/agents/              # connections, chat threads, GenkitAgentRunner, catalog
-  features/landing|markets|crypto|asset_detail|portfolio|agents|shell/
+  features/markets|crypto|asset_detail|portfolio|agents|activity|shell/
   widgets/                  # chart + brand mark
 assets/brand/               # master app icon (launchers + Android/iOS/Web splash)
 assets/agents/              # manifest.json (roles) + llm_models.json
@@ -54,8 +54,8 @@ That runs:
 
 [`lib/main.dart`](../lib/main.dart) keeps the native splash visible with `FlutterNativeSplash.preserve` until config/repos finish loading, then calls `remove` before `runApp`.
 
-## Landing / Home
+## Home tab
 
-Every cold start opens the in-app landing ([`LandingScreen`](../lib/features/landing/landing_screen.dart)) via [`ShellNavigationController.showLanding`](../lib/core/shell_navigation.dart) (default `true`). It is **not** a sixth bottom tab: brand icon / Omniscope title in the shell header call `goToLanding()`; tab presses and deep-links clear landing. Android back after brand tap dismisses to the last tab when the user has already entered a tab this session.
+Cold start opens the **Portfolio** bottom tab ([`ShellNavigationController.homeTabIndex`](../lib/core/shell_navigation.dart) / `goToHome()`), which hosts [`PortfolioScreen`](../lib/features/portfolio/portfolio_screen.dart) (practice + live balances). Tab order: Portfolio → Markets → Activity → Agents → Settings.
 
 Selectable LLM models live in [`assets/agents/llm_models.json`](../assets/agents/llm_models.json); roles in [`assets/agents/manifest.json`](../assets/agents/manifest.json). In-app agents use Genkit Dart — see [`AGENTS.md`](../AGENTS.md).

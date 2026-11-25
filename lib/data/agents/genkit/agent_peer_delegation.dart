@@ -25,6 +25,15 @@ abstract final class AgentPeerDelegation {
   static String delegateToolName(String roleId) =>
       '${delegateToolPrefix}_${agentName(roleId)}';
 
+  /// Role ids the trading specialty may nested-delegate to (when enabled).
+  ///
+  /// Wired via `agents()` on `intradayTrading` only — not on research peers —
+  /// so trade↔research recursion stays blocked.
+  static const tradingNestedPeerRoleIds = [
+    'marketResearch',
+    'portfolioGuide',
+  ];
+
   /// Registry description for a specialty (manifest description + handoff).
   static String peerDescription({
     required String roleId,
@@ -33,22 +42,28 @@ abstract final class AgentPeerDelegation {
     final base = catalogDescription.trim();
     final handoff = switch (roleId) {
       'intradayTrading' =>
-        ' Use when a discovered symbol needs a trade check / risk sizing. '
-            'Pass a self-contained task with the symbol and thesis. '
-            'The sub-agent ends with fenced trade JSON when recommending an action.',
+        ' Use when the user wants a trade check / risk sizing. '
+            'The sub-agent scans Markets → Invest interest via getHistory '
+            '(chart closes), nested-delegates to Market Research for '
+            'opportunity search or pre-trade evaluation, then ends with '
+            'fenced trade JSON when recommending an action.',
       'marketResearch' =>
-        ' Use for plain-language research briefs on a symbol or topic.',
+        ' Use for plain-language research briefs on a symbol or topic, '
+            'and for Invest interest opportunity search when trading finds '
+            'no setup. Also use when trading needs a pre-buy/sell thesis '
+            'evaluation before risk-approved trade JSON.',
       'liveBalanceExplainer' =>
         ' Use to explain live exchange balances and totals.',
       'portfolioGuide' =>
         ' Use for allocation, concentration, diversification, and '
-            'practice sizing reviews.',
+            'practice sizing reviews — including a concentration check '
+            'before trading sizes a sell or a large buy.',
       'cryptoSpotGuide' =>
         ' Use to teach crypto spot pairs, venue tickers, and quote units '
             '(not trade sizing).',
       'marketsLiteracy' =>
         ' Use to teach indices vs ETFs vs stocks and how Markets subgroups '
-            'differ (educational, not a research brief).',
+            'differ (literacy overview, not a research brief).',
       _ => ' Use for specialized help on this role\'s topic.',
     };
     if (base.isEmpty) return handoff.trim();

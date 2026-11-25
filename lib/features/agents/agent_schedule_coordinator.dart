@@ -200,25 +200,26 @@ class AgentScheduleCoordinator extends ChangeNotifier {
         final ok = okResult != null;
         final proposalId =
             okResult?.proposal?.id ?? okResult?.investInterestProposal?.id;
-        await _notifications.enqueue(
-          AppNotification(
-            id: AppNotification.newId(),
-            kind: proposalId != null
-                ? AppNotificationKind.scheduledProposalPending
-                : (ok
-                    ? AppNotificationKind.scheduledRunCompleted
-                    : AppNotificationKind.scheduledRunFailed),
-            roleId: 'orchestrator',
-            createdAt: DateTime.now().toUtc(),
-            title: 'Scheduled agent run',
-            body: ok
-                ? 'Finished $symbol — open the chat to review.'
-                : 'Run for $symbol needs attention.',
-            symbol: symbol,
-            proposalId: proposalId,
-            chatId: chat.chatId,
-          ),
-        );
+        // Pending proposals already surface under Activity → Pending (and the
+        // Agents badge). Only enqueue Alerts for outcomes without a proposal.
+        if (proposalId == null) {
+          await _notifications.enqueue(
+            AppNotification(
+              id: AppNotification.newId(),
+              kind: ok
+                  ? AppNotificationKind.scheduledRunCompleted
+                  : AppNotificationKind.scheduledRunFailed,
+              roleId: 'orchestrator',
+              createdAt: DateTime.now().toUtc(),
+              title: 'Scheduled agent run',
+              body: ok
+                  ? 'Finished $symbol — open the chat to review.'
+                  : 'Run for $symbol needs attention.',
+              symbol: symbol,
+              chatId: chat.chatId,
+            ),
+          );
+        }
       }
     } finally {
       _inFlight = false;

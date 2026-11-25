@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscope/app.dart';
-import 'package:omniscope/core/app_copy.dart';
 import 'package:omniscope/core/app_error_controller.dart';
 import 'package:omniscope/core/app_info.dart';
 import 'package:omniscope/core/shell_navigation.dart';
@@ -324,25 +323,21 @@ void main() {
     return shellNav;
   }
 
-  testWidgets('shell tabs: markets, portfolio, activity, agents, settings',
+  testWidgets('shell tabs: portfolio, markets, agents, activity, settings',
       (tester) async {
     final shellNav = await pumpApp(tester, openMarkets: false);
 
-    expect(shellNav.showLanding, isTrue);
-    expect(find.text(AppCopy.tagline), findsOneWidget);
-    expect(find.text(AppCopy.landingSupport), findsOneWidget);
-    expect(find.text(AppCopy.tabTooltipMarkets), findsOneWidget);
+    expect(shellNav.tabIndex, ShellNavigationController.homeTabIndex);
+    expect(find.text('Portfolio'), findsWidgets);
+    expect(find.text('Markets'), findsWidgets);
+    expect(find.text('Activity'), findsWidgets);
+    expect(find.text('Agents'), findsWidgets);
+    expect(find.text('Settings'), findsWidgets);
 
     shellNav.selectTab(ShellNavigationController.marketsTabIndex);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
-    expect(shellNav.showLanding, isFalse);
-
-    expect(find.text('Markets'), findsWidgets);
-    expect(find.text('Portfolio'), findsWidgets);
-    expect(find.text('Activity'), findsWidgets);
-    expect(find.text('Agents'), findsWidgets);
-    expect(find.text('Settings'), findsWidgets);
+    expect(shellNav.tabIndex, ShellNavigationController.marketsTabIndex);
     // Content-first: Indices pane is open; switching to Markets auto-opens nav.
     await tester.pumpAndSettle();
     expect(find.text('Indices'), findsWidgets);
@@ -446,8 +441,9 @@ void main() {
     expect(tradeStarter, findsOneWidget);
     await tester.tap(tradeStarter);
     await tester.pumpAndSettle();
+    // No-symbol Trade check starter drafts an Invest interest scan prompt.
     expect(
-      find.textContaining('Trade check for'),
+      find.textContaining('Trade check: scan Invest interest'),
       findsOneWidget,
     );
 

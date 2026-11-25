@@ -23,6 +23,7 @@ void main() {
           AgentToolIds.rememberFact,
           AgentToolIds.forgetFact,
           AgentToolIds.getAgentFleetStatus,
+          AgentToolIds.setChatAutopilot,
           AgentToolIds.getChatFocusSymbols,
           AgentToolIds.pinChatSymbols,
           AgentToolIds.unpinChatSymbols,
@@ -39,6 +40,7 @@ void main() {
           AgentToolIds.rememberFact,
           AgentToolIds.forgetFact,
           AgentToolIds.getAgentFleetStatus,
+          AgentToolIds.setChatAutopilot,
           AgentToolIds.getChatFocusSymbols,
           AgentToolIds.pinChatSymbols,
           AgentToolIds.unpinChatSymbols,
@@ -52,6 +54,7 @@ void main() {
           AgentToolIds.getAgentPnl,
           AgentToolIds.getAgentMemory,
           AgentToolIds.getAgentFleetStatus,
+          AgentToolIds.setChatAutopilot,
           AgentToolIds.getChatFocusSymbols,
           AgentToolIds.pinChatSymbols,
           AgentToolIds.unpinChatSymbols,
@@ -63,6 +66,7 @@ void main() {
         containsAll([
           AgentToolIds.getHistory,
           AgentToolIds.getAgentFleetStatus,
+          AgentToolIds.setChatAutopilot,
           AgentToolIds.pinChatSymbols,
         ]),
       );
@@ -77,6 +81,7 @@ void main() {
           AgentToolIds.rememberFact,
           AgentToolIds.forgetFact,
           AgentToolIds.getAgentFleetStatus,
+          AgentToolIds.setChatAutopilot,
           AgentToolIds.getChatFocusSymbols,
           AgentToolIds.pinChatSymbols,
           AgentToolIds.unpinChatSymbols,
@@ -146,6 +151,10 @@ void main() {
       );
       expect(
         AgentToolRegistry.rolesForTool(AgentToolIds.pinChatSymbols),
+        AgentToolRegistry.rolesForTool(AgentToolIds.getAgentFleetStatus),
+      );
+      expect(
+        AgentToolRegistry.rolesForTool(AgentToolIds.setChatAutopilot),
         AgentToolRegistry.rolesForTool(AgentToolIds.getAgentFleetStatus),
       );
     });

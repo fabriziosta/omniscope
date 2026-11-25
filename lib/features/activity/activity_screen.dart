@@ -17,6 +17,7 @@ import '../../data/agents/invest_interest_proposal_repository.dart';
 import '../../data/agents/trade_proposal.dart';
 import '../../data/agents/trade_proposal_repository.dart';
 import '../../data/market/market_data_client.dart';
+import '../../data/notifications/app_notification.dart';
 import '../../data/notifications/app_notification_repository.dart';
 import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/mandate_settings.dart';
@@ -31,17 +32,21 @@ import '../../widgets/master_detail_shell.dart';
 
 /// Sidebar destinations for Activity. Only one body is mounted at a time.
 enum ActivityNavSection {
+  alerts,
   pending,
   history,
 }
 
 extension ActivityNavSectionX on ActivityNavSection {
   String get title => switch (this) {
+        ActivityNavSection.alerts => 'Alerts',
         ActivityNavSection.pending => 'Pending',
         ActivityNavSection.history => 'History',
       };
 
   String get subtitle => switch (this) {
+        ActivityNavSection.alerts =>
+          'Scheduled runs, Autopilot stops, and setup reminders.',
         ActivityNavSection.pending =>
           'Open a chat to Confirm or Dismiss pending suggestions.',
         ActivityNavSection.history =>
@@ -49,6 +54,7 @@ extension ActivityNavSectionX on ActivityNavSection {
       };
 
   IconData get icon => switch (this) {
+        ActivityNavSection.alerts => LucideIcons.circleAlert,
         ActivityNavSection.pending => LucideIcons.circleDot,
         ActivityNavSection.history => LucideIcons.history,
       };
@@ -89,7 +95,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
       _shellNav!.addListener(_onShellNavChanged);
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _maybeOpenPendingProposal();
+      _maybeApplyActivityDeepLink();
     });
   }
 
@@ -99,15 +105,24 @@ class _ActivityScreenState extends State<ActivityScreen> {
     super.dispose();
   }
 
-  void _onShellNavChanged() => _maybeOpenPendingProposal();
+  void _onShellNavChanged() => _maybeApplyActivityDeepLink();
 
-  void _maybeOpenPendingProposal() {
+  void _maybeApplyActivityDeepLink() {
     if (!mounted) return;
     final shellNav = _shellNav;
     if (shellNav == null) return;
     if (shellNav.tabIndex != ShellNavigationController.activityTabIndex) {
       return;
     }
+
+    final openAlerts = shellNav.takePendingActivityOpenAlerts();
+    if (openAlerts) {
+      setState(() {
+        _section = ActivityNavSection.alerts;
+        _selectedProposalId = null;
+      });
+    }
+
     final proposalId = shellNav.takePendingActivityProposalId();
     if (proposalId == null || proposalId.isEmpty) return;
 
@@ -121,6 +136,52 @@ class _ActivityScreenState extends State<ActivityScreen> {
       _selectedProposalId = proposalId;
       if (section != null) _section = section;
     });
+  }
+
+  Future<void> _openAlert(AppNotification item) async {
+    final repo = context.read<AppNotificationRepository>();
+    final shellNav = context.read<ShellNavigationController>();
+    if (!item.isSticky) {
+      await repo.markRead(item.id);
+    }
+    if (!mounted) return;
+    if (item.isSticky) {
+      shellNav.goToSettings(sectionId: 'connections');
+      return;
+    }
+    final chatId = _resolveAlertChatId(item);
+    shellNav.goToAgentChat(
+      chatId: chatId,
+      roleId: item.roleId,
+      symbol: item.symbol,
+      notificationId: item.id,
+    );
+  }
+
+  String? _resolveAlertChatId(AppNotification item) {
+    final direct = item.chatId?.trim();
+    if (direct != null && direct.isNotEmpty) return direct;
+
+    final proposalId = item.proposalId?.trim();
+    String? chatId;
+    String? sourceMessageId;
+    if (proposalId != null && proposalId.isNotEmpty) {
+      final trade = context.read<TradeProposalRepository>().byId(proposalId);
+      chatId = trade?.chatId;
+      sourceMessageId = trade?.sourceMessageId;
+      if (chatId == null || chatId.isEmpty) {
+        final invest =
+            context.read<InvestInterestProposalRepository>().byId(proposalId);
+        chatId = invest?.chatId;
+        sourceMessageId ??= invest?.sourceMessageId;
+      }
+    }
+
+    final thread = context.read<AgentChatRepository>().findThread(
+          chatId: chatId,
+          sourceMessageId: sourceMessageId,
+        );
+    return thread?.chatId ?? chatId;
   }
 
   ActivityNavSection? _sectionForProposal({
@@ -237,9 +298,15 @@ class _ActivityScreenState extends State<ActivityScreen> {
     final proposals = context.watch<TradeProposalRepository>();
     final investInterest =
         context.watch<InvestInterestProposalRepository>();
+    final notifications = context.watch<AppNotificationRepository>();
     final agents = context.watch<AgentsRepository>();
     final actions = _actions(context);
     final splitWide = MediaQuery.sizeOf(context).width >= 560;
+
+    final alerts = notifications.active;
+    final alertsCount = alerts.length;
+    final unreadAlerts = notifications.unreadCount;
+    final canDismissAllAlerts = notifications.dismissibleActive.isNotEmpty;
 
     final pending = [
       for (final p in proposals.pendingActionable)
@@ -275,9 +342,11 @@ class _ActivityScreenState extends State<ActivityScreen> {
         historyTrades.length + investInterestHistory.length;
     final hasPending = pendingCount > 0;
     final section = _section ??
-        (hasPending
-            ? ActivityNavSection.pending
-            : ActivityNavSection.history);
+        (unreadAlerts > 0
+            ? ActivityNavSection.alerts
+            : hasPending
+                ? ActivityNavSection.pending
+                : ActivityNavSection.history);
 
     final selectedTrade = _selectedProposalId == null
         ? null
@@ -287,7 +356,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
         : investInterest.byId(_selectedProposalId!);
     final hasSelection =
         selectedTrade != null || selectedInvestInterest != null;
-    final showDetailOnly = !splitWide && hasSelection;
+    final showDetailOnly =
+        section != ActivityNavSection.alerts && !splitWide && hasSelection;
     final hasAnyData = proposals.proposals.isNotEmpty ||
         investInterest.proposals.isNotEmpty;
 
@@ -328,6 +398,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
       selected: section,
       sidebarBuilder: (context, highlighted, {required closeNav}) {
         final venues = actions.tradableVenues;
+        final showProposalFilters = highlighted != ActivityNavSection.alerts;
         return MasterDetailNavList(
           tiles: [
             for (final dest in ActivityNavSection.values)
@@ -335,6 +406,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 title: dest.title,
                 icon: dest.icon,
                 meta: switch (dest) {
+                  ActivityNavSection.alerts => '$alertsCount',
                   ActivityNavSection.pending => '$pendingCount',
                   ActivityNavSection.history => '$historyCount',
                 },
@@ -342,48 +414,52 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 onTap: () {
                   setState(() {
                     _section = dest;
-                    if (!splitWide) _selectedProposalId = null;
+                    if (!splitWide || dest == ActivityNavSection.alerts) {
+                      _selectedProposalId = null;
+                    }
                   });
                   closeNav();
                 },
               ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 14, 4, 4),
-              child: Text(
-                'Status',
-                style: theme.textTheme.small.copyWith(
-                  color: theme.colorScheme.mutedForeground,
-                  fontWeight: FontWeight.w600,
+            if (showProposalFilters) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 14, 4, 4),
+                child: Text(
+                  'Status',
+                  style: theme.textTheme.small.copyWith(
+                    color: theme.colorScheme.mutedForeground,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-            ),
-            for (final s in _statusFilters)
-              MasterDetailNavTile(
-                title: _statusFilterLabel(s),
-                selected: _filterStatus == s,
-                onTap: () => setState(() => _filterStatus = s),
-              ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 14, 4, 4),
-              child: Text(
-                'Portfolio',
-                style: theme.textTheme.small.copyWith(
-                  color: theme.colorScheme.mutedForeground,
-                  fontWeight: FontWeight.w600,
+              for (final s in _statusFilters)
+                MasterDetailNavTile(
+                  title: _statusFilterLabel(s),
+                  selected: _filterStatus == s,
+                  onTap: () => setState(() => _filterStatus = s),
+                ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 14, 4, 4),
+                child: Text(
+                  'Portfolio',
+                  style: theme.textTheme.small.copyWith(
+                    color: theme.colorScheme.mutedForeground,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-            ),
-            MasterDetailNavTile(
-              title: 'All portfolios',
-              selected: _filterPortfolioId == null,
-              onTap: () => setState(() => _filterPortfolioId = null),
-            ),
-            for (final v in venues)
               MasterDetailNavTile(
-                title: v.displayName,
-                selected: _filterPortfolioId == v.id,
-                onTap: () => setState(() => _filterPortfolioId = v.id),
+                title: 'All portfolios',
+                selected: _filterPortfolioId == null,
+                onTap: () => setState(() => _filterPortfolioId = null),
               ),
+              for (final v in venues)
+                MasterDetailNavTile(
+                  title: v.displayName,
+                  selected: _filterPortfolioId == v.id,
+                  onTap: () => setState(() => _filterPortfolioId = v.id),
+                ),
+            ],
           ],
         );
       },
@@ -392,6 +468,29 @@ class _ActivityScreenState extends State<ActivityScreen> {
           return InTabBackEffect(
             onBack: () => setState(() => _selectedProposalId = null),
             child: detailForSelection(withBack: true),
+          );
+        }
+
+        if (selectedSection == ActivityNavSection.alerts) {
+          return MasterDetailContentPane(
+            key: const ValueKey(ActivityNavSection.alerts),
+            title: selectedSection.title,
+            subtitle: selectedSection.subtitle,
+            onOpenMenu: onOpenMenu,
+            trailing: canDismissAllAlerts
+                ? ShadButton.outline(
+                    size: ShadButtonSize.sm,
+                    onPressed: () async {
+                      await notifications.dismissAll();
+                    },
+                    child: const Text('Dismiss all'),
+                  )
+                : null,
+            body: _AlertsList(
+              alerts: alerts,
+              onOpen: _openAlert,
+              onDismiss: (id) => notifications.dismiss(id),
+            ),
           );
         }
 
@@ -493,6 +592,144 @@ class _ActivityScreenState extends State<ActivityScreen> {
         Container(width: 1, color: theme.colorScheme.border),
         Expanded(flex: 4, child: detail),
       ],
+    );
+  }
+}
+
+class _AlertsList extends StatelessWidget {
+  const _AlertsList({
+    required this.alerts,
+    required this.onOpen,
+    required this.onDismiss,
+  });
+
+  final List<AppNotification> alerts;
+  final ValueChanged<AppNotification> onOpen;
+  final ValueChanged<String> onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+
+    if (alerts.isEmpty) {
+      return const AppEmptyView(
+        'No alerts yet. Scheduled runs without a pending proposal, Autopilot '
+        'halts, and setup reminders appear here.',
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      children: [
+        for (final item in alerts) ...[
+          _AlertTile(
+            item: item,
+            onOpen: () => onOpen(item),
+            onDismiss: item.isSticky ? null : () => onDismiss(item.id),
+          ),
+          const SizedBox(height: 8),
+        ],
+        Text(
+          'Open a chat to review a run. Setup reminders stay until you add '
+          'an API key.',
+          style: theme.textTheme.muted,
+        ),
+      ],
+    );
+  }
+}
+
+class _AlertTile extends StatelessWidget {
+  const _AlertTile({
+    required this.item,
+    required this.onOpen,
+    this.onDismiss,
+  });
+
+  final AppNotification item;
+  final VoidCallback onOpen;
+  final VoidCallback? onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final timeLabel = _formatAlertClock(item.createdAt.toLocal());
+    final sticky = item.isSticky;
+    final unread = !item.read;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: theme.colorScheme.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (unread) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6, right: 8),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primary,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const SizedBox(width: 8, height: 8),
+                    ),
+                  ),
+                ] else
+                  const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        style: theme.textTheme.p.copyWith(
+                          fontWeight:
+                              unread ? FontWeight.w600 : FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(item.body, style: theme.textTheme.muted),
+                      const SizedBox(height: 4),
+                      Text(
+                        sticky
+                            ? item.kind.label
+                            : '${item.kind.label} · $timeLabel',
+                        style: theme.textTheme.muted.copyWith(fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Spacer(),
+                if (onDismiss != null) ...[
+                  ShadButton.ghost(
+                    height: 44,
+                    onPressed: onDismiss,
+                    child: const Text('Dismiss'),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                ShadButton(
+                  height: 44,
+                  onPressed: onOpen,
+                  child: Text(sticky ? 'Open Settings' : 'Open'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1001,3 +1238,9 @@ class _ProposalDetail extends StatelessWidget {
 }
 
 String _relativeTime(DateTime utc) => formatRelativeTime(utc);
+
+String _formatAlertClock(DateTime local) {
+  final h = local.hour.toString().padLeft(2, '0');
+  final m = local.minute.toString().padLeft(2, '0');
+  return '$h:$m';
+}

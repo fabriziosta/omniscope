@@ -3,6 +3,7 @@ import 'package:omniscope/data/agents/agent_app_settings.dart';
 import 'package:omniscope/data/agents/agent_fleet_status.dart';
 import 'package:omniscope/data/agents/agent_role_prompts.dart';
 import 'package:omniscope/data/agents/chat_models.dart';
+import 'package:omniscope/data/agents/genkit/agent_tool_registry.dart';
 import 'package:omniscope/data/agents/invest_interest_proposal.dart';
 import 'package:omniscope/data/agents/trade_proposal.dart';
 import 'package:omniscope/data/settings/mandate_settings.dart';
@@ -213,6 +214,39 @@ void main() {
       expect(
         AgentRolePrompts.forRoleId('marketResearch'),
         contains('getAgentFleetStatus'),
+      );
+    });
+
+    test('autopilotPreamble tells agents to call setChatAutopilot when off', () {
+      expect(
+        AgentRolePrompts.autopilotPreamble(false),
+        contains('setChatAutopilot'),
+      );
+      expect(
+        AgentRolePrompts.autopilotPreamble(false),
+        contains('{"enabled":true}'),
+      );
+      expect(
+        AgentRolePrompts.autopilotPreamble(false),
+        isNot(contains('Autopilot is ON')),
+      );
+      expect(
+        AgentRolePrompts.autopilotPreamble(true),
+        contains('Autopilot is ON'),
+      );
+      expect(
+        AgentRolePrompts.forRoleId(
+          'intradayTrading',
+          autopilotEnabled: false,
+        ),
+        contains('setChatAutopilot'),
+      );
+      expect(
+        AgentRolePrompts.forRoleId(
+          'intradayTrading',
+          autopilotEnabled: false,
+        ),
+        contains(AgentToolIds.setChatAutopilot),
       );
     });
   });
