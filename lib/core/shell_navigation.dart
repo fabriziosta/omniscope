@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 /// Queued deep-link to open an agent chat (Activity Alerts, CTAs).

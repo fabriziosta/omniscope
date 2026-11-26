@@ -1,13 +1,11 @@
 import '../settings/config_list_repository.dart';
 import '../settings/config_list_slice.dart';
 import '../settings/user_config_keys.dart';
-import '../settings/user_config_store.dart';
 import 'agent_activity.dart';
 
 class AgentActivityRepository extends ConfigListRepository<AgentActivityEvent> {
-  AgentActivityRepository({UserConfigStore? store})
+  AgentActivityRepository({super.store})
       : super(
-          store: store,
           sliceKey: UserConfigKeys.agentActivity,
           listKey: 'events',
           maxStored: 300,

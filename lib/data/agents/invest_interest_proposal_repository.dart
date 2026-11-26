@@ -1,13 +1,11 @@
 import '../settings/config_list_repository.dart';
 import '../settings/user_config_keys.dart';
-import '../settings/user_config_store.dart';
 import 'invest_interest_proposal.dart';
 
 class InvestInterestProposalRepository
     extends ConfigListRepository<InvestInterestProposal> {
-  InvestInterestProposalRepository({UserConfigStore? store})
+  InvestInterestProposalRepository({super.store})
       : super(
-          store: store,
           sliceKey: UserConfigKeys.investInterestProposals,
           listKey: 'proposals',
           maxStored: 200,

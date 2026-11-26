@@ -8,19 +8,18 @@ import '../../data/trading/trade_proposal_actions.dart';
 /// Confirm / dismiss trade and Invest interest proposals for one chat thread.
 class AgentChatProposalCoordinator {
   AgentChatProposalCoordinator({
-    required TradeProposalActions proposalActions,
+    required this._proposalActions,
     required this.chatId,
     required AgentActivityRepository activity,
     required AgentChatRepository chats,
     InvestInterestProposalRepository? investInterestProposals,
     FavoritesRepository? favorites,
-  })  : _proposalActions = proposalActions,
-        _investInterestActions = _buildInvestInterestActions(
+  }) : _investInterestActions = _buildInvestInterestActions(
           investInterestProposals: investInterestProposals,
           activity: activity,
           favorites: favorites,
           chats: chats,
-        ); // ignore: prefer_initializing_formals — paired with factory helper
+        );
 
   final String chatId;
   final TradeProposalActions _proposalActions;

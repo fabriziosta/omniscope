@@ -1,12 +1,10 @@
 import '../settings/config_list_repository.dart';
 import '../settings/user_config_keys.dart';
-import '../settings/user_config_store.dart';
 import 'trade_proposal.dart';
 
 class TradeProposalRepository extends ConfigListRepository<TradeProposal> {
-  TradeProposalRepository({UserConfigStore? store})
+  TradeProposalRepository({super.store})
       : super(
-          store: store,
           sliceKey: UserConfigKeys.tradeProposals,
           listKey: 'proposals',
           maxStored: 200,

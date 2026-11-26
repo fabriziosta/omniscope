@@ -9,7 +9,6 @@ import '../../data/agents/agent_activity_repository.dart';
 import '../../data/agents/agent_app_settings.dart';
 import '../../data/agents/agent_chat_repository.dart';
 import '../../data/agents/chat_models.dart';
-import '../../data/agents/models.dart';
 import '../../data/agents/agent_memory_repository.dart';
 import '../../data/agents/agent_pnl_service.dart';
 import '../../data/agents/agent_role_prompts.dart';
