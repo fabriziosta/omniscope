@@ -5,7 +5,7 @@ enum AgentLaunchIntent {
   /// Plain-language research / desk insight for a symbol.
   investigate,
 
-  /// Paper trade size / risk check for a symbol.
+  /// Agent trade size / risk check for a symbol (Confirm or Autopilot).
   tradeCheck,
 
   /// Plain-language walkthrough of live exchange balances.

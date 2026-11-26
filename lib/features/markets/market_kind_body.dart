@@ -12,7 +12,6 @@ import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/display_settings.dart';
 import '../../widgets/agent_launch_button.dart';
 import '../../widgets/app_empty_view.dart';
-import '../../widgets/app_text.dart';
 import '../../widgets/master_detail_shell.dart';
 import '../../widgets/quote_list_tile.dart';
 import '../../widgets/quotes_async_body.dart';
@@ -20,7 +19,6 @@ import '../../widgets/quotes_load_more_bar.dart';
 import '../../widgets/quotes_paging_error_listener.dart';
 import '../../widgets/section_caption.dart';
 import '../../widgets/symbol_search.dart';
-import '../../widgets/themed_accordion_item.dart';
 import '../asset_detail/asset_detail_screen.dart';
 import '../quotes/quotes_list_controller.dart';
 
@@ -69,6 +67,8 @@ class _MarketKindPaneView extends StatefulWidget {
 
 class _MarketKindPaneViewState extends State<_MarketKindPaneView> {
   DataSourceSettings? _dataSources;
+  List<Quote>? _groupedQuotesSource;
+  MarketKindGroup? _cachedGroup;
 
   @override
   void didChangeDependencies() {
@@ -101,6 +101,18 @@ class _MarketKindPaneViewState extends State<_MarketKindPaneView> {
     pushFadePage(context, AssetDetailScreen(symbol: symbol));
   }
 
+  MarketKindGroup? _groupForKind(List<Quote> quotes) {
+    if (identical(_groupedQuotesSource, quotes) && _cachedGroup != null) {
+      return _cachedGroup;
+    }
+    final matching = groupQuotesByKindAndExchange(quotes)
+        .where((g) => g.kind == widget.kind);
+    final group = matching.isEmpty ? null : matching.first;
+    _groupedQuotesSource = quotes;
+    _cachedGroup = group;
+    return group;
+  }
+
   @override
   Widget build(BuildContext context) {
     final dataSources = context.watch<DataSourceSettings>();
@@ -129,24 +141,13 @@ class _MarketKindPaneViewState extends State<_MarketKindPaneView> {
                     child: QuotesAsyncBody(
                       errorTitle: 'Could not load $title',
                       builder: (context, quotes) {
-                        final matching =
-                            groupQuotesByKindAndExchange(quotes)
-                                .where((g) => g.kind == widget.kind);
-                        final group =
-                            matching.isEmpty ? null : matching.first;
+                        final group = _groupForKind(quotes);
                         if (group == null || group.exchanges.isEmpty) {
                           return const AppEmptyView(AppCopy.noQuotes);
                         }
-
-                        return ListView(
-                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                          children: [
-                            _ExchangeSubgroups(
-                              group: group,
-                              onOpenAsset: _openAsset,
-                            ),
-                            const QuotesLoadMoreBar(),
-                          ],
+                        return _VirtualizedExchangeQuotes(
+                          group: group,
+                          onOpenAsset: _openAsset,
                         );
                       },
                     ),
@@ -158,8 +159,9 @@ class _MarketKindPaneViewState extends State<_MarketKindPaneView> {
   }
 }
 
-class _ExchangeSubgroups extends StatelessWidget {
-  const _ExchangeSubgroups({
+/// Flat [ListView.builder] of exchange headers + quote rows (virtualized).
+class _VirtualizedExchangeQuotes extends StatelessWidget {
+  const _VirtualizedExchangeQuotes({
     required this.group,
     required this.onOpenAsset,
   });
@@ -169,114 +171,61 @@ class _ExchangeSubgroups extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final exchanges = group.exchanges;
-
-    // Single exchange: skip a redundant nested accordion header.
-    if (exchanges.length == 1) {
-      return _QuoteList(
-        quotes: exchanges.first.quotes,
-        onOpenAsset: onOpenAsset,
-        exchangeLabel: exchanges.first.exchange,
-      );
+    final density = context.select<DisplaySettings, ListDensity>(
+      (d) => d.listDensity,
+    );
+    final gap = density == ListDensity.compact ? 4.0 : 8.0;
+    final entries = <_ListEntry>[];
+    for (final exchangeGroup in group.exchanges) {
+      entries.add(_ListEntry.header(exchangeGroup.exchange));
+      for (final quote in exchangeGroup.quotes) {
+        entries.add(_ListEntry.quote(quote));
+      }
     }
 
-    return ShadAccordion<String>.multiple(
-      initialValue: exchanges.map((e) => e.exchange).toList(),
-      children: [
-        for (final exchangeGroup in exchanges)
-          ThemedAccordionItem<String>(
-            value: exchangeGroup.exchange,
-            title: _ExchangeHeaderTitle(
-              name: exchangeGroup.exchange,
-              count: exchangeGroup.quotes.length,
-            ),
-            child: _QuoteList(
-              quotes: exchangeGroup.quotes,
-              onOpenAsset: onOpenAsset,
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-/// Exchange name + count, with a muted one-line blurb when we have one.
-class _ExchangeHeaderTitle extends StatelessWidget {
-  const _ExchangeHeaderTitle({
-    required this.name,
-    required this.count,
-  });
-
-  final String name;
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    final blurb = exchangeDescription(name);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        AppEllipsisText(
-          '$name  ·  $count',
-          maxLines: 2,
-          style: theme.textTheme.large,
-        ),
-        if (blurb != null) ...[
-          const SizedBox(height: 2),
-          AppEllipsisText(
-            blurb,
-            maxLines: 2,
-            style: theme.textTheme.small.copyWith(
-              color: theme.colorScheme.mutedForeground,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _QuoteList extends StatelessWidget {
-  const _QuoteList({
-    required this.quotes,
-    required this.onOpenAsset,
-    this.exchangeLabel,
-  });
-
-  final List<Quote> quotes;
-  final ValueChanged<String> onOpenAsset;
-  final String? exchangeLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    final density = context.watch<DisplaySettings>().listDensity;
-    final gap = density == ListDensity.compact ? 4.0 : 8.0;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (exchangeLabel != null) ...[
-          Padding(
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      itemCount: entries.length + 1,
+      itemBuilder: (context, index) {
+        if (index == entries.length) {
+          return const QuotesLoadMoreBar();
+        }
+        final entry = entries[index];
+        if (entry.isHeader) {
+          return Padding(
             padding: EdgeInsets.only(
+              top: index == 0 ? 0 : 12,
               bottom: density == ListDensity.compact ? 4 : 6,
             ),
-            child: _ExchangeCaption(exchangeLabel!),
-          ),
-        ],
-        for (var i = 0; i < quotes.length; i++) ...[
-          if (i > 0) SizedBox(height: gap),
-          QuoteListTile(
-            quote: quotes[i],
+            child: _ExchangeCaption(entry.exchange!),
+          );
+        }
+        return Padding(
+          padding: EdgeInsets.only(bottom: gap),
+          child: QuoteListTile(
+            key: ValueKey(entry.quote!.symbol),
+            quote: entry.quote!,
             density: density,
-            onTap: () => onOpenAsset(quotes[i].symbol),
+            onTap: () => onOpenAsset(entry.quote!.symbol),
           ),
-        ],
-        const SizedBox(height: 8),
-      ],
+        );
+      },
     );
   }
+}
+
+class _ListEntry {
+  const _ListEntry.header(this.exchange)
+      : quote = null,
+        isHeader = true;
+
+  const _ListEntry.quote(this.quote)
+      : exchange = null,
+        isHeader = false;
+
+  final String? exchange;
+  final Quote? quote;
+  final bool isHeader;
 }
 
 /// Single-exchange caption: name plus muted blurb when known.

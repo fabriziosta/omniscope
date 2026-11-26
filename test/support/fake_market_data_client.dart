@@ -97,4 +97,29 @@ class FakeMarketDataClient implements MarketDataClient {
       Candle(time: DateTime.utc(2026, 1, 2), close: 110),
     ];
   }
+
+  /// Quote for a single symbol at [price] (default 100).
+  static FakeMarketDataClient forSymbol(
+    String symbol, {
+    double price = 100,
+    String? name,
+  }) {
+    return FakeMarketDataClient(
+      basePrice: price,
+      fixedName: name ?? symbol,
+    );
+  }
+
+  /// Always returns empty quote / history lists.
+  static FakeMarketDataClient empty() {
+    return FakeMarketDataClient(emptyQuotes: true, emptyHistory: true);
+  }
+
+  /// Increments price by call count (`basePrice * calls`).
+  static FakeMarketDataClient paging({double basePrice = 100}) {
+    return FakeMarketDataClient(
+      basePrice: basePrice,
+      scalePriceByCall: true,
+    );
+  }
 }

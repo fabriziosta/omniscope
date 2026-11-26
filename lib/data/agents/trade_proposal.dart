@@ -1,5 +1,4 @@
-import 'dart:convert';
-
+import '../../core/fenced_json_extractor.dart';
 import '../trading/order_models.dart';
 
 /// Lifecycle of an agent-suggested trade (Practice or live).
@@ -302,44 +301,13 @@ class TradeProposal {
 class TradeProposalParser {
   TradeProposalParser._();
 
-  static final _fencedJson = RegExp(
-    r'```(?:json)?\s*(\{[\s\S]*?\})\s*```',
-    caseSensitive: false,
-  );
-
   static Map<String, dynamic>? extractJsonMap(String content) {
-    final fenced = _fencedJson.firstMatch(content);
-    final candidates = <String>[
-      if (fenced != null) fenced.group(1)!,
-      content.trim(),
-    ];
-
-    for (final raw in candidates) {
-      final parsed = _tryDecodeObject(raw);
-      if (parsed != null && _looksLikeTrade(parsed)) return parsed;
-    }
-
-    final start = content.indexOf('{');
-    final end = content.lastIndexOf('}');
-    if (start >= 0 && end > start) {
-      final parsed = _tryDecodeObject(content.substring(start, end + 1));
-      if (parsed != null && _looksLikeTrade(parsed)) return parsed;
-    }
-    return null;
+    return FencedJsonExtractor.extractJsonMap(content, _looksLikeTrade);
   }
 
   static bool _looksLikeTrade(Map<String, dynamic> json) {
     final hasSymbol = (json['symbol'] ?? json['ticker']) != null;
     final hasAction = (json['side'] ?? json['action']) != null;
     return hasSymbol && hasAction;
-  }
-
-  static Map<String, dynamic>? _tryDecodeObject(String raw) {
-    try {
-      final decoded = jsonDecode(raw);
-      if (decoded is Map<String, dynamic>) return decoded;
-      if (decoded is Map) return Map<String, dynamic>.from(decoded);
-    } catch (_) {}
-    return null;
   }
 }

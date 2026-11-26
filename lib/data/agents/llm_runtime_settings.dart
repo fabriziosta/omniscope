@@ -5,7 +5,7 @@ import '../settings/user_config_store.dart';
 import 'llm_model_catalog.dart';
 import 'models.dart';
 
-/// Per-provider light/heavy model preferences (Settings → Connections).
+/// Per-provider light/heavy model preferences (Settings → Agents).
 class LlmProviderRuntimePrefs {
   const LlmProviderRuntimePrefs({
     required this.provider,

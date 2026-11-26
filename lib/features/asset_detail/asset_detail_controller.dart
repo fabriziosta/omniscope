@@ -1,53 +1,18 @@
 import 'package:flutter/foundation.dart';
 
 import '../../core/app_copy.dart';
-import '../../core/formatting.dart';
 import '../../core/market_error_copy.dart';
 import '../../data/market/market_data_client.dart';
 import '../../data/market/models.dart';
-import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/display_settings.dart';
 
 typedef ChartRange = (String label, String range, String interval);
 
-/// Result of a paper trade attempt for the UI to toast.
-class AssetTradeUiResult {
-  const AssetTradeUiResult({
-    required this.success,
-    required this.buy,
-    required this.shares,
-    required this.symbol,
-    this.error,
-  });
-
-  final bool success;
-  final bool buy;
-  final double shares;
-  final String symbol;
-  final String? error;
-
-  String get title {
-    if (!success) return 'Trade failed';
-    return buy ? 'Buy complete' : 'Sell complete';
-  }
-
-  String get description {
-    if (!success) {
-      return error ?? 'Could not complete that trade.';
-    }
-    final qty = formatShares(shares);
-    return buy
-        ? 'Bought $qty $symbol (paper).'
-        : 'Sold $qty $symbol (paper).';
-  }
-}
-
-/// Screen-scoped quote + history loader and paper trade orchestration.
+/// Screen-scoped quote + history loader for asset detail.
 class AssetDetailController extends ChangeNotifier {
   AssetDetailController({
     required this.symbol,
     required this._marketData,
-    required this._portfolio,
     required ChartRangePreset initialRange,
   }) {
     final idx = ranges.indexWhere((r) => r.$2 == initialRange.rangeKey);
@@ -82,7 +47,6 @@ class AssetDetailController extends ChangeNotifier {
 
   final String symbol;
   final MarketDataClient _marketData;
-  final PortfolioRepository _portfolio;
 
   var _rangeIndex = 0;
   Quote? _quote;
@@ -178,40 +142,5 @@ class AssetDetailController extends ChangeNotifier {
       _errorMessage = userFacingMarketError(e);
       notifyListeners();
     }
-  }
-
-  /// Parses shares and executes a paper trade. Returns null if quantity invalid.
-  Future<AssetTradeUiResult?> trade({
-    required bool buy,
-    required String sharesText,
-  }) async {
-    final quote = _quote;
-    if (quote == null) return null;
-
-    final raw = sharesText.trim().replaceAll(',', '');
-    final shares = double.tryParse(raw);
-    if (shares == null || shares <= 0) {
-      return null;
-    }
-
-    final result = buy
-        ? await _portfolio.buy(
-            symbol: quote.symbol,
-            shares: shares,
-            price: quote.price,
-          )
-        : await _portfolio.sell(
-            symbol: quote.symbol,
-            shares: shares,
-            price: quote.price,
-          );
-
-    return AssetTradeUiResult(
-      success: result.success,
-      buy: buy,
-      shares: shares,
-      symbol: quote.symbol,
-      error: result.error,
-    );
   }
 }

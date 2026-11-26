@@ -1,36 +1,27 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscope/data/agents/models.dart';
 import 'package:omniscope/data/settings/mandate_settings.dart';
-import 'package:omniscope/data/settings/user_config_keys.dart';
-
-import 'support/memory_config.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  test('defaults then round-trips via JSON', () {
+    expect(ChatMandate.defaults.goal, MandateGoal.learn);
+    expect(ChatMandate.defaults.horizon, MandateHorizon.medium);
+    expect(ChatMandate.defaults.universe, MandateUniverse.both);
+    expect(ChatMandate.defaults.maxSymbolCount, 20);
+    expect(ChatMandate.defaults.maxOpenProposals, 3);
+    expect(ChatMandate.defaults.maxNotionalPerProposal, isNull);
+    expect(ChatMandate.defaults.cadencePreference, AgentScheduleInterval.hour1);
 
-  test('defaults then persists goal / universe / rails', () async {
-    final store = await memoryConfig();
-    final mandate = MandateSettings(store: store);
-    await mandate.load();
-
-    expect(mandate.goal, MandateGoal.learn);
-    expect(mandate.horizon, MandateHorizon.medium);
-    expect(mandate.universe, MandateUniverse.both);
-    expect(mandate.maxSymbolCount, 20);
-    expect(mandate.maxOpenProposals, 3);
-    expect(mandate.maxNotionalPerProposal, isNull);
-    expect(mandate.cadencePreference, AgentScheduleInterval.hour1);
-
-    await mandate.setGoal(MandateGoal.grow);
-    await mandate.setHorizon(MandateHorizon.long);
-    await mandate.setUniverse(MandateUniverse.equities);
-    await mandate.setMaxSymbolCount(8);
-    await mandate.setMaxOpenProposals(2);
-    await mandate.setMaxNotionalPerProposal(250);
-    await mandate.setCadencePreference(AgentScheduleInterval.hours4);
-
-    final again = MandateSettings(store: store);
-    await again.load();
+    final mandate = ChatMandate(
+      goal: MandateGoal.grow,
+      horizon: MandateHorizon.long,
+      universe: MandateUniverse.equities,
+      maxSymbolCount: 8,
+      maxOpenProposals: 2,
+      maxNotionalPerProposal: 250,
+      cadencePreference: AgentScheduleInterval.hours4,
+    );
+    final again = ChatMandate.fromJson(mandate.toJson());
     expect(again.goal, MandateGoal.grow);
     expect(again.horizon, MandateHorizon.long);
     expect(again.universe, MandateUniverse.equities);
@@ -38,34 +29,29 @@ void main() {
     expect(again.maxOpenProposals, 2);
     expect(again.maxNotionalPerProposal, 250);
     expect(again.cadencePreference, AgentScheduleInterval.hours4);
-
-    final slice = store.getSlice(UserConfigKeys.mandate) as Map;
-    expect(slice['goal'], 'grow');
-    expect(slice['universe'], 'equities');
-    expect(slice['maxSymbolCount'], 8);
   });
 
-  test('clamps symbol and open-proposal counts', () async {
-    final store = await memoryConfig();
-    final mandate = MandateSettings(store: store);
-    await mandate.load();
-
-    await mandate.setMaxSymbolCount(0);
-    expect(mandate.maxSymbolCount, MandateSettings.minSymbolCount);
-    await mandate.setMaxSymbolCount(999);
-    expect(mandate.maxSymbolCount, MandateSettings.maxSymbolCountCap);
-    await mandate.setMaxOpenProposals(0);
-    expect(mandate.maxOpenProposals, MandateSettings.minOpenProposals);
+  test('fromJson clamps symbol and open-proposal counts', () {
+    final mandate = ChatMandate.fromJson({
+      'maxSymbolCount': 0,
+      'maxOpenProposals': 999,
+      'maxAutopilotFillsPerDay': 0,
+    });
+    expect(mandate.maxSymbolCount, ChatMandate.minSymbolCount);
+    expect(mandate.maxOpenProposals, ChatMandate.maxOpenProposalsCap);
+    expect(mandate.maxAutopilotFillsPerDay, ChatMandate.minAutopilotFillsPerDay);
   });
 
-  test('toAgentSummary includes rails', () async {
-    final store = await memoryConfig();
-    final mandate = MandateSettings(store: store);
-    await mandate.load();
-    await mandate.setMaxNotionalPerProposal(100);
+  test('toAgentSummary includes rails', () {
+    final mandate = const ChatMandate(maxNotionalPerProposal: 100);
     final text = mandate.toAgentSummary();
     expect(text, contains('goal=learn'));
     expect(text, contains('max notional \$100'));
     expect(text, contains('maxOpenProposals=3'));
+  });
+
+  test('missing or invalid JSON uses defaults', () {
+    expect(ChatMandate.fromJson(null), ChatMandate.defaults);
+    expect(ChatMandate.fromJson({'goal': 'yolo'}).goal, MandateGoal.learn);
   });
 }

@@ -2,6 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscope/data/agents/agent_activity.dart';
 import 'package:omniscope/data/agents/agent_activity_repository.dart';
 import 'package:omniscope/data/agents/agent_app_settings.dart';
+import 'package:omniscope/data/agents/agent_chat_repository.dart';
+import 'package:omniscope/data/agents/chat_agent_settings.dart';
 import 'package:omniscope/data/agents/trade_proposal.dart';
 import 'package:omniscope/data/agents/trade_proposal_repository.dart';
 import 'package:omniscope/data/crypto/crypto_exchange_registry.dart';
@@ -25,14 +27,19 @@ void main() {
         TradeProposalRepository proposals,
         AgentActivityRepository activity,
         PortfolioRepository portfolio,
-        MandateSettings mandate,
+        AgentChatRepository chats,
+        String chatId,
         AgentAppSettings appSettings,
-      })> harness() async {
+      })> harness({ChatMandate? mandate}) async {
     final store = await memoryConfig();
     final appSettings = AgentAppSettings(store: store);
     await appSettings.load();
-    final mandate = MandateSettings(store: store);
-    await mandate.load();
+    final chats = AgentChatRepository(store: store, appSettings: appSettings);
+    await chats.load();
+    final chat = await chats.createChat(title: 'Rails');
+    if (mandate != null) {
+      await chats.setMandate(chat.chatId, mandate);
+    }
     final proposals = TradeProposalRepository(store: store);
     await proposals.load();
     final activity = AgentActivityRepository(store: store);
@@ -54,16 +61,17 @@ void main() {
       proposals: proposals,
       activity: activity,
       tradeExecutor: executor,
-      mandate: mandate,
       marketData: market,
       portfolio: portfolio,
+      chats: chats,
     );
     return (
       actions: actions,
       proposals: proposals,
       activity: activity,
       portfolio: portfolio,
-      mandate: mandate,
+      chats: chats,
+      chatId: chat.chatId,
       appSettings: appSettings,
     );
   }
@@ -81,6 +89,7 @@ void main() {
       riskApproved: true,
       status: TradeProposalStatus.pending,
       createdAt: DateTime.utc(2026, 1, 1),
+      chatId: h.chatId,
     );
     await h.proposals.upsert(proposal);
 
@@ -107,8 +116,9 @@ void main() {
   });
 
   test('confirm enforces max notional', () async {
-    final h = await harness();
-    await h.mandate.setMaxNotionalPerProposal(50);
+    final h = await harness(
+      mandate: const ChatMandate(maxNotionalPerProposal: 50),
+    );
     final proposal = TradeProposal(
       id: 'tp_notional',
       roleId: 'intradayTrading',
@@ -120,6 +130,7 @@ void main() {
       riskApproved: true,
       status: TradeProposalStatus.pending,
       createdAt: DateTime.utc(2026, 1, 1),
+      chatId: h.chatId,
     );
     await h.proposals.upsert(proposal);
 
@@ -135,8 +146,9 @@ void main() {
   });
 
   test('autopilot skips when daily fill budget reached', () async {
-    final h = await harness();
-    await h.mandate.setMaxAutopilotFillsPerDay(1);
+    final h = await harness(
+      mandate: const ChatMandate(maxAutopilotFillsPerDay: 1),
+    );
     final now = DateTime.now().toUtc();
     await h.proposals.upsert(
       TradeProposal(
@@ -154,6 +166,7 @@ void main() {
         fillPrice: 100,
         fillNotional: 100,
         filledAt: now,
+        chatId: h.chatId,
       ),
     );
     final proposal = TradeProposal(
@@ -167,7 +180,7 @@ void main() {
       riskApproved: true,
       status: TradeProposalStatus.pending,
       createdAt: now,
-      chatId: 'chat_budget',
+      chatId: h.chatId,
     );
     await h.proposals.upsert(proposal);
 
@@ -197,6 +210,7 @@ void main() {
       riskApproved: true,
       status: TradeProposalStatus.pending,
       createdAt: DateTime.utc(2026, 1, 5),
+      chatId: h.chatId,
     );
     await h.proposals.upsert(proposal);
 
@@ -223,6 +237,7 @@ void main() {
       riskApproved: true,
       status: TradeProposalStatus.pending,
       createdAt: DateTime.utc(2026, 1, 2),
+      chatId: h.chatId,
     );
     await h.proposals.upsert(proposal);
 
@@ -274,5 +289,19 @@ void main() {
     );
     expect(h.proposals.pendingActionableCount, 1);
     expect(h.proposals.pendingActionable.single.id, 'tp_buy');
+  });
+
+  test('preferredPortfolioId reads chat agentSettings', () async {
+    final h = await harness();
+    expect(
+      h.actions.preferredPortfolioId(chatId: h.chatId),
+      PortfolioDescriptor.practiceId,
+    );
+    await h.chats.setAgentSettings(
+      h.chatId,
+      const ChatAgentSettings(autopilotExchangeId: 'practice'),
+    );
+    expect(h.actions.preferredPortfolioId(chatId: h.chatId), 'practice');
+    expect(h.actions.needsPortfolioPicker(chatId: h.chatId), isFalse);
   });
 }

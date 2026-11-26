@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscope/data/agents/agent_activity.dart';
 import 'package:omniscope/data/agents/agent_activity_repository.dart';
+import 'package:omniscope/data/agents/agent_chat_repository.dart';
 import 'package:omniscope/data/agents/invest_interest_proposal.dart';
 import 'package:omniscope/data/agents/invest_interest_proposal_actions.dart';
 import 'package:omniscope/data/agents/invest_interest_proposal_repository.dart';
@@ -46,7 +47,8 @@ Here is a watchlist tweak.
           InvestInterestProposalRepository proposals,
           FavoritesRepository favorites,
           AgentActivityRepository activity,
-          MandateSettings mandate,
+          AgentChatRepository chats,
+          String chatId,
         })> harness() async {
       final store = await memoryConfig();
       final favorites = FavoritesRepository(store: store);
@@ -54,9 +56,13 @@ Here is a watchlist tweak.
       await favorites.toggleInvestInterest('MSFT');
       await favorites.toggleInvestInterest('SPY');
 
-      final mandate = MandateSettings(store: store);
-      await mandate.load();
-      await mandate.setMaxSymbolCount(3);
+      final chats = AgentChatRepository(store: store);
+      await chats.load();
+      final chat = await chats.createChat(title: 'II');
+      await chats.setMandate(
+        chat.chatId,
+        const ChatMandate(maxSymbolCount: 3),
+      );
 
       final proposals = InvestInterestProposalRepository(store: store);
       await proposals.load();
@@ -67,14 +73,15 @@ Here is a watchlist tweak.
         proposals: proposals,
         activity: activity,
         favorites: favorites,
-        mandate: mandate,
+        chats: chats,
       );
       return (
         actions: actions,
         proposals: proposals,
         favorites: favorites,
         activity: activity,
-        mandate: mandate,
+        chats: chats,
+        chatId: chat.chatId,
       );
     }
 
@@ -87,14 +94,14 @@ Here is a watchlist tweak.
           'rationale': 'Rotate into AAPL',
         },
         roleId: 'marketResearch',
-        chatId: 'c_ii_1',
+        chatId: h.chatId,
         sourceMessageId: 'msg_ii',
       );
-      expect(proposal.chatId, 'c_ii_1');
+      expect(proposal.chatId, h.chatId);
       expect(proposal.sourceMessageId, 'msg_ii');
       expect(
         InvestInterestProposal.fromJson(proposal.toJson()).chatId,
-        'c_ii_1',
+        h.chatId,
       );
       await h.proposals.upsert(proposal);
 
@@ -129,6 +136,7 @@ Here is a watchlist tweak.
           'rationale': 'Too many',
         },
         roleId: 'portfolioGuide',
+        chatId: h.chatId,
       );
       await h.proposals.upsert(proposal);
 
@@ -147,6 +155,7 @@ Here is a watchlist tweak.
           'rationale': 'Nope',
         },
         roleId: 'marketResearch',
+        chatId: h.chatId,
       );
       await h.proposals.upsert(proposal);
 
@@ -168,6 +177,7 @@ Here is a watchlist tweak.
           'rationale': 'Managed',
         },
         roleId: 'marketResearch',
+        chatId: h.chatId,
       );
       await h.proposals.upsert(proposal);
       await h.actions.confirm(proposal.id);
@@ -186,6 +196,7 @@ Here is a watchlist tweak.
           'rationale': 'Autopilot add',
         },
         roleId: 'marketResearch',
+        chatId: h.chatId,
       );
       await h.proposals.upsert(proposal);
 
@@ -215,6 +226,7 @@ Here is a watchlist tweak.
           'rationale': 'Mixed',
         },
         roleId: 'marketResearch',
+        chatId: h.chatId,
       );
       await h.proposals.upsert(withRemove);
       final err = await h.actions.confirm(withRemove.id, autopilot: true);
@@ -234,6 +246,7 @@ Here is a watchlist tweak.
           'rationale': 'Trading role',
         },
         roleId: 'intradayTrading',
+        chatId: h.chatId,
       );
       await h.proposals.upsert(proposal);
       expect(

@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscope/core/shell_navigation.dart';
 
@@ -53,6 +56,52 @@ void main() {
       nav.goToAgentChat(chatId: 'c1');
       expect(nav.tabIndex, ShellNavigationController.agentsTabIndex);
       expect(nav.takePendingAgentChatOpen()?.chatId, 'c1');
+    });
+
+    testWidgets('goToAgentChat clears pushed tab overlays', (tester) async {
+      final nav = ShellNavigationController();
+      final tabKey = GlobalKey<NavigatorState>();
+      nav.bindTabNavigators([tabKey]);
+
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Navigator(
+            key: tabKey,
+            onGenerateRoute: (settings) {
+              return PageRouteBuilder<void>(
+                settings: settings,
+                pageBuilder: (context, animation, secondaryAnimation) {
+                  return const Text('Root');
+                },
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final pushed = tabKey.currentState!.push<void>(
+        PageRouteBuilder<void>(
+          pageBuilder: (context, animation, secondaryAnimation) {
+            return const Text('Asset detail');
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Asset detail'), findsOneWidget);
+      expect(tabKey.currentState!.canPop(), isTrue);
+
+      nav.goToAgentChat(chatId: 'c1', symbol: 'AAPL');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Root'), findsOneWidget);
+      expect(find.text('Asset detail'), findsNothing);
+      expect(tabKey.currentState!.canPop(), isFalse);
+      expect(nav.tabIndex, ShellNavigationController.agentsTabIndex);
+      expect(nav.takePendingAgentChatOpen()?.chatId, 'c1');
+      // Ignore the unfinished push future after we popped it.
+      unawaited(pushed);
     });
   });
 }

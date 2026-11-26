@@ -8,7 +8,6 @@ import '../../data/crypto/crypto_exchange_registry.dart';
 import '../../data/market/equity_data_source.dart';
 import '../../data/market/models.dart';
 import '../../data/settings/data_source_settings.dart';
-import '../../data/settings/favorites_repository.dart';
 import '../../widgets/app_empty_view.dart';
 import '../../widgets/master_detail_shell.dart';
 import '../crypto/crypto_exchange_pairs_body.dart';
@@ -131,21 +130,10 @@ class _MarketsScreenState extends State<MarketsScreen> {
     ];
   }
 
-  String _metaFor(MarketsDestination item, FavoritesRepository favorites) {
+  String? _metaFor(MarketsDestination item) {
     return switch (item) {
-      MarketsFavoritesDestination() => () {
-          final count = favorites.symbols.length;
-          return count == 1 ? '1 symbol' : '$count symbols';
-        }(),
-      MarketsInvestInterestDestination() => () {
-          final count = favorites.investInterestSymbols.length;
-          return count == 1 ? '1 symbol' : '$count symbols';
-        }(),
-      MarketsKindDestination(:final kind) => () {
-          final count = watchlistSymbolsForKind(kind).length;
-          return count == 1 ? '1 symbol' : '$count symbols';
-        }(),
       MarketsCryptoDestination() => 'Spot pairs',
+      _ => null,
     };
   }
 
@@ -154,7 +142,6 @@ class _MarketsScreenState extends State<MarketsScreen> {
     final dataSources = context.watch<DataSourceSettings>();
     final equities = context.watch<EquityDataSourceRegistry>();
     final crypto = context.watch<CryptoExchangeRegistry>();
-    final favorites = context.watch<FavoritesRepository>();
     final enabledEquities =
         equities.enabledWhere(dataSources.isMarketEnabled);
     final enabledCrypto = crypto.enabledWhere(dataSources.isCryptoEnabled);
@@ -187,7 +174,7 @@ class _MarketsScreenState extends State<MarketsScreen> {
                   for (final item in destinations)
                     MasterDetailNavTile(
                       title: item.title,
-                      meta: _metaFor(item, favorites),
+                      meta: _metaFor(item),
                       icon: item.icon,
                       selected: highlighted.id == item.id,
                       onTap: () {

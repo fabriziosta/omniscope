@@ -9,10 +9,8 @@ import '../../widgets/app_tooltip.dart';
 /// Sidebar destinations for Settings. Only one body is mounted at a time.
 enum SettingsNavSection {
   appearance,
-  mandate,
   dataSources,
   portfolios,
-  connections,
   agents,
   dataAndPrivacy,
 }
@@ -28,10 +26,8 @@ class SettingsNavSubsection {
 extension SettingsNavSectionX on SettingsNavSection {
   String get title => switch (this) {
         SettingsNavSection.appearance => 'Appearance',
-        SettingsNavSection.mandate => 'Mandate',
         SettingsNavSection.dataSources => 'Data sources',
         SettingsNavSection.portfolios => 'Portfolios',
-        SettingsNavSection.connections => 'Connections',
         SettingsNavSection.agents => 'Agents',
         SettingsNavSection.dataAndPrivacy => 'Data & privacy',
       };
@@ -39,26 +35,19 @@ extension SettingsNavSectionX on SettingsNavSection {
   String get subtitle => switch (this) {
         SettingsNavSection.appearance =>
           'Brightness, color set, lists, numbers, charts',
-        SettingsNavSection.mandate =>
-          'Goal, universe, and risk rails for agents',
         SettingsNavSection.dataSources =>
           'Market providers, crypto venues, credentials',
         SettingsNavSection.portfolios =>
           'Practice cash and live connections',
-        SettingsNavSection.connections =>
-          'LLM keys, models, and exchange credentials',
         SettingsNavSection.agents =>
-          'Answer mood, specialties, Autopilot, and schedule',
-        SettingsNavSection.dataAndPrivacy =>
-          'Config path, backup, and clear local data',
+          'LLM keys, models, shared memory, and Schedule',
+        SettingsNavSection.dataAndPrivacy => 'Config path and backup',
       };
 
   IconData get icon => switch (this) {
         SettingsNavSection.appearance => LucideIcons.palette,
-        SettingsNavSection.mandate => LucideIcons.crosshair,
         SettingsNavSection.dataSources => LucideIcons.database,
         SettingsNavSection.portfolios => LucideIcons.wallet,
-        SettingsNavSection.connections => LucideIcons.plug,
         SettingsNavSection.agents => LucideIcons.sparkles,
         SettingsNavSection.dataAndPrivacy => LucideIcons.shield,
       };
@@ -71,13 +60,6 @@ extension SettingsNavSectionX on SettingsNavSection {
             SettingsNavSubsection(id: 'lists', title: 'Lists'),
             SettingsNavSubsection(id: 'numbers', title: 'Numbers'),
             SettingsNavSubsection(id: 'charts', title: 'Charts'),
-          ],
-        SettingsNavSection.mandate => const [
-            SettingsNavSubsection(id: 'goal', title: 'Goal'),
-            SettingsNavSubsection(id: 'horizon', title: 'Horizon'),
-            SettingsNavSubsection(id: 'universe', title: 'Universe'),
-            SettingsNavSubsection(id: 'cadence', title: 'Preferred cadence'),
-            SettingsNavSubsection(id: 'riskRails', title: 'Risk rails'),
           ],
         SettingsNavSection.dataSources => const [
             SettingsNavSubsection(
@@ -99,7 +81,7 @@ extension SettingsNavSectionX on SettingsNavSection {
               title: 'Live portfolios',
             ),
           ],
-        SettingsNavSection.connections => const [
+        SettingsNavSection.agents => const [
             SettingsNavSubsection(
               id: 'llmKeys',
               title: 'LLM API keys & models',
@@ -108,19 +90,13 @@ extension SettingsNavSectionX on SettingsNavSection {
               id: 'exchangeCredentials',
               title: 'Exchange credentials',
             ),
-          ],
-        SettingsNavSection.agents => const [
             SettingsNavSubsection(id: 'sharedMemory', title: 'Shared memory'),
-            SettingsNavSubsection(id: 'answerMood', title: 'Answer mood'),
-            SettingsNavSubsection(
-              id: 'specialties',
-              title: 'Enabled specialties',
-            ),
-            SettingsNavSubsection(
-              id: 'autopilotPortfolio',
-              title: 'Autopilot portfolio',
-            ),
             SettingsNavSubsection(id: 'schedule', title: 'Schedule'),
+            SettingsNavSubsection(id: 'agentChats', title: 'Agent chats'),
+            SettingsNavSubsection(
+              id: 'tradeActivity',
+              title: 'Trade activity',
+            ),
           ],
         SettingsNavSection.dataAndPrivacy => const [
             SettingsNavSubsection(
@@ -128,23 +104,6 @@ extension SettingsNavSectionX on SettingsNavSection {
               title: 'Data file location',
             ),
             SettingsNavSubsection(id: 'backup', title: 'Backup'),
-            SettingsNavSubsection(id: 'favorites', title: 'Favorites'),
-            SettingsNavSubsection(
-              id: 'investInterest',
-              title: 'Invest interest',
-            ),
-            SettingsNavSubsection(id: 'sharedMemory', title: 'Shared memory'),
-            SettingsNavSubsection(id: 'agentChats', title: 'Agent chats'),
-            SettingsNavSubsection(id: 'tradeActivity', title: 'Trade activity'),
-            SettingsNavSubsection(id: 'llmAgents', title: 'LLM & agents'),
-            SettingsNavSubsection(
-              id: 'practiceHoldings',
-              title: 'Practice holdings',
-            ),
-            SettingsNavSubsection(
-              id: 'exchangeCredentials',
-              title: 'Exchange credentials',
-            ),
           ],
       };
 

@@ -48,7 +48,7 @@ class PortfolioScreen extends StatelessWidget {
         cryptoRegistry: context.read<CryptoExchangeRegistry>(),
         brokerRegistry: context.read<BrokerExchangeRegistry>(),
         dataSources: context.read<DataSourceSettings>(),
-      )..refreshAll(),
+      )..refreshQuotes(),
       child: const _PortfolioView(),
     );
   }
@@ -92,8 +92,12 @@ class _PortfolioViewState extends State<_PortfolioView> {
 
   void _onDataSourcesChanged() {
     if (!mounted) return;
-    // Same pattern as Markets: source toggles re-fetch without a Refresh button.
-    context.read<PortfolioScreenController>().refreshAll();
+    // Quotes always; live balances only when Live venues are ready.
+    final controller = context.read<PortfolioScreenController>();
+    controller.refreshQuotes();
+    if (controller.hasLive) {
+      controller.refreshLivePortfolios();
+    }
   }
 
   void _onPortfolioChanged() {
@@ -118,6 +122,9 @@ class _PortfolioViewState extends State<_PortfolioView> {
 
   void _select(String id) {
     setState(() => _selectedId = id);
+    if (id != PortfolioDescriptor.practiceId && mounted) {
+      context.read<PortfolioScreenController>().refreshLivePortfolios();
+    }
   }
 
   PortfolioDescriptor? _byId(List<PortfolioDescriptor> list, String? id) {
@@ -424,7 +431,7 @@ class _PracticeBody extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
             child: Text(
-              'No holdings yet.\nBuy something from Markets.',
+              'No holdings yet.\nAsk an agent for a Trade check, then Confirm.',
               textAlign: TextAlign.center,
               style: theme.textTheme.muted,
             ),

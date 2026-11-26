@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-/// Quiet card row that navigates somewhere — primary chevron signals push.
+/// Quiet borderless row that navigates somewhere — primary chevron signals push.
 class TappableNavRow extends StatelessWidget {
   const TappableNavRow({
     super.key,
@@ -27,6 +27,7 @@ class TappableNavRow extends StatelessWidget {
 
     return ShadCard(
       padding: padding,
+      border: ShadBorder.none,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: GestureDetector(

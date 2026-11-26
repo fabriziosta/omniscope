@@ -53,6 +53,32 @@ void main() {
     }
   });
 
+  test('forAgentTurn bypasses UI cache and reuses within short TTL', () async {
+    final inner = FakeMarketDataClient(
+      basePrice: 10,
+      scalePriceByCall: true,
+    );
+    final cache = CachingMarketDataClient(
+      inner,
+      quoteTtl: const Duration(hours: 1),
+    );
+    final warmed = await cache.getQuotes(const ['AAPL']);
+    expect(warmed.single.price, 10);
+    expect(inner.quoteCalls, 1);
+
+    final agent = FreshMarketDataClient.forAgentTurn(cache);
+
+    await agent.getQuotes(const ['AAPL']);
+    expect(inner.quoteCalls, 2);
+
+    await agent.getQuotes(const ['AAPL']);
+    expect(inner.quoteCalls, 2);
+
+    final ui = await cache.getQuotes(const ['AAPL']);
+    expect(ui.single.price, 10);
+    expect(inner.quoteCalls, 2);
+  });
+
   test('unwraps nested CachingMarketDataClient to the router', () async {
     final inner = FakeMarketDataClient(basePrice: 3);
     final cache = CachingMarketDataClient(inner);

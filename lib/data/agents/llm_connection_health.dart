@@ -101,7 +101,7 @@ abstract final class LlmConnectionHealth {
     return switch (kind) {
       LlmConnectionKind.ok => 'Connected',
       LlmConnectionKind.invalidKey =>
-        'API key rejected or expired. Update it under Settings → Connections.',
+        'API key rejected or expired. Update it under Settings → Agents.',
       LlmConnectionKind.unreachable =>
         'Could not reach the model. Check your network and try again.',
       LlmConnectionKind.rateLimited =>

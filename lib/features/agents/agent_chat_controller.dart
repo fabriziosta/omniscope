@@ -32,11 +32,11 @@ import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/env_secrets_repository.dart';
 import '../../data/settings/favorites_repository.dart';
-import '../../data/settings/mandate_settings.dart';
 import '../../data/trading/broker_exchange_registry.dart';
 import '../../data/trading/trade_executor.dart';
 import '../../data/trading/trade_proposal_actions.dart';
 import '../../data/venues/live_venue_capabilities.dart';
+import 'agent_chat_proposal_coordinator.dart';
 
 /// UI feedback from a chat send attempt.
 sealed class AgentChatSendResult {
@@ -58,7 +58,7 @@ class AgentChatSendFailed extends AgentChatSendResult {
 
   final String message;
 
-  /// When set, UI can nudge Settings → Connections for auth failures.
+  /// When set, UI can nudge Settings → Agents for auth failures.
   final LlmConnectionKind? connectionKind;
 
   bool get suggestConnections =>
@@ -92,7 +92,6 @@ class AgentChatController extends ChangeNotifier {
     required this._appSettings,
     this._brokerRegistry = BrokerExchangeRegistry.empty,
     this._favorites,
-    this._mandate,
     this._agentMemory,
     this._investInterestProposals,
     this._scheduleInFlight,
@@ -114,7 +113,6 @@ class AgentChatController extends ChangeNotifier {
   final LlmRuntimeSettings _llmRuntime;
   final AgentAppSettings _appSettings;
   final FavoritesRepository? _favorites;
-  final MandateSettings? _mandate;
   final AgentMemoryRepository? _agentMemory;
   final InvestInterestProposalRepository? _investInterestProposals;
 
@@ -126,29 +124,25 @@ class AgentChatController extends ChangeNotifier {
     proposals: _proposals,
     activity: _activity,
     tradeExecutor: _tradeExecutor,
-    mandate: _mandate,
     marketData: _marketData,
     portfolio: _portfolio,
     chats: _chats,
   );
 
-  InvestInterestProposalActions? get _investInterestActions {
-    final repo = _investInterestProposals;
-    final favorites = _favorites;
-    final mandate = _mandate;
-    if (repo == null || favorites == null || mandate == null) return null;
-    return InvestInterestProposalActions(
-      proposals: repo,
-      activity: _activity,
-      favorites: favorites,
-      mandate: mandate,
-    );
-  }
+  late final AgentChatProposalCoordinator _proposalCoordinator =
+      AgentChatProposalCoordinator(
+    proposalActions: _proposalActions,
+    chatId: chatId,
+    activity: _activity,
+    chats: _chats,
+    investInterestProposals: _investInterestProposals,
+    favorites: _favorites,
+  );
 
-  var _sending = false;
+  var _sendingCount = 0;
   var _actingOnProposal = false;
 
-  bool get sending => _sending;
+  bool get sending => _sendingCount > 0;
   bool get actingOnProposal => _actingOnProposal;
 
   bool get hasTradableExchange => _tradeExecutor.canTrade;
@@ -164,20 +158,23 @@ class AgentChatController extends ChangeNotifier {
 
   List<AgentRoleDefinition> get enabledRoles => [
         for (final r in _agents.availableRoles)
-          if (_appSettings.isRoleEnabled(r.id)) r,
+          if (thread.agentSettings.isRoleEnabled(r.id)) r,
       ];
 
-  String? preferredPortfolioId() => _proposalActions.preferredPortfolioId();
+  String? preferredPortfolioId() =>
+      _proposalActions.preferredPortfolioId(chatId: chatId);
 
-  bool get needsPortfolioPicker => _proposalActions.needsPortfolioPicker;
+  bool get needsPortfolioPicker =>
+      _proposalActions.needsPortfolioPicker(chatId: chatId);
 
   String? resolveConfirmPortfolioId({String? targetPortfolioId}) =>
       _proposalActions.resolveConfirmPortfolioId(
         targetPortfolioId: targetPortfolioId,
+        chatId: chatId,
       );
 
   String resolveTargetExchangeId() =>
-      _proposalActions.resolveTargetExchangeId();
+      _proposalActions.resolveTargetExchangeId(chatId: chatId);
 
   LiveVenueCapabilities? _clientForExchange(String exchangeId) {
     if (exchangeId == PortfolioDescriptor.practiceId) return null;
@@ -216,7 +213,7 @@ class AgentChatController extends ChangeNotifier {
     String? exchangeId,
   }) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty || _sending) {
+    if (trimmed.isEmpty || sending) {
       return const AgentChatSendOk();
     }
     return sendUserMessage(
@@ -273,10 +270,12 @@ class AgentChatController extends ChangeNotifier {
     }
 
     var messageContent = prompt;
+    MarketDataClient? turnMarket;
     if (hint != null && hint.isNotEmpty) {
-      final snapshot = await MarketContextBuilder(
-        FreshMarketDataClient(_marketData),
-      ).buildForSymbol(hint);
+      turnMarket = FreshMarketDataClient.forAgentTurn(_marketData);
+      final snapshot = await MarketContextBuilder(turnMarket).buildForSymbol(
+        hint,
+      );
       if (snapshot != null && snapshot.isNotEmpty) {
         messageContent = '$snapshot\n\n---\n\n$prompt';
       }
@@ -288,6 +287,7 @@ class AgentChatController extends ChangeNotifier {
       symbolHint: hint,
       exchangeId: exchangeId,
       activityRoleId: roleId,
+      agentMarketData: turnMarket,
     );
   }
 
@@ -329,6 +329,7 @@ class AgentChatController extends ChangeNotifier {
     String? symbolHint,
     String? exchangeId,
     String? activityRoleId,
+    MarketDataClient? agentMarketData,
   }) async {
     if (!hasLlmEndpoint) {
       return const AgentChatSendBlockedNoLlm();
@@ -356,7 +357,7 @@ class AgentChatController extends ChangeNotifier {
     );
     await _chats.append(chatId: chatId, message: userMessage);
 
-    _sending = true;
+    _sendingCount++;
     notifyListeners();
 
     try {
@@ -375,17 +376,19 @@ class AgentChatController extends ChangeNotifier {
       final chatAutopilot = thread.autopilotEnabled;
       final chatMemory = thread.memoryEnabled;
       final memoryRepo = chatMemory ? _agentMemory : null;
+      final turnMarket =
+          agentMarketData ?? FreshMarketDataClient.forAgentTurn(_marketData);
       final toolDeps = OmniscopeAgentToolDeps(
-        marketData: FreshMarketDataClient(_marketData),
+        marketData: turnMarket,
         practice: _portfolio.state,
         liveVenue: liveVenue,
         symbolHint: hint,
         investInterestSymbols:
             _favorites?.investInterestSymbols ?? const [],
         focusSymbols: thread.focusSymbols,
-        mandate: _mandate,
-        answerMood: _appSettings.answerMood,
-        answerMoodNote: _appSettings.answerMoodNote,
+        mandate: thread.mandate,
+        answerMood: thread.agentSettings.answerMood,
+        answerMoodNote: thread.agentSettings.answerMoodNote,
         autopilotEnabled: chatAutopilot,
         memoryEnabled: chatMemory,
         memorySummary: memoryRepo?.toAgentSummary(),
@@ -404,7 +407,7 @@ class AgentChatController extends ChangeNotifier {
               tradeProposals: _proposals.proposals,
               investInterestProposals:
                   investInterestRepo?.proposals ?? const [],
-              mandate: _mandate,
+              mandate: thread.mandate,
               now: DateTime.now().toUtc(),
               scheduleRunning: _scheduleInFlight?.call() ?? false,
               currentChatId: chatId,
@@ -650,7 +653,7 @@ class AgentChatController extends ChangeNotifier {
         connectionKind: classified.kind,
       );
     } finally {
-      _sending = false;
+      _sendingCount = (_sendingCount - 1).clamp(0, 1 << 30);
       notifyListeners();
     }
   }
@@ -658,12 +661,10 @@ class AgentChatController extends ChangeNotifier {
   Future<void> _maybeAutopilot(TradeProposal proposal) async {
     final targetId = preferredPortfolioId();
     if (targetId == null) return;
-    final mandateCap = _mandate?.maxOpenProposals;
-    final maxOpen = mandateCap != null
-        ? (_appSettings.autopilotMaxOpenProposals < mandateCap
-            ? _appSettings.autopilotMaxOpenProposals
-            : mandateCap)
-        : _appSettings.autopilotMaxOpenProposals;
+    final mandateCap = _chats.threadFor(chatId).mandate.maxOpenProposals;
+    final maxOpen = _appSettings.autopilotMaxOpenProposals < mandateCap
+        ? _appSettings.autopilotMaxOpenProposals
+        : mandateCap;
     final pending = _proposals.pendingForRole(proposal.roleId);
     if (pending.length > maxOpen) {
       await _proposals.upsert(
@@ -719,9 +720,10 @@ class AgentChatController extends ChangeNotifier {
   Future<void> _maybeAutopilotInvestInterest(
     InvestInterestProposal proposal,
   ) async {
-    final actions = _investInterestActions;
-    if (actions == null) return;
-    await actions.confirm(proposal.id, autopilot: true);
+    await _proposalCoordinator.confirmInvestInterestProposal(
+      proposal.id,
+      autopilot: true,
+    );
   }
 
   Future<void> _pinFocusFromInvestInterest(
@@ -743,7 +745,7 @@ class AgentChatController extends ChangeNotifier {
     _actingOnProposal = true;
     notifyListeners();
     try {
-      return await _proposalActions.confirm(
+      return await _proposalCoordinator.confirmProposal(
         proposalId,
         autopilot: autopilot,
         targetPortfolioId: targetPortfolioId,
@@ -758,7 +760,7 @@ class AgentChatController extends ChangeNotifier {
     _actingOnProposal = true;
     notifyListeners();
     try {
-      return await _proposalActions.dismiss(proposalId);
+      return await _proposalCoordinator.dismissProposal(proposalId);
     } finally {
       _actingOnProposal = false;
       notifyListeners();
@@ -769,14 +771,13 @@ class AgentChatController extends ChangeNotifier {
     String proposalId, {
     bool autopilot = false,
   }) async {
-    final actions = _investInterestActions;
-    if (actions == null) {
-      return 'Invest interest is not available.';
-    }
     _actingOnProposal = true;
     notifyListeners();
     try {
-      return await actions.confirm(proposalId, autopilot: autopilot);
+      return await _proposalCoordinator.confirmInvestInterestProposal(
+        proposalId,
+        autopilot: autopilot,
+      );
     } finally {
       _actingOnProposal = false;
       notifyListeners();
@@ -784,14 +785,12 @@ class AgentChatController extends ChangeNotifier {
   }
 
   Future<String?> dismissInvestInterestProposal(String proposalId) async {
-    final actions = _investInterestActions;
-    if (actions == null) {
-      return 'Invest interest is not available.';
-    }
     _actingOnProposal = true;
     notifyListeners();
     try {
-      return await actions.dismiss(proposalId);
+      return await _proposalCoordinator.dismissInvestInterestProposal(
+        proposalId,
+      );
     } finally {
       _actingOnProposal = false;
       notifyListeners();
@@ -801,12 +800,10 @@ class AgentChatController extends ChangeNotifier {
   /// When Autopilot turns on for this chat, apply pending add-only Invest
   /// interest proposals (same rules as apply-at-send).
   Future<int> applyPendingAutopilotInvestInterest() async {
-    final actions = _investInterestActions;
-    if (actions == null) return 0;
     _actingOnProposal = true;
     notifyListeners();
     try {
-      return await actions.applyPendingAutopilotAddsForChat(chatId);
+      return await _proposalCoordinator.applyPendingAutopilotInvestInterest();
     } finally {
       _actingOnProposal = false;
       notifyListeners();

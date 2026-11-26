@@ -14,7 +14,6 @@ import 'package:omniscope/data/portfolio/portfolio_repository.dart';
 import 'package:omniscope/data/settings/data_source_settings.dart';
 import 'package:omniscope/data/settings/env_secrets_repository.dart';
 import 'package:omniscope/data/settings/favorites_repository.dart';
-import 'package:omniscope/data/settings/mandate_settings.dart';
 import 'package:omniscope/data/settings/user_config_store.dart';
 import 'package:omniscope/data/trading/trade_executor.dart';
 import 'package:omniscope/features/agents/agent_chat_controller.dart';
@@ -75,7 +74,6 @@ Future<({
   required PortfolioRepository portfolio,
   GenkitAgentRunner? agentRunner,
   FavoritesRepository? favorites,
-  MandateSettings? mandate,
   AgentMemoryRepository? agentMemory,
   InvestInterestProposalRepository? investInterestProposals,
   String reply = 'Test agent reply.',
@@ -104,7 +102,6 @@ Future<({
     llmRuntime: seeded.llmRuntime,
     appSettings: seeded.appSettings,
     favorites: favorites,
-    mandate: mandate,
     agentMemory: agentMemory,
     investInterestProposals: investInterestProposals,
   );

@@ -72,7 +72,7 @@ run:
 	flutter run -d $(DEVICE)
 
 build-linux:
-	flutter build linux --release
+	tool/flutter_checks.sh build-linux
 
 build-windows:
 	flutter build windows --release

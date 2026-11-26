@@ -33,7 +33,7 @@ class AgentFleetStatus {
     this.topPendingInvestSymbols = const [],
     this.autopilotFillsToday = 0,
     this.maxAutopilotFillsPerDay =
-        MandateSettings.defaultMaxAutopilotFillsPerDay,
+        ChatMandate.defaultMaxAutopilotFillsPerDay,
     this.realizedPnlToday = 0,
     this.maxDailyRealizedLoss,
     this.currentChatId,
@@ -64,7 +64,7 @@ class AgentFleetStatus {
     required AgentAppSettings app,
     required Iterable<TradeProposal> tradeProposals,
     Iterable<InvestInterestProposal> investInterestProposals = const [],
-    MandateSettings? mandate,
+    ChatMandate? mandate,
     required DateTime now,
     bool scheduleRunning = false,
     String? currentChatId,
@@ -104,8 +104,20 @@ class AgentFleetStatus {
       scheduleTitle ??= scheduleId;
     }
 
-    final fillsCap = mandate?.maxAutopilotFillsPerDay ??
-        MandateSettings.defaultMaxAutopilotFillsPerDay;
+    final scopedChat = currentChatId?.trim();
+    ChatMandate? resolvedMandate = mandate;
+    if (resolvedMandate == null &&
+        scopedChat != null &&
+        scopedChat.isNotEmpty) {
+      for (final t in threads) {
+        if (t.chatId == scopedChat) {
+          resolvedMandate = t.mandate;
+          break;
+        }
+      }
+    }
+    resolvedMandate ??= ChatMandate.defaults;
+    final fillsCap = resolvedMandate.maxAutopilotFillsPerDay;
 
     return AgentFleetStatus(
       autopilotChats: autopilot,
@@ -127,14 +139,16 @@ class AgentFleetStatus {
       autopilotFillsToday: AgentPnlService.autopilotFillCountForUtcDay(
         proposals: tradeProposals,
         now: now,
+        chatId: scopedChat,
       ),
       maxAutopilotFillsPerDay: fillsCap,
       realizedPnlToday: AgentPnlService.realizedPnlForUtcDay(
         proposals: tradeProposals,
         now: now,
+        chatId: scopedChat,
       ),
-      maxDailyRealizedLoss: mandate?.maxDailyRealizedLoss,
-      currentChatId: currentChatId?.trim(),
+      maxDailyRealizedLoss: resolvedMandate.maxDailyRealizedLoss,
+      currentChatId: scopedChat,
     );
   }
 

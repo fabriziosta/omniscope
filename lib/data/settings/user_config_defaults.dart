@@ -92,7 +92,6 @@ abstract final class UserConfigDefaults {
       'providers': <dynamic>[],
     },
     UserConfigKeys.agentApp: {
-      'disabledRoleIds': <String>[],
       'overrides': <dynamic>[],
       'autopilotEnabled': false,
       'autopilotMaxOpenProposals': 3,
@@ -100,8 +99,9 @@ abstract final class UserConfigDefaults {
       'scheduleInterval': 'hour1',
       'scheduleSymbols': <String>[],
       'scheduleUseInvestInterest': true,
-      'answerMood': 'plain',
       // scheduleChatId omitted until Schedule is enabled (null = no linked chat).
+      // Mood / disabledRoleIds / autopilotExchangeId moved to per-chat
+      // agentSettings (legacy keys still migrate once).
     },
     UserConfigKeys.agentChats: {
       'threads': <dynamic>[],
@@ -131,15 +131,6 @@ abstract final class UserConfigDefaults {
       'investInterest': <String>[],
       'investInterestProvenance': <String, dynamic>{},
     },
-    UserConfigKeys.mandate: {
-      'goal': 'learn',
-      'horizon': 'medium',
-      'universe': 'both',
-      'maxSymbolCount': 20,
-      'maxOpenProposals': 3,
-      'maxAutopilotFillsPerDay': 10,
-      'cadencePreference': 'hour1',
-    },
   };
 
   static final Set<String> _themeModes = {'light', 'dark', 'system'};
@@ -150,10 +141,6 @@ abstract final class UserConfigDefaults {
 
   static final Set<String> _scheduleIntervals = {
     for (final e in AgentScheduleInterval.values) e.name,
-  };
-
-  static final Set<String> _answerMoods = {
-    for (final e in AgentAnswerMood.values) e.name,
   };
 
   /// Nested allowlists parallel to [_document] string enum fields.
@@ -173,14 +160,6 @@ abstract final class UserConfigDefaults {
     },
     UserConfigKeys.agentApp: <String, dynamic>{
       'scheduleInterval': _scheduleIntervals,
-      'answerMood': _answerMoods,
-    },
-    UserConfigKeys.mandate: <String, dynamic>{
-      // Keep in sync with MandateGoal / Horizon / Universe.
-      'goal': {'learn', 'preserve', 'grow'},
-      'horizon': {'short', 'medium', 'long'},
-      'universe': {'equities', 'crypto', 'both'},
-      'cadencePreference': _scheduleIntervals,
     },
   };
 

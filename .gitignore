@@ -43,6 +43,7 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+.tools/
 
 # Symbolication related
 app.*.symbols

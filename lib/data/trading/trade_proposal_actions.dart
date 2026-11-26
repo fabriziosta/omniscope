@@ -21,7 +21,6 @@ class TradeProposalActions {
     required this._proposals,
     required this._activity,
     required this._tradeExecutor,
-    this._mandate,
     this._marketData,
     this._portfolio,
     this._chats,
@@ -32,20 +31,32 @@ class TradeProposalActions {
   final TradeProposalRepository _proposals;
   final AgentActivityRepository _activity;
   final TradeExecutor _tradeExecutor;
-  final MandateSettings? _mandate;
   final MarketDataClient? _marketData;
   final PortfolioRepository? _portfolio;
   final AgentChatRepository? _chats;
   final AppNotificationRepository? _notifications;
 
+  /// Mandate for [proposal]'s originating chat (defaults when unknown).
+  ChatMandate mandateFor(TradeProposal proposal) {
+    final chatId = proposal.chatId?.trim();
+    if (chatId != null && chatId.isNotEmpty && _chats != null) {
+      return _chats.threadFor(chatId).mandate;
+    }
+    return ChatMandate.defaults;
+  }
+
   List<TradableVenue> get tradableVenues => _tradeExecutor.tradableVenues;
 
-  /// Preferred portfolio when Autopilot default is set and still valid;
+  /// Preferred portfolio when this chat's Autopilot portfolio is set and valid;
   /// otherwise null if the user must pick on Confirm (multiple targets).
-  String? preferredPortfolioId() {
-    final preferred = _appSettings.autopilotExchangeId?.trim();
-    if (preferred != null && preferred.isNotEmpty) {
-      if (_tradeExecutor.venueForId(preferred) != null) return preferred;
+  String? preferredPortfolioId({String? chatId}) {
+    final scoped = chatId?.trim();
+    if (scoped != null && scoped.isNotEmpty && _chats != null) {
+      final preferred =
+          _chats.threadFor(scoped).agentSettings.autopilotExchangeId?.trim();
+      if (preferred != null && preferred.isNotEmpty) {
+        if (_tradeExecutor.venueForId(preferred) != null) return preferred;
+      }
     }
     final venues = _tradeExecutor.tradableVenues;
     if (venues.length == 1) return venues.first.id;
@@ -56,24 +67,29 @@ class TradeProposalActions {
   }
 
   /// True when Confirm needs a portfolio picker (no default + multiple targets).
-  bool get needsPortfolioPicker => preferredPortfolioId() == null;
+  bool needsPortfolioPicker({String? chatId}) =>
+      preferredPortfolioId(chatId: chatId) == null;
 
   /// Resolve a concrete portfolio id for Confirm / Autopilot.
   ///
-  /// Order: explicit [targetPortfolioId] → global default / single venue →
-  /// null when still ambiguous.
-  String? resolveConfirmPortfolioId({String? targetPortfolioId}) {
+  /// Order: explicit [targetPortfolioId] → chat Autopilot portfolio /
+  /// single venue → null when still ambiguous.
+  String? resolveConfirmPortfolioId({
+    String? targetPortfolioId,
+    String? chatId,
+  }) {
     final explicit = targetPortfolioId?.trim();
     if (explicit != null && explicit.isNotEmpty) {
       if (_tradeExecutor.venueForId(explicit) != null) return explicit;
       return null;
     }
-    return preferredPortfolioId();
+    return preferredPortfolioId(chatId: chatId);
   }
 
   /// Stamp id for a new proposal: preferred when known, else Practice hint.
-  String resolveTargetExchangeId() {
-    return preferredPortfolioId() ?? PortfolioDescriptor.practiceId;
+  String resolveTargetExchangeId({String? chatId}) {
+    return preferredPortfolioId(chatId: chatId) ??
+        PortfolioDescriptor.practiceId;
   }
 
   String portfolioDisplayName(String exchangeId) {
@@ -83,9 +99,9 @@ class TradeProposalActions {
     return exchangeId;
   }
 
-  /// Effective max notional from Mandate ∩ Agents Autopilot settings.
-  double? effectiveMaxNotional() {
-    final mandateCap = _mandate?.maxNotionalPerProposal;
+  /// Effective max notional from chat Mandate ∩ Agents Autopilot settings.
+  double? effectiveMaxNotional(TradeProposal proposal) {
+    final mandateCap = mandateFor(proposal).maxNotionalPerProposal;
     final appCap = _appSettings.autopilotMaxNotional;
     if (mandateCap == null) return appCap;
     if (appCap == null) return mandateCap;
@@ -96,13 +112,15 @@ class TradeProposalActions {
   ///
   /// [blockConfirmOnNotional] applies the notional cap to manual Confirm.
   /// Fill-budget and daily-loss stops only apply when [autopilot] is true.
+  /// Daily fill / loss rails are scoped to [proposal.chatId].
   Future<String?> evaluateRiskRails(
     TradeProposal proposal, {
     required bool autopilot,
     DateTime? now,
   }) async {
     final at = now ?? DateTime.now().toUtc();
-    final maxNotional = effectiveMaxNotional();
+    final mandate = mandateFor(proposal);
+    final maxNotional = effectiveMaxNotional(proposal);
     if (maxNotional != null && maxNotional > 0) {
       final price = await _estimatePrice(proposal.symbol);
       if (price != null && price > 0) {
@@ -116,21 +134,23 @@ class TradeProposalActions {
 
     if (!autopilot) return null;
 
-    final maxFills = _mandate?.maxAutopilotFillsPerDay ??
-        MandateSettings.defaultMaxAutopilotFillsPerDay;
+    final chatId = proposal.chatId?.trim();
+    final maxFills = mandate.maxAutopilotFillsPerDay;
     final fillsToday = AgentPnlService.autopilotFillCountForUtcDay(
       proposals: _proposals.proposals,
       now: at,
+      chatId: chatId,
     );
     if (fillsToday >= maxFills) {
       return 'Autopilot daily fill budget reached ($maxFills).';
     }
 
-    final maxLoss = _mandate?.maxDailyRealizedLoss;
+    final maxLoss = mandate.maxDailyRealizedLoss;
     if (maxLoss != null && maxLoss > 0) {
       final realizedToday = AgentPnlService.realizedPnlForUtcDay(
         proposals: _proposals.proposals,
         now: at,
+        chatId: chatId,
       );
       if (realizedToday <= -maxLoss) {
         return 'Autopilot halted: daily realized loss '
@@ -164,6 +184,7 @@ class TradeProposalActions {
 
     final portfolioId = resolveConfirmPortfolioId(
       targetPortfolioId: targetPortfolioId,
+      chatId: proposal.chatId,
     );
     if (portfolioId == null) {
       return 'Choose a portfolio before confirming.';

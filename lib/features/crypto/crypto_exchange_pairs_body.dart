@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 
@@ -39,17 +42,23 @@ class CryptoExchangePairsPane extends StatelessWidget {
           errorTitle: 'Could not load crypto',
         );
         () async {
-          // Discover the live catalog first so delisted curated symbols never
-          // hit get-tickers (HTTP 400) on the opening page.
+          final curatedCount = client.exchange.defaultSymbols.length;
+          unawaited(controller.refresh());
           try {
             final discovered = await client.browseSymbols();
-            if (discovered.isNotEmpty) {
-              controller.updateSymbols(discovered);
+            if (discovered.isEmpty) return;
+            controller.updateSymbols(discovered);
+            if (discovered.length > curatedCount) {
+              await controller.refresh();
             }
           } catch (_) {
-            // Keep curated defaults; refresh still runs below.
+            // Keep curated defaults.
           }
-          await controller.refresh();
+          SchedulerBinding.instance.addPostFrameCallback((_) {
+            if (controller.hasMore && !controller.loadingMore) {
+              unawaited(controller.loadMore());
+            }
+          });
         }();
         return controller;
       },

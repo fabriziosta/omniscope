@@ -5,9 +5,10 @@ import 'package:omniscope/data/agents/agent_activity_repository.dart';
 import 'package:omniscope/data/agents/agent_chat_repository.dart';
 import 'package:omniscope/data/agents/agent_role_catalog.dart';
 import 'package:omniscope/data/agents/agents_repository.dart';
-import 'support/agent_test_harness.dart';
+import 'package:omniscope/data/agents/chat_agent_settings.dart';
 import 'package:omniscope/data/agents/trade_proposal.dart';
 import 'package:omniscope/data/agents/trade_proposal_repository.dart';
+import 'support/agent_test_harness.dart';
 import 'package:omniscope/data/brokers/alpaca/alpaca_exchange_client.dart';
 import 'package:omniscope/data/crypto/crypto_com/crypto_com_exchange_client.dart';
 import 'package:omniscope/data/crypto/crypto_exchange_registry.dart';
@@ -481,9 +482,9 @@ Desk note: buy a little.
         dataSources: dataSources,
         portfolio: portfolio,
       );
-      await harness.appSettings.setAutopilot(
-        enabled: false,
-        exchangeId: 'crypto_com',
+      await chats.setAgentSettings(
+        harness.chatId,
+        const ChatAgentSettings(autopilotExchangeId: 'crypto_com'),
       );
       final controller = harness.controller;
 
@@ -501,6 +502,7 @@ Desk note: buy a little.
         riskApproved: true,
         status: TradeProposalStatus.pending,
         createdAt: DateTime.utc(2026, 1, 1),
+        chatId: harness.chatId,
       );
       await proposals.upsert(proposal);
 

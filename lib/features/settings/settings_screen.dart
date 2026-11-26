@@ -10,7 +10,6 @@ import 'appearance_section.dart';
 import 'connections_section.dart';
 import 'data_privacy_section.dart';
 import 'data_sources_section.dart';
-import 'mandate_section.dart';
 import 'portfolios_section.dart';
 import 'settings_nav.dart';
 
@@ -80,9 +79,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final raw = shellNav.takePendingSettingsSectionId();
     if (raw == null || raw.isEmpty) return;
     SettingsNavSection? section;
-    // Legacy ids from before Data file + Privacy & data were merged.
+    // Legacy ids from before Data file + Privacy & data were merged, and
+    // before Connections folded into Agents.
     if (raw == 'dataFile' || raw == 'privacy') {
       section = SettingsNavSection.dataAndPrivacy;
+    } else if (raw == 'connections') {
+      section = SettingsNavSection.agents;
     } else {
       section = SettingsNavSectionX.tryParse(raw);
     }
@@ -165,9 +167,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       SettingsNavSection.appearance => AppearanceSectionBody(
           subsectionKeys: keys,
         ),
-      SettingsNavSection.mandate => MandateSectionBody(
-          subsectionKeys: keys,
-        ),
       SettingsNavSection.dataSources => DataSourcesSectionBody(
           subsectionKeys: keys,
         ),
@@ -175,11 +174,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           subsectionKeys: keys,
           onOpenDataSources: () => _select(SettingsNavSection.dataSources),
         ),
-      SettingsNavSection.connections => ConnectionsSectionBody(
-          subsectionKeys: keys,
-        ),
-      SettingsNavSection.agents => AgentsAdvancedSectionBody(
-          subsectionKeys: keys,
+      SettingsNavSection.agents => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ConnectionsSectionBody(subsectionKeys: keys),
+            const SizedBox(height: 28),
+            AgentsAdvancedSectionBody(subsectionKeys: keys),
+          ],
         ),
       SettingsNavSection.dataAndPrivacy => DataPrivacySectionBody(
           subsectionKeys: keys,

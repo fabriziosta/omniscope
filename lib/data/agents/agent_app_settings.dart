@@ -42,10 +42,12 @@ class AgentRoleOverride {
   }
 }
 
-/// Schedule / role enable / default Autopilot portfolio — Settings → Agents.
+/// Schedule and silent Autopilot rails — Settings → Agents (memory is separate).
 ///
-/// Chat Autopilot enable lives on each [AgentChatThread]; [autopilotEnabled]
-/// remains only for one-shot migration from older configs.
+/// Mood, specialty enablement, and Autopilot portfolio live on each
+/// [AgentChatThread]. [autopilotEnabled] remains only for one-shot migration
+/// from older configs. Mood / disabled roles / exchange id remain readable for
+/// [migrateGlobalAgentSettingsIfNeeded] then [clearChatScopedFields].
 class AgentAppSettings extends ChangeNotifier {
   AgentAppSettings({this.store});
 
@@ -87,6 +89,13 @@ class AgentAppSettings extends ChangeNotifier {
   AgentAnswerMood get answerMood => _answerMood;
   String? get answerMoodNote => _answerMoodNote;
   Set<String> get disabledRoleIds => Set.unmodifiable(_disabledRoleIds);
+
+  /// True when mood / roles / portfolio still live on this global slice.
+  bool get hasLegacyChatScopedFields =>
+      _disabledRoleIds.isNotEmpty ||
+      _autopilotExchangeId != null ||
+      _answerMood != AgentAnswerMood.plain ||
+      (_answerMoodNote != null && _answerMoodNote!.isNotEmpty);
 
   /// Trim + length-cap a mood note; empty becomes null.
   static String? normalizeAnswerMoodNote(String? raw) {
@@ -253,7 +262,10 @@ class AgentAppSettings extends ChangeNotifier {
   }
 
   Map<String, dynamic> toJson() => {
-        'disabledRoleIds': _disabledRoleIds.toList()..sort(),
+        // Legacy chat-scoped fields (mood / roles / portfolio) only when
+        // non-default so migrate → clear leaves a clean Schedule-focused slice.
+        if (_disabledRoleIds.isNotEmpty)
+          'disabledRoleIds': _disabledRoleIds.toList()..sort(),
         'overrides': [for (final o in _overrides.values) o.toJson()],
         'autopilotEnabled': _autopilotEnabled,
         if (_autopilotExchangeId != null)
@@ -268,7 +280,8 @@ class AgentAppSettings extends ChangeNotifier {
         if (_scheduleLastRunAt != null)
           'scheduleLastRunAt': _scheduleLastRunAt!.toUtc().toIso8601String(),
         if (_scheduleChatId != null) 'scheduleChatId': _scheduleChatId,
-        'answerMood': _answerMood.name,
+        if (_answerMood != AgentAnswerMood.plain)
+          'answerMood': _answerMood.name,
         if (_answerMoodNote != null) 'answerMoodNote': _answerMoodNote,
       };
 
@@ -385,6 +398,17 @@ class AgentAppSettings extends ChangeNotifier {
 
   Future<void> setAnswerMoodNote(String? note) async {
     _answerMoodNote = normalizeAnswerMoodNote(note);
+    await _persist();
+    notifyListeners();
+  }
+
+  /// Clears mood / roles / portfolio after seeding per-chat settings.
+  Future<void> clearChatScopedFields() async {
+    if (!hasLegacyChatScopedFields) return;
+    _disabledRoleIds = {};
+    _autopilotExchangeId = null;
+    _answerMood = AgentAnswerMood.plain;
+    _answerMoodNote = null;
     await _persist();
     notifyListeners();
   }

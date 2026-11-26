@@ -20,7 +20,6 @@ import 'package:omniscope/data/portfolio/portfolio_repository.dart';
 import 'package:omniscope/data/settings/data_source_settings.dart';
 import 'package:omniscope/data/settings/env_secrets_repository.dart';
 import 'package:omniscope/data/settings/favorites_repository.dart';
-import 'package:omniscope/data/settings/mandate_settings.dart';
 import 'package:omniscope/data/trading/broker_exchange_registry.dart';
 import 'package:omniscope/data/trading/trade_executor.dart';
 import 'package:omniscope/features/agents/agent_chat_screen.dart';
@@ -66,8 +65,6 @@ void main() {
     await portfolio.load();
     final favorites = FavoritesRepository(store: store);
     await favorites.load();
-    final mandate = MandateSettings(store: store);
-    await mandate.load();
     final agentMemory = AgentMemoryRepository(store: store);
     await agentMemory.load();
     final notifications = AppNotificationRepository(store: store);
@@ -102,7 +99,6 @@ void main() {
       secrets: secrets,
       llmRuntime: llmRuntime,
       appSettings: agentApp,
-      mandate: mandate,
       agentMemory: agentMemory,
       investInterestProposals: investInterest,
     );
@@ -123,7 +119,6 @@ void main() {
           ChangeNotifierProvider<DataSourceSettings>.value(value: dataSources),
           ChangeNotifierProvider<PortfolioRepository>.value(value: portfolio),
           ChangeNotifierProvider<FavoritesRepository>.value(value: favorites),
-          ChangeNotifierProvider<MandateSettings>.value(value: mandate),
           ChangeNotifierProvider<AgentsRepository>.value(value: agents),
           ChangeNotifierProvider<LlmRuntimeSettings>.value(value: llmRuntime),
           ChangeNotifierProvider<AgentAppSettings>.value(value: agentApp),

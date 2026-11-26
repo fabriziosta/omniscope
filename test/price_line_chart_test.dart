@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:omniscope/core/formatting.dart';
 import 'package:omniscope/data/market/models.dart';
 import 'package:omniscope/data/settings/display_settings.dart';
 import 'package:omniscope/widgets/price_line_chart.dart';
@@ -7,6 +8,35 @@ import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 void main() {
+  group('axis label formatters', () {
+    test('price axis uses currency and compact for large values', () {
+      expect(
+        formatChartPriceAxis(12.5, PriceFormat.full),
+        contains('12.50'),
+      );
+      expect(
+        formatChartPriceAxis(12500, PriceFormat.compact),
+        contains('K'),
+      );
+    });
+
+    test('date axis shortens by span', () {
+      final t = DateTime(2026, 3, 15, 14, 30);
+      expect(
+        formatChartDateAxis(t, span: const Duration(hours: 12)),
+        contains('14:30'),
+      );
+      expect(
+        formatChartDateAxis(t, span: const Duration(days: 60)),
+        isNot(contains('2026')),
+      );
+      expect(
+        formatChartDateAxis(t, span: const Duration(days: 400)),
+        contains('2026'),
+      );
+    });
+  });
+
   testWidgets('shows empty history copy when fewer than 2 candles',
       (tester) async {
     await tester.pumpWidget(

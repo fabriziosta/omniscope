@@ -14,7 +14,6 @@ import 'package:omniscope/data/notifications/app_notification.dart';
 import 'package:omniscope/data/notifications/app_notification_repository.dart';
 import 'package:omniscope/data/portfolio/portfolio_repository.dart';
 import 'package:omniscope/data/settings/data_source_settings.dart';
-import 'package:omniscope/data/settings/mandate_settings.dart';
 import 'package:omniscope/data/trading/broker_exchange_registry.dart';
 import 'package:omniscope/data/trading/trade_executor.dart';
 import 'package:omniscope/features/activity/activity_screen.dart';
@@ -47,8 +46,6 @@ void main() {
     await dataSources.load();
     final portfolio = PortfolioRepository(store: store);
     await portfolio.load();
-    final mandate = MandateSettings(store: store);
-    await mandate.load();
     final appSettings = AgentAppSettings(store: store);
     await appSettings.load();
     final market = FakeMarketDataClient();
@@ -91,7 +88,6 @@ void main() {
           ChangeNotifierProvider.value(value: notifications),
           ChangeNotifierProvider.value(value: dataSources),
           ChangeNotifierProvider.value(value: portfolio),
-          ChangeNotifierProvider.value(value: mandate),
           ChangeNotifierProvider.value(value: appSettings),
           Provider<MarketDataClient>.value(value: market),
           Provider<TradeExecutor>.value(

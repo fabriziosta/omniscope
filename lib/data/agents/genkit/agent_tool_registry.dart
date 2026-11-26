@@ -112,7 +112,7 @@ class AgentToolRegistry {
     ),
     AgentToolDefinition(
       id: AgentToolIds.getMandate,
-      shortDescription: 'Settings → Mandate goal, universe, and risk rails',
+      shortDescription: 'This chat\'s Mandate goal, universe, and risk rails',
     ),
     AgentToolDefinition(
       id: AgentToolIds.getAgentPnl,

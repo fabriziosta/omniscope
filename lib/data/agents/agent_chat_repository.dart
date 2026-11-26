@@ -1,8 +1,11 @@
 import 'package:flutter/foundation.dart';
 
+import '../settings/mandate_settings.dart';
 import '../settings/user_config_keys.dart';
+import '../settings/user_config_migrations.dart';
 import '../settings/user_config_store.dart';
 import 'agent_app_settings.dart';
+import 'chat_agent_settings.dart';
 import 'chat_models.dart';
 import 'schedule_chat_binding.dart';
 
@@ -22,6 +25,13 @@ class AgentChatRepository extends ChangeNotifier {
   AgentAppSettings? appSettings;
   AgentChatsState _state = AgentChatsState.empty;
   bool _ready = false;
+  bool _writeLegacyRoleIdKeys = true;
+
+  /// Chat ids whose persisted JSON lacked a `mandate` key (need one-shot seed).
+  final Set<String> _threadsMissingMandate = {};
+
+  /// Chat ids whose persisted JSON lacked `agentSettings` (need one-shot seed).
+  final Set<String> _threadsMissingAgentSettings = {};
 
   AgentChatsState get state => _state;
   bool get isReady => _ready;
@@ -85,22 +95,80 @@ class AgentChatRepository extends ChangeNotifier {
 
   Future<void> load({UserConfigStore? store}) async {
     if (store != null) this.store = store;
+    _threadsMissingMandate.clear();
+    _threadsMissingAgentSettings.clear();
     final slice = this.store?.getSlice(UserConfigKeys.agentChats);
     if (slice is! Map) {
       _state = AgentChatsState.empty;
     } else {
       try {
-        _state = AgentChatsState.fromJson(Map<String, dynamic>.from(slice));
+        final map = Map<String, dynamic>.from(slice);
+        final rawThreads = map['threads'] as List? ?? const [];
+        for (final item in rawThreads) {
+          if (item is! Map) continue;
+          final threadMap = Map<String, dynamic>.from(item);
+          final id = _threadIdFromRaw(threadMap);
+          if (id == null) continue;
+          if (!threadMap.containsKey('mandate')) {
+            _threadsMissingMandate.add(id);
+          }
+          if (!threadMap.containsKey('agentSettings')) {
+            _threadsMissingAgentSettings.add(id);
+          }
+        }
+        _state = AgentChatsState.fromJson(map);
       } catch (_) {
         _state = AgentChatsState.empty;
+        _threadsMissingMandate.clear();
+        _threadsMissingAgentSettings.clear();
       }
     }
+    final cfg = store;
+    _writeLegacyRoleIdKeys = cfg != null &&
+        UserConfigMigrations.readVersion(cfg) < UserConfigKeys.currentVersion;
     _ready = true;
     notifyListeners();
   }
 
+  /// When false, persisted threads omit legacy `roleId` / `legacyRoleId` keys.
+  void setWriteLegacyRoleIdKeys(bool value) {
+    _writeLegacyRoleIdKeys = value;
+  }
+
+  /// Clears in-memory legacy role ids and re-persists without legacy JSON keys.
+  Future<void> stripLegacyRoleIdKeys() async {
+    var changed = false;
+    final migrated = <AgentChatThread>[];
+    for (final thread in _state.threads) {
+      if (thread.legacyRoleId != null) {
+        changed = true;
+        migrated.add(thread.copyWith(clearLegacyRoleId: true));
+      } else {
+        migrated.add(thread);
+      }
+    }
+    if (!changed) return;
+    _state = AgentChatsState(threads: migrated);
+    await _persist();
+    notifyListeners();
+  }
+
+  static String? _threadIdFromRaw(Map<String, dynamic> threadMap) {
+    final id = (threadMap['chatId'] as String?)?.trim();
+    if (id != null && id.isNotEmpty) return id;
+    final legacyRoleId = threadMap['legacyRoleId'] as String? ??
+        threadMap['roleId'] as String?;
+    if (legacyRoleId != null && legacyRoleId.isNotEmpty) {
+      return 'legacy_$legacyRoleId';
+    }
+    return null;
+  }
+
   Future<void> _persist() async {
-    await store?.setSlice(UserConfigKeys.agentChats, _state.toJson());
+    await store?.setSlice(
+      UserConfigKeys.agentChats,
+      _state.toJson(writeLegacyRoleIdKeys: _writeLegacyRoleIdKeys),
+    );
   }
 
   /// Creates an empty chat and returns it.
@@ -117,6 +185,32 @@ class AgentChatRepository extends ChangeNotifier {
     await _persist();
     notifyListeners();
     return thread;
+  }
+
+  /// Most recently updated empty chat whose title matches [title], if any.
+  ///
+  /// Used by in-app launch CTAs so repeated taps reuse one draft chat instead
+  /// of spawning duplicates.
+  AgentChatThread? emptyChatWithTitle(String title) {
+    final want = title.trim();
+    if (want.isEmpty) return null;
+    for (final thread in threads) {
+      if (thread.messages.isEmpty && thread.title.trim() == want) {
+        return thread;
+      }
+    }
+    return null;
+  }
+
+  /// Bumps [AgentChatThread.updatedAt] so a reused draft floats in the list.
+  Future<AgentChatThread> touchChat(String chatId) async {
+    final existing = _state.byId(chatId);
+    if (existing == null) return threadFor(chatId);
+    final next = existing.copyWith(updatedAt: DateTime.now().toUtc());
+    _state = _state.withThread(next);
+    await _persist();
+    notifyListeners();
+    return next;
   }
 
   /// One-shot: if legacy global Autopilot was ON, enable it on every existing
@@ -139,6 +233,93 @@ class AgentChatRepository extends ChangeNotifier {
       notifyListeners();
     }
     await app.setAutopilot(enabled: false);
+  }
+
+  /// One-shot: seed threads that lacked a per-chat `mandate` from the legacy
+  /// top-level `mandate` config slice (or [ChatMandate.defaults]), then clear
+  /// the global slice so it does not re-apply.
+  Future<void> migrateGlobalMandateIfNeeded() async {
+    final legacySlice = store?.getSlice(UserConfigKeys.mandate);
+    final seed = ChatMandate.fromJson(legacySlice);
+    final hasLegacySlice = legacySlice is Map;
+    final needSeed = _threadsMissingMandate.isNotEmpty;
+    if (!needSeed && !hasLegacySlice) return;
+
+    if (needSeed) {
+      final migrated = <AgentChatThread>[
+        for (final thread in _state.threads)
+          if (_threadsMissingMandate.contains(thread.chatId))
+            thread.copyWith(mandate: seed)
+          else
+            thread,
+      ];
+      _state = AgentChatsState(threads: migrated);
+      _threadsMissingMandate.clear();
+      await _persist();
+      notifyListeners();
+    }
+
+    if (hasLegacySlice) {
+      await store?.setSlice(UserConfigKeys.mandate, <String, dynamic>{});
+    }
+  }
+
+  /// Replaces this chat's Mandate. Does not bump [updatedAt].
+  Future<AgentChatThread> setMandate(String chatId, ChatMandate mandate) async {
+    final existing = _state.byId(chatId);
+    if (existing == null) {
+      return _state.threadFor(chatId);
+    }
+    if (existing.mandate == mandate) return existing;
+    final next = existing.copyWith(mandate: mandate);
+    _state = _state.withThread(next);
+    await _persist();
+    notifyListeners();
+    return next;
+  }
+
+  /// One-shot: seed threads that lacked `agentSettings` from global
+  /// [AgentAppSettings] mood / roles / portfolio, then clear those fields.
+  Future<void> migrateGlobalAgentSettingsIfNeeded(AgentAppSettings app) async {
+    final needSeed = _threadsMissingAgentSettings.isNotEmpty;
+    final hasLegacyChatFields = app.hasLegacyChatScopedFields;
+    if (!needSeed && !hasLegacyChatFields) return;
+
+    if (needSeed) {
+      final seed = ChatAgentSettings.fromAppSettings(app);
+      final migrated = <AgentChatThread>[
+        for (final thread in _state.threads)
+          if (_threadsMissingAgentSettings.contains(thread.chatId))
+            thread.copyWith(agentSettings: seed)
+          else
+            thread,
+      ];
+      _state = AgentChatsState(threads: migrated);
+      _threadsMissingAgentSettings.clear();
+      await _persist();
+      notifyListeners();
+    }
+
+    if (hasLegacyChatFields) {
+      await app.clearChatScopedFields();
+    }
+  }
+
+  /// Replaces this chat's agent prefs. Does not bump [updatedAt].
+  Future<AgentChatThread> setAgentSettings(
+    String chatId,
+    ChatAgentSettings settings,
+  ) async {
+    final existing = _state.byId(chatId);
+    if (existing == null) {
+      return _state.threadFor(chatId);
+    }
+    if (existing.agentSettings == settings) return existing;
+    final next = existing.copyWith(agentSettings: settings);
+    _state = _state.withThread(next);
+    await _persist();
+    notifyListeners();
+    return next;
   }
 
   Future<AgentChatThread> renameChat(String chatId, String title) async {
@@ -325,6 +506,8 @@ class AgentChatRepository extends ChangeNotifier {
       autopilotEnabled: existing.autopilotEnabled,
       memoryEnabled: existing.memoryEnabled,
       focusSymbols: existing.focusSymbols,
+      mandate: existing.mandate,
+      agentSettings: existing.agentSettings,
       legacyRoleId: existing.legacyRoleId,
     );
     _state = _state.withThread(thread);

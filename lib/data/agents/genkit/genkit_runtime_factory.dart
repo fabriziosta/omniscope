@@ -9,19 +9,41 @@ import '../llm_connection_health.dart';
 import '../llm_model_router.dart';
 import '../models.dart';
 
-/// Builds a per-turn [Genkit] instance + [ModelRef] from a resolved endpoint.
-class GenkitRuntimeFactory {
-  GenkitRuntimeFactory({http.Client? httpClient}) : _http = httpClient;
+/// Stable cache key for a resolved LLM endpoint (invalidates on key/model/host).
+String genkitEndpointFingerprint(LlmResolvedEndpoint endpoint) {
+  return [
+    endpoint.provider.name,
+    endpoint.modelId.trim(),
+    endpoint.apiKey.trim(),
+    endpoint.weight.name,
+    endpoint.baseUrl?.trim() ?? '',
+  ].join('\u0001');
+}
 
-  final http.Client? _http;
+/// Builds a cached [Genkit] instance + [ModelRef] from a resolved endpoint.
+class GenkitRuntimeFactory {
+  GenkitRuntimeFactory({http.Client? httpClient})
+      : _ownsHttp = httpClient == null,
+        _http = httpClient ?? http.Client();
+
+  final bool _ownsHttp;
+  final http.Client _http;
+
+  final Map<String, ({Genkit ai, ModelRef model})> _runtimes = {};
+
+  http.Client get httpClient => _http;
 
   /// Plugin + model for [endpoint]. Always includes [AgentsPlugin].
   ({Genkit ai, ModelRef model}) create(LlmResolvedEndpoint endpoint) {
     if (!endpoint.isConfigured) {
       throw GenkitAgentException(
-        'Add an LLM API key under Settings → Connections before chatting.',
+        'Add an LLM API key under Settings → Agents before chatting.',
       );
     }
+
+    final fingerprint = genkitEndpointFingerprint(endpoint);
+    final cached = _runtimes[fingerprint];
+    if (cached != null) return cached;
 
     final model = modelRefFor(
       provider: endpoint.provider,
@@ -31,10 +53,23 @@ class GenkitRuntimeFactory {
       ..._llmPlugins(endpoint),
       AgentsPlugin(),
     ];
-    return (
+    final built = (
       ai: Genkit(plugins: plugins, model: model),
       model: model,
     );
+    _runtimes[fingerprint] = built;
+    return built;
+  }
+
+  void clearCache() {
+    _runtimes.clear();
+  }
+
+  void dispose() {
+    clearCache();
+    if (_ownsHttp) {
+      _http.close();
+    }
   }
 
   ModelRef modelRefFor({

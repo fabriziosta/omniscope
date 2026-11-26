@@ -54,23 +54,34 @@ class MarketContextBuilder {
     final sym = symbol.trim().toUpperCase();
     if (sym.isEmpty) return null;
 
+    Future<List<Quote>?> quotesFuture() async {
+      try {
+        return await _client.getQuotes([sym]);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    Future<List<Candle>?> historyFuture() async {
+      try {
+        return await _client.getHistory(
+          sym,
+          range: '1mo',
+          interval: '1d',
+        );
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final parallel = await Future.wait<Object?>([
+      quotesFuture(),
+      historyFuture(),
+    ]);
+    final quotes = parallel[0] as List<Quote>?;
+    final history = parallel[1] as List<Candle>? ?? const <Candle>[];
     Quote? quote;
-    List<Candle> history = const [];
-    try {
-      final quotes = await _client.getQuotes([sym]);
-      if (quotes.isNotEmpty) quote = quotes.first;
-    } catch (_) {
-      // Still try history; may fail too.
-    }
-    try {
-      history = await _client.getHistory(
-        sym,
-        range: '1mo',
-        interval: '1d',
-      );
-    } catch (_) {
-      // Optional enrichment.
-    }
+    if (quotes != null && quotes.isNotEmpty) quote = quotes.first;
 
     if (quote == null && history.isEmpty) return null;
 

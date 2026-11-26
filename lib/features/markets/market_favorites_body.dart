@@ -6,6 +6,8 @@ import '../../data/crypto/crypto_exchange_registry.dart';
 import '../../data/market/equity_data_source.dart';
 import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/favorites_repository.dart';
+import '../../widgets/app_confirm_dialog.dart';
+import '../../widgets/app_toast.dart';
 import '../../widgets/favorites_quotes_pane.dart';
 
 /// Markets Favorites content pane (all starred symbols).
@@ -16,6 +18,30 @@ class MarketFavoritesPane extends StatelessWidget {
   });
 
   final VoidCallback onOpenMenu;
+
+  Future<void> _clearAll(BuildContext context) async {
+    final favorites = context.read<FavoritesRepository>();
+    final count = favorites.symbols.length;
+    final ok = await confirmDestructiveAction(
+      context,
+      title: 'Clear all favorites?',
+      description: count == 0
+          ? 'Removes every starred Markets symbol from the data file. '
+              'This cannot be undone.'
+          : 'Removes $count '
+              '${count == 1 ? 'favorite' : 'favorites'} from the data file. '
+              'This cannot be undone.',
+      confirmLabel: 'Clear favorites',
+    );
+    if (!ok || !context.mounted) return;
+    await favorites.clearAll();
+    if (!context.mounted) return;
+    showAppToast(
+      context,
+      title: 'Favorites cleared',
+      description: 'Starred Markets symbols were removed.',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,6 +63,8 @@ class MarketFavoritesPane extends StatelessWidget {
       emptyMessage: AppCopy.noMarketFavorites,
       blockedMessage: noSources ? AppCopy.noMarketSourcesEnabled : null,
       onOpenMenu: onOpenMenu,
+      onClearAll: () => _clearAll(context),
+      clearAllLabel: 'Clear all',
       onReorder: (oldIndex, newIndex) async {
         await favorites.reorderFavorites(oldIndex, newIndex);
         return favorites.symbols;

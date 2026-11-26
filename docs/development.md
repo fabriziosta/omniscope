@@ -24,6 +24,17 @@ Then `flutter doctor` until the Linux toolchain is green.
 
 Keep this Fedora package list aligned with the builder stage in [`Containerfile`](../Containerfile) and CI `apt-get` Linux deps. See also [`container.md`](container.md).
 
+## App icons (`make icons`)
+
+[`tool/regen_icons.sh`](../tool/regen_icons.sh) runs `flutter_launcher_icons`, `flutter_native_splash:create`, and a short Python step that writes Linux window icons under `linux/runner/resources/`. That step needs **Python 3** and **Pillow**:
+
+```bash
+# Fedora
+sudo dnf install -y python3-pillow
+# Debian/Ubuntu
+sudo apt-get install -y python3-pil
+```
+
 ## Android
 
 Install Android Studio / SDK, accept licenses, and connect a device or emulator.  
@@ -50,7 +61,7 @@ make check               # analyze + test + linux release (same as pre-push / CI
 
 Underlying Flutter commands still work: `flutter pub get`, `flutter run -d linux`, `flutter analyze`, `flutter test`.
 
-Add LLM / exchange keys in **Settings → Connections** / **Credentials** (stored in `omniscope.json`). **Never commit API keys or a filled config file.** For `make venue-canary` portfolio probes, export `OMNISCOPE_*` in the process environment or rely on keys already saved in the local config.
+Add LLM keys in **Settings → Agents** and exchange keys under **Settings → Data sources → Credentials** (stored in `omniscope.json`). **Never commit API keys or a filled config file.** For `make venue-canary` portfolio probes, export `OMNISCOPE_*` in the process environment or rely on keys already saved in the local config.
 
 ## Pre-commit / pre-push hooks
 

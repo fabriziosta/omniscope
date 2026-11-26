@@ -90,7 +90,7 @@ class AppNotification {
       createdAt: DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
       title: 'Configure an API key',
       body:
-          'Add an LLM provider key in Settings → Connections to start using Agents.',
+          'Add an LLM provider key in Settings → Agents to start using Agents.',
       read: false,
     );
   }

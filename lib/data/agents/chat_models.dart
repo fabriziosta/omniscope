@@ -1,4 +1,6 @@
 import '../../core/formatting.dart';
+import '../settings/mandate_settings.dart';
+import 'chat_agent_settings.dart';
 import 'genkit/agent_peer_delegation.dart';
 
 /// Who wrote a chat turn.
@@ -152,6 +154,8 @@ class AgentChatThread {
     this.autopilotEnabled = false,
     this.memoryEnabled = true,
     this.focusSymbols = const [],
+    this.mandate = ChatMandate.defaults,
+    this.agentSettings = ChatAgentSettings.defaults,
     this.legacyRoleId,
   });
 
@@ -177,6 +181,12 @@ class AgentChatThread {
   /// Ordered symbols this chat is focusing on (investigated / traded).
   /// Distinct from Markets → Invest interest. Capped at [maxFocusSymbols].
   final List<String> focusSymbols;
+
+  /// Per-chat investment policy (goal, universe, risk rails).
+  final ChatMandate mandate;
+
+  /// Per-chat mood, specialty enablement, and Autopilot portfolio.
+  final ChatAgentSettings agentSettings;
 
   /// Present when migrated from a legacy per-role thread.
   final String? legacyRoleId;
@@ -210,6 +220,8 @@ class AgentChatThread {
     bool? autopilotEnabled,
     bool? memoryEnabled,
     List<String>? focusSymbols,
+    ChatMandate? mandate,
+    ChatAgentSettings? agentSettings,
     String? legacyRoleId,
     bool clearLegacyRoleId = false,
   }) {
@@ -222,12 +234,14 @@ class AgentChatThread {
       autopilotEnabled: autopilotEnabled ?? this.autopilotEnabled,
       memoryEnabled: memoryEnabled ?? this.memoryEnabled,
       focusSymbols: focusSymbols ?? this.focusSymbols,
+      mandate: mandate ?? this.mandate,
+      agentSettings: agentSettings ?? this.agentSettings,
       legacyRoleId:
           clearLegacyRoleId ? null : (legacyRoleId ?? this.legacyRoleId),
     );
   }
 
-  Map<String, dynamic> toJson() => {
+  Map<String, dynamic> toJson({bool writeLegacyRoleIdKeys = true}) => {
         'chatId': chatId,
         'title': title,
         'messages': messages.map((m) => m.toJson()).toList(),
@@ -238,9 +252,12 @@ class AgentChatThread {
         if (!memoryEnabled) 'memoryEnabled': false,
         if (focusSymbols.isNotEmpty)
           'focusSymbols': normalizeFocusSymbols(focusSymbols),
-        if (legacyRoleId != null) 'legacyRoleId': legacyRoleId,
-        // Keep roleId for older readers during transition.
-        if (legacyRoleId != null) 'roleId': legacyRoleId,
+        'mandate': mandate.toJson(),
+        'agentSettings': agentSettings.toJson(),
+        if (writeLegacyRoleIdKeys && legacyRoleId != null)
+          'legacyRoleId': legacyRoleId,
+        // Keep roleId for older readers during transition (v1 only).
+        if (writeLegacyRoleIdKeys && legacyRoleId != null) 'roleId': legacyRoleId,
       };
 
   factory AgentChatThread.fromJson(Map<String, dynamic> json) {
@@ -278,6 +295,8 @@ class AgentChatThread {
       autopilotEnabled: json['autopilotEnabled'] == true,
       memoryEnabled: json['memoryEnabled'] != false,
       focusSymbols: normalizeFocusSymbols(json['focusSymbols']),
+      mandate: ChatMandate.fromJson(json['mandate']),
+      agentSettings: ChatAgentSettings.fromJson(json['agentSettings']),
       legacyRoleId: legacyRoleId,
     );
   }
@@ -288,6 +307,8 @@ class AgentChatThread {
     bool autopilotEnabled = false,
     bool memoryEnabled = true,
     List<String> focusSymbols = const [],
+    ChatMandate mandate = ChatMandate.defaults,
+    ChatAgentSettings agentSettings = ChatAgentSettings.defaults,
   }) {
     return AgentChatThread(
       chatId: chatId,
@@ -297,6 +318,8 @@ class AgentChatThread {
       autopilotEnabled: autopilotEnabled,
       memoryEnabled: memoryEnabled,
       focusSymbols: normalizeFocusSymbols(focusSymbols),
+      mandate: mandate,
+      agentSettings: agentSettings,
     );
   }
 
@@ -398,9 +421,11 @@ class AgentChatsState {
     );
   }
 
-  Map<String, dynamic> toJson() => {
+  Map<String, dynamic> toJson({bool writeLegacyRoleIdKeys = true}) => {
         'version': 2,
-        'threads': threads.map((t) => t.toJson()).toList(),
+        'threads': threads
+            .map((t) => t.toJson(writeLegacyRoleIdKeys: writeLegacyRoleIdKeys))
+            .toList(),
       };
 
   factory AgentChatsState.fromJson(Map<String, dynamic> json) {

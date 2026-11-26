@@ -233,19 +233,21 @@ class AgentRolePrompts {
         if (s.trim().isNotEmpty) s.trim().toUpperCase(),
     ];
     if (cleaned.isEmpty) {
-      return ' This chat focus list is empty. When you investigate or trade '
-          'a concrete ticker, call pinChatSymbols so the user sees it above '
-          'the composer. Use unpinChatSymbols when a symbol is no longer '
+      return ' This chat focus list is empty. The user cannot pin or unpin '
+          'symbols — only you can. When you investigate or trade a concrete '
+          'ticker, call pinChatSymbols so the user sees it above the '
+          'composer. Use unpinChatSymbols when a symbol is no longer '
           'relevant. Do not confuse focus symbols with Markets → Invest '
           'interest.';
     }
     return ' This chat focus symbols (pinned for this conversation only — '
         'not Invest interest): ${cleaned.join(', ')}. Prefer these when '
-        'continuing work in this chat. Call getChatFocusSymbols to re-read; '
+        'continuing work in this chat. The user cannot change this list; '
+        'only you can. Call getChatFocusSymbols to re-read; '
         'pinChatSymbols / unpinChatSymbols to update (immediate, no Confirm).';
   }
 
-  /// Appended from Settings → Agents answer mood (delivery only).
+  /// Appended from per-chat Agent settings answer mood (delivery only).
   static String moodPreamble({
     required AgentAnswerMood mood,
     String? note,
@@ -261,7 +263,7 @@ class AgentRolePrompts {
     return buf.toString();
   }
 
-  /// Appended when Settings → Mandate is available.
+  /// Appended when this chat's Mandate summary is available.
   static String mandatePreamble(String? summary) {
     final text = summary?.trim() ?? '';
     if (text.isEmpty) return '';

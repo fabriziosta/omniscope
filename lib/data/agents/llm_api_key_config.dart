@@ -2,7 +2,7 @@ import 'models.dart';
 
 /// API keys per [LlmProvider] from the config `secrets` map.
 ///
-/// Settings → Connections reads/writes keys through [EnvSecretsRepository].
+/// Settings → Agents reads/writes keys through [EnvSecretsRepository].
 /// Map keys use [envNameFor] (`OMNISCOPE_*_API_KEY`).
 class LlmApiKeyConfig {
   LlmApiKeyConfig(this._keysByProvider);

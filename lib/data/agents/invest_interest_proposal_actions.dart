@@ -2,6 +2,7 @@ import '../settings/favorites_repository.dart';
 import '../settings/mandate_settings.dart';
 import 'agent_activity.dart';
 import 'agent_activity_repository.dart';
+import 'agent_chat_repository.dart';
 import 'invest_interest_proposal.dart';
 import 'invest_interest_proposal_repository.dart';
 
@@ -11,13 +12,22 @@ class InvestInterestProposalActions {
     required this._proposals,
     required this._activity,
     required this._favorites,
-    required this._mandate,
+    this._chats,
   });
 
   final InvestInterestProposalRepository _proposals;
   final AgentActivityRepository _activity;
   final FavoritesRepository _favorites;
-  final MandateSettings _mandate;
+  final AgentChatRepository? _chats;
+
+  /// Mandate for [proposal]'s originating chat (defaults when unknown).
+  ChatMandate mandateFor(InvestInterestProposal proposal) {
+    final chatId = proposal.chatId?.trim();
+    if (chatId != null && chatId.isNotEmpty && _chats != null) {
+      return _chats.threadFor(chatId).mandate;
+    }
+    return ChatMandate.defaults;
+  }
 
   /// Apply a pending proposal to Markets → Invest interest.
   Future<String?> confirm(String proposalId, {bool autopilot = false}) async {
@@ -34,17 +44,19 @@ class InvestInterestProposalActions {
       return 'Autopilot only applies add-only Invest interest proposals.';
     }
 
+    final mandate = mandateFor(proposal);
+
     try {
       if (autopilot) {
-        await _applyAddOnly(proposal);
+        await _applyAddOnly(proposal, mandate);
       } else if (proposal.setSymbols != null) {
-        final next = _capUnique(proposal.setSymbols!, _mandate.maxSymbolCount);
+        final next = _capUnique(proposal.setSymbols!, mandate.maxSymbolCount);
         await _favorites.applyInvestInterest(
           next,
           managedByRoleId: proposal.roleId,
         );
       } else {
-        await _applyAddRemove(proposal);
+        await _applyAddRemove(proposal, mandate);
       }
 
       await _proposals.upsert(
@@ -153,8 +165,11 @@ class InvestInterestProposalActions {
     return applied;
   }
 
-  Future<void> _applyAddOnly(InvestInterestProposal proposal) async {
-    final maxSymbols = _mandate.maxSymbolCount;
+  Future<void> _applyAddOnly(
+    InvestInterestProposal proposal,
+    ChatMandate mandate,
+  ) async {
+    final maxSymbols = mandate.maxSymbolCount;
     final currentCount = _favorites.investInterestSymbols.length;
     final room = maxSymbols - currentCount;
     if (room <= 0) return;
@@ -166,8 +181,11 @@ class InvestInterestProposalActions {
     );
   }
 
-  Future<void> _applyAddRemove(InvestInterestProposal proposal) async {
-    final maxSymbols = _mandate.maxSymbolCount;
+  Future<void> _applyAddRemove(
+    InvestInterestProposal proposal,
+    ChatMandate mandate,
+  ) async {
+    final maxSymbols = mandate.maxSymbolCount;
     final remove = _normalizeList(proposal.remove);
     final current = List<String>.from(_favorites.investInterestSymbols);
     final kept = [

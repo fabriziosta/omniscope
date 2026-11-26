@@ -10,12 +10,11 @@ import '../../data/market/asset_overviews.dart';
 import '../../data/market/market_data_client.dart';
 import '../../data/market/market_data_links.dart';
 import '../../data/market/models.dart';
+import '../../data/portfolio/models.dart';
 import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/display_settings.dart';
 import '../../data/agents/agent_launch.dart';
-import '../agents/agent_launch_actions.dart';
 import '../../widgets/agent_launch_button.dart';
-import '../../widgets/app_dialog.dart';
 import '../../widgets/app_error_view.dart';
 import '../../widgets/app_progress.dart';
 import '../../widgets/app_toast.dart';
@@ -40,7 +39,6 @@ class AssetDetailScreen extends StatelessWidget {
       create: (context) => AssetDetailController(
         symbol: symbol,
         marketData: context.read<MarketDataClient>(),
-        portfolio: context.read<PortfolioRepository>(),
         initialRange: context.read<DisplaySettings>().defaultChartRange,
       )..load(),
       child: _AssetDetailView(symbol: symbol),
@@ -48,81 +46,15 @@ class AssetDetailScreen extends StatelessWidget {
   }
 }
 
-class _AssetDetailView extends StatefulWidget {
+class _AssetDetailView extends StatelessWidget {
   const _AssetDetailView({required this.symbol});
 
   final String symbol;
 
-  @override
-  State<_AssetDetailView> createState() => _AssetDetailViewState();
-}
-
-class _AssetDetailViewState extends State<_AssetDetailView> {
-  final _sharesController = TextEditingController(text: '1');
-
-  @override
-  void dispose() {
-    _sharesController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _trade({required bool buy}) async {
-    final controller = context.read<AssetDetailController>();
-    final result = await controller.trade(
-      buy: buy,
-      sharesText: _sharesController.text,
-    );
-    if (!mounted) return;
-    if (result == null) {
-      showAppToast(
-        context,
-        title: 'Invalid quantity',
-        description: 'Enter a valid share quantity.',
-        destructive: true,
-      );
-      return;
-    }
-    showAppToast(
-      context,
-      title: result.title,
-      description: result.description,
-      destructive: !result.success,
-    );
-    if (!result.success || !mounted) return;
-    final runCheck = await showAppDialog<bool>(
-      context: context,
-      builder: (context) => ShadDialog(
-        title: const Text('Trade check?'),
-        description: Text(
-          '${result.description} Run a Trade check with an agent for '
-          '${result.symbol}?',
-        ),
-        actions: [
-          ShadButton.outline(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Not now'),
-          ),
-          ShadButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Trade check'),
-          ),
-        ],
-      ),
-    );
-    if (runCheck != true || !mounted) return;
-    await AgentLaunchActions.launch(
-      context,
-      intent: AgentLaunchIntent.tradeCheck,
-      symbol: result.symbol,
-      side: result.buy ? 'buy' : 'sell',
-      quantity: result.shares,
-    );
-  }
-
-  Future<void> _openExternalUri(Uri uri) async {
+  Future<void> _openExternalUri(BuildContext context, Uri uri) async {
     try {
       final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!ok && mounted) {
+      if (!ok && context.mounted) {
         showAppToast(
           context,
           title: 'Could not open link',
@@ -132,7 +64,7 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
       }
     } catch (e, st) {
       debugPrint('Open external market page failed: $e\n$st');
-      if (!mounted) return;
+      if (!context.mounted) return;
       showAppToast(
         context,
         title: 'Could not open link',
@@ -145,19 +77,12 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final priceFormat = context.watch<DisplaySettings>().priceFormat;
-    final controller = context.watch<AssetDetailController>();
-    final quote = controller.quote;
-    final portfolio = context.watch<PortfolioRepository>();
-    final holding = portfolio.state.holdingFor(widget.symbol);
-    final overview = assetOverview(widget.symbol);
-    final researchLinks = quote == null
-        ? const <ExternalMarketLink>[]
-        : externalMarketLinks(
-            symbol: quote.symbol,
-            dataSourceId: quote.dataSourceId,
-            exchange: quote.exchange,
-          );
+    final loading = context.select<AssetDetailController, bool>(
+      (c) => c.loading,
+    );
+    final hasError = context.select<AssetDetailController, bool>(
+      (c) => c.hasError,
+    );
 
     return ColoredBox(
       color: theme.colorScheme.background,
@@ -166,24 +91,20 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             SubscreenAppBar(
-              title: widget.symbol,
+              title: symbol,
               endPadding: 8,
               trailing: AgentLaunchButton(
-                symbol: widget.symbol,
-                intent: _isCryptoSpotSymbol(widget.symbol)
+                symbol: symbol,
+                intent: _isCryptoSpotSymbol(symbol)
                     ? AgentLaunchIntent.explainCryptoSpot
                     : AgentLaunchIntent.investigate,
               ),
             ),
-            if (controller.loading)
+            if (loading)
               const Expanded(child: Center(child: AppProgress()))
-            else if (controller.hasError)
+            else if (hasError)
               Expanded(
-                child: AppErrorView(
-                  title: 'Could not load ${widget.symbol}',
-                  message: controller.loadErrorMessage,
-                  onRetry: controller.load,
-                ),
+                child: _AssetDetailErrorBody(symbol: symbol),
               )
             else
               Expanded(
@@ -192,240 +113,12 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (quote?.name != null)
-                              Text(quote!.name!, style: theme.textTheme.muted),
-                            const SizedBox(height: 4),
-                            Text(
-                              formatDisplayMoney(quote?.price, priceFormat),
-                              style: theme.textTheme.h2,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${formatSignedMoney(quote?.change)}  '
-                              '${formatPercent(quote?.changePercent)}',
-                              style: theme.textTheme.small.copyWith(
-                                color: (quote?.isUp ?? true)
-                                    ? BrandColors.gainOf(context)
-                                    : BrandColors.lossOf(context),
-                              ),
-                            ),
-                            DelayedDataCaption(
-                              fetchedAt: controller.fetchedAt,
-                              padding: const EdgeInsets.only(top: 10),
-                            ),
-                            if (_hasQuoteMeta(quote)) ...[
-                              const SizedBox(height: 10),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 6,
-                                children: [
-                                  if (quote!.exchange != null &&
-                                      quote.exchange!.trim().isNotEmpty)
-                                    _ExchangeMetaChip(
-                                      exchange: quote.exchange,
-                                    ),
-                                  if (quote.currency != null &&
-                                      quote.currency!.trim().isNotEmpty)
-                                    _MetaChip(label: quote.currency!),
-                                  if (quote.previousClose != null)
-                                    _MetaChip(
-                                      label:
-                                          'Prev ${formatDisplayMoney(quote.previousClose, priceFormat)}',
-                                    ),
-                                  if (_showDataSourceChip(quote))
-                                    _MetaChip(label: quote.dataSource!),
-                                ],
-                              ),
-                            ],
-                            if (holding != null) ...[
-                              const SizedBox(height: 8),
-                              Text(
-                                'You hold ${formatShares(holding.shares)} shares · '
-                                'avg ${formatDisplayMoney(holding.avgCost, priceFormat)}',
-                                style: theme.textTheme.muted,
-                              ),
-                            ],
-                            const SizedBox(height: 12),
-                            Text(
-                              overview ??
-                                  (_isCryptoSpotSymbol(widget.symbol)
-                                      ? AppCopy.assetOverviewCryptoFallback
-                                      : AppCopy.assetOverviewFallback),
-                              style: theme.textTheme.muted,
-                            ),
-                            if (overview == null) ...[
-                              const SizedBox(height: 8),
-                              AgentLaunchButton(
-                                symbol: widget.symbol,
-                                intent: _isCryptoSpotSymbol(widget.symbol)
-                                    ? AgentLaunchIntent.explainCryptoSpot
-                                    : AgentLaunchIntent.explainMarketsLiteracy,
-                                outline: true,
-                                showTradeOption: false,
-                              ),
-                            ],
-                            if (researchLinks.isNotEmpty) ...[
-                              const SizedBox(height: 10),
-                              Wrap(
-                                spacing: 4,
-                                runSpacing: 0,
-                                children: [
-                                  for (final link in researchLinks)
-                                    ShadButton.link(
-                                      size: ShadButtonSize.sm,
-                                      onPressed: () =>
-                                          _openExternalUri(link.uri),
-                                      child: Text(link.label),
-                                    ),
-                                ],
-                              ),
-                            ],
-                          ],
-                        ),
+                      _AssetDetailQuoteHeader(
+                        symbol: symbol,
+                        onOpenExternalUri: _openExternalUri,
                       ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-                        child: Row(
-                          children: [
-                            for (var i = 0;
-                                i < AssetDetailController.ranges.length;
-                                i++) ...[
-                              if (i > 0) const SizedBox(width: 8),
-                              AppTooltip(
-                                message: AssetDetailController.rangeTooltip(
-                                  AssetDetailController.ranges[i].$1,
-                                ),
-                                child: ShadButton.raw(
-                                  size: ShadButtonSize.sm,
-                                  variant: i == controller.rangeIndex
-                                      ? ShadButtonVariant.primary
-                                      : ShadButtonVariant.outline,
-                                  onPressed: () => controller.setRange(i),
-                                  child: Text(
-                                    AssetDetailController.ranges[i].$1,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                        child: Text(
-                          AssetDetailController.rangeExplainer(
-                            controller.currentRange.$1,
-                          ),
-                          style: theme.textTheme.small.copyWith(
-                            color: theme.colorScheme.mutedForeground,
-                          ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: ShadCard(
-                          padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              PriceLineChart(candles: controller.candles),
-                              if (controller.candles.length >= 2) ...[
-                                const SizedBox(height: 8),
-                                _PeriodStats(
-                                  candles: controller.candles,
-                                  rangeLabel: controller.currentRange.$1,
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                        child: ShadCard(
-                          title: const Row(
-                            children: [
-                              Flexible(
-                                child: Text('Practice trade'),
-                              ),
-                              SizedBox(width: 8),
-                              AppTooltip(
-                                message: 'Paper — practice money only',
-                                wrapDetector: true,
-                                child: ShadBadge.secondary(
-                                  child: Text('Paper'),
-                                ),
-                              ),
-                            ],
-                          ),
-                          description: Text(
-                            'Uses your practice portfolio cash '
-                            '(${formatDisplayMoney(portfolio.state.cash, priceFormat)}). '
-                            'Not a live order — no real money.',
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const SizedBox(height: 12),
-                              ShadInput(
-                                controller: _sharesController,
-                                placeholder: const Text('Shares'),
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                  decimal: true,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: ShadButton(
-                                      onPressed: () => _trade(buy: true),
-                                      child: const Text('Buy'),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: ShadButton.outline(
-                                      onPressed: () => _trade(buy: false),
-                                      child: const Text('Sell'),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  AgentLaunchButton(
-                                    symbol: widget.symbol,
-                                    intent: AgentLaunchIntent.explainPortfolio,
-                                    outline: true,
-                                    side: 'buy',
-                                    quantity: double.tryParse(
-                                      _sharesController.text.trim(),
-                                    ),
-                                  ),
-                                  AgentLaunchButton(
-                                    symbol: widget.symbol,
-                                    intent: AgentLaunchIntent.tradeCheck,
-                                    outline: true,
-                                    quantity: double.tryParse(
-                                      _sharesController.text.trim(),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
+                      const _AssetDetailChartSection(),
+                      _AssetDetailTradeCard(symbol: symbol),
                     ],
                   ),
                 ),
@@ -435,26 +128,302 @@ class _AssetDetailViewState extends State<_AssetDetailView> {
       ),
     );
   }
+}
 
-  bool _hasQuoteMeta(Quote? quote) {
-    if (quote == null) return false;
-    return (quote.exchange != null && quote.exchange!.trim().isNotEmpty) ||
-        (quote.currency != null && quote.currency!.trim().isNotEmpty) ||
-        quote.previousClose != null ||
-        _showDataSourceChip(quote);
-  }
+class _AssetDetailErrorBody extends StatelessWidget {
+  const _AssetDetailErrorBody({required this.symbol});
 
-  /// Crypto venues set [Quote.exchange] and [Quote.dataSource] to the same
-  /// display name (e.g. both "Crypto.com"); skip the second pill.
-  bool _showDataSourceChip(Quote quote) {
-    final source = quote.dataSource?.trim();
-    if (source == null || source.isEmpty) return false;
-    final exchange = quote.exchange?.trim();
-    if (exchange == null || exchange.isEmpty) return true;
-    final sourceKey = source.toLowerCase();
-    return sourceKey != exchange.toLowerCase() &&
-        sourceKey != displayExchangeName(exchange).toLowerCase();
+  final String symbol;
+
+  @override
+  Widget build(BuildContext context) {
+    final message = context.select<AssetDetailController, String?>(
+      (c) => c.loadErrorMessage,
+    );
+    final controller = context.read<AssetDetailController>();
+    return AppErrorView(
+      title: 'Could not load $symbol',
+      message: message ?? 'Please try again in a moment.',
+      onRetry: controller.load,
+    );
   }
+}
+
+class _AssetDetailQuoteHeader extends StatelessWidget {
+  const _AssetDetailQuoteHeader({
+    required this.symbol,
+    required this.onOpenExternalUri,
+  });
+
+  final String symbol;
+  final Future<void> Function(BuildContext context, Uri uri) onOpenExternalUri;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final priceFormat = context.select<DisplaySettings, PriceFormat>(
+      (s) => s.priceFormat,
+    );
+    final quote = context.select<AssetDetailController, Quote?>(
+      (c) => c.quote,
+    );
+    final fetchedAt = context.select<AssetDetailController, DateTime?>(
+      (c) => c.fetchedAt,
+    );
+    final holding = context.select<PortfolioRepository, Holding?>(
+      (p) => p.state.holdingFor(symbol),
+    );
+    final overview = assetOverview(symbol);
+    final researchLinks = quote == null
+        ? const <ExternalMarketLink>[]
+        : externalMarketLinks(
+            symbol: quote.symbol,
+            dataSourceId: quote.dataSourceId,
+            exchange: quote.exchange,
+          );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (quote?.name != null)
+            Text(quote!.name!, style: theme.textTheme.muted),
+          const SizedBox(height: 4),
+          Text(
+            formatDisplayMoney(quote?.price, priceFormat),
+            style: theme.textTheme.h2,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${formatSignedMoney(quote?.change)}  '
+            '${formatPercent(quote?.changePercent)}',
+            style: theme.textTheme.small.copyWith(
+              color: (quote?.isUp ?? true)
+                  ? BrandColors.gainOf(context)
+                  : BrandColors.lossOf(context),
+            ),
+          ),
+          DelayedDataCaption(
+            fetchedAt: fetchedAt,
+            padding: const EdgeInsets.only(top: 10),
+          ),
+          if (assetDetailHasQuoteMeta(quote)) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                if (quote!.exchange != null &&
+                    quote.exchange!.trim().isNotEmpty)
+                  _ExchangeMetaChip(
+                    exchange: quote.exchange,
+                  ),
+                if (quote.currency != null &&
+                    quote.currency!.trim().isNotEmpty)
+                  _MetaChip(label: quote.currency!),
+                if (quote.previousClose != null)
+                  _MetaChip(
+                    label:
+                        'Prev ${formatDisplayMoney(quote.previousClose, priceFormat)}',
+                  ),
+                if (assetDetailShowDataSourceChip(quote))
+                  _MetaChip(label: quote.dataSource!),
+              ],
+            ),
+          ],
+          if (holding != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'You hold ${formatShares(holding.shares)} shares · '
+              'avg ${formatDisplayMoney(holding.avgCost, priceFormat)}',
+              style: theme.textTheme.muted,
+            ),
+          ],
+          const SizedBox(height: 12),
+          Text(
+            overview ??
+                (_isCryptoSpotSymbol(symbol)
+                    ? AppCopy.assetOverviewCryptoFallback
+                    : AppCopy.assetOverviewFallback),
+            style: theme.textTheme.muted,
+          ),
+          if (overview == null) ...[
+            const SizedBox(height: 8),
+            AgentLaunchButton(
+              symbol: symbol,
+              intent: _isCryptoSpotSymbol(symbol)
+                  ? AgentLaunchIntent.explainCryptoSpot
+                  : AgentLaunchIntent.explainMarketsLiteracy,
+              outline: true,
+              showTradeOption: false,
+            ),
+          ],
+          if (researchLinks.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 4,
+              runSpacing: 0,
+              children: [
+                for (final link in researchLinks)
+                  ShadButton.link(
+                    size: ShadButtonSize.sm,
+                    onPressed: () => onOpenExternalUri(context, link.uri),
+                    child: Text(link.label),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _AssetDetailChartSection extends StatelessWidget {
+  const _AssetDetailChartSection();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final candles = context.select<AssetDetailController, List<Candle>>(
+      (c) => c.candles,
+    );
+    final rangeIndex = context.select<AssetDetailController, int>(
+      (c) => c.rangeIndex,
+    );
+    final rangeLabel = AssetDetailController.ranges[rangeIndex].$1;
+    final controller = context.read<AssetDetailController>();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+          child: Row(
+            children: [
+              for (var i = 0; i < AssetDetailController.ranges.length; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                AppTooltip(
+                  message: AssetDetailController.rangeTooltip(
+                    AssetDetailController.ranges[i].$1,
+                  ),
+                  child: ShadButton.raw(
+                    size: ShadButtonSize.sm,
+                    variant: i == rangeIndex
+                        ? ShadButtonVariant.primary
+                        : ShadButtonVariant.outline,
+                    onPressed: () => controller.setRange(i),
+                    child: Text(
+                      AssetDetailController.ranges[i].$1,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Text(
+            AssetDetailController.rangeExplainer(rangeLabel),
+            style: theme.textTheme.small.copyWith(
+              color: theme.colorScheme.mutedForeground,
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: ShadCard(
+            padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                PriceLineChart(candles: candles),
+                if (candles.length >= 2) ...[
+                  const SizedBox(height: 8),
+                  _PeriodStats(
+                    candles: candles,
+                    rangeLabel: rangeLabel,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AssetDetailTradeCard extends StatelessWidget {
+  const _AssetDetailTradeCard({required this.symbol});
+
+  final String symbol;
+
+  @override
+  Widget build(BuildContext context) {
+    final priceFormat = context.select<DisplaySettings, PriceFormat>(
+      (s) => s.priceFormat,
+    );
+    final cash = context.select<PortfolioRepository, double>(
+      (p) => p.state.cash,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: ShadCard(
+        title: const Text('Trade with agents'),
+        description: Text(
+          'Buys and sells come from agent suggestions. '
+          'Ask for a Trade check, then Confirm or Dismiss in '
+          'chat — or turn on Autopilot. Practice cash: '
+          '${formatDisplayMoney(cash, priceFormat)}.',
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                AgentLaunchButton(
+                  symbol: symbol,
+                  intent: AgentLaunchIntent.explainPortfolio,
+                  outline: true,
+                ),
+                AgentLaunchButton(
+                  symbol: symbol,
+                  intent: AgentLaunchIntent.tradeCheck,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+bool assetDetailHasQuoteMeta(Quote? quote) {
+  if (quote == null) return false;
+  return (quote.exchange != null && quote.exchange!.trim().isNotEmpty) ||
+      (quote.currency != null && quote.currency!.trim().isNotEmpty) ||
+      quote.previousClose != null ||
+      assetDetailShowDataSourceChip(quote);
+}
+
+/// Crypto venues set [Quote.exchange] and [Quote.dataSource] to the same
+/// display name (e.g. both "Crypto.com"); skip the second pill.
+bool assetDetailShowDataSourceChip(Quote quote) {
+  final source = quote.dataSource?.trim();
+  if (source == null || source.isEmpty) return false;
+  final exchange = quote.exchange?.trim();
+  if (exchange == null || exchange.isEmpty) return true;
+  final sourceKey = source.toLowerCase();
+  return sourceKey != exchange.toLowerCase() &&
+      sourceKey != displayExchangeName(exchange).toLowerCase();
 }
 
 class _ExchangeMetaChip extends StatelessWidget {
@@ -513,7 +482,9 @@ class _PeriodStats extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final priceFormat = context.watch<DisplaySettings>().priceFormat;
+    final priceFormat = context.select<DisplaySettings, PriceFormat>(
+      (s) => s.priceFormat,
+    );
     final first = candles.first.close;
     final last = candles.last.close;
     final change = last - first;

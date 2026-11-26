@@ -32,8 +32,8 @@ import 'data/settings/data_source_settings.dart';
 import 'data/settings/display_settings.dart';
 import 'data/settings/env_secrets_repository.dart';
 import 'data/settings/favorites_repository.dart';
-import 'data/settings/mandate_settings.dart';
 import 'data/settings/theme_settings.dart';
+import 'data/settings/user_config_bootstrap.dart';
 import 'data/settings/user_config_store.dart';
 import 'data/trading/broker_exchange_registry.dart';
 import 'data/trading/trade_executor.dart';
@@ -49,64 +49,61 @@ Future<void> main() async {
   installAppErrorHandling(appErrors);
 
   final config = UserConfigStore();
-  await config.load();
+
+  // Config + asset catalogs are independent — load in parallel.
+  late final AgentRoleCatalog agentRoles;
+  late final LlmModelCatalog llmModels;
+  await Future.wait([
+    config.load(),
+    AgentRoleCatalog.load().then((v) => agentRoles = v),
+    LlmModelCatalog.load().then((v) => llmModels = v),
+  ]);
 
   final portfolio = PortfolioRepository(store: config);
-  await portfolio.load();
-
   final themeSettings = ThemeSettings(store: config);
-  await themeSettings.load();
-
   final displaySettings = DisplaySettings(store: config);
-  await displaySettings.load();
-
   final dataSourceSettings = DataSourceSettings(store: config);
-  await dataSourceSettings.load();
-
   final favorites = FavoritesRepository(store: config);
-  await favorites.load();
-
-  final mandate = MandateSettings(store: config);
-  await mandate.load();
-
-  final agentRoles = await AgentRoleCatalog.load();
   final agents = AgentsRepository(store: config, roleCatalog: agentRoles);
-  await agents.load(roleCatalog: agentRoles);
-
-  final llmModels = await LlmModelCatalog.load();
   final llmRuntime = LlmRuntimeSettings(store: config);
-  await llmRuntime.load();
-  await llmRuntime.migrateFromConnections(
-    connections: agents.connections,
-    catalog: llmModels,
-  );
-
   final agentApp = AgentAppSettings(store: config);
-  await agentApp.load();
-  await agentApp.migrateFromConnections(agents.connections);
+  final agentMemory = AgentMemoryRepository(store: config);
+  final tradeProposals = TradeProposalRepository(store: config);
+  final investInterestProposals =
+      InvestInterestProposalRepository(store: config);
+  final agentActivity = AgentActivityRepository(store: config);
+  final appNotifications = AppNotificationRepository(store: config);
+
+  // Slice loads are in-memory after config — parallelize freely.
+  await Future.wait([
+    portfolio.load(),
+    themeSettings.load(),
+    displaySettings.load(),
+    dataSourceSettings.load(),
+    favorites.load(),
+    agents.load(roleCatalog: agentRoles),
+    llmRuntime.load(),
+    agentApp.load(),
+    agentMemory.load(),
+    tradeProposals.load(),
+    investInterestProposals.load(),
+    agentActivity.load(),
+    appNotifications.load(),
+  ]);
 
   final agentChats = AgentChatRepository(
     store: config,
     appSettings: agentApp,
   );
   await agentChats.load();
-  await agentChats.migrateGlobalAutopilotIfNeeded(agentApp);
-
-  final agentMemory = AgentMemoryRepository(store: config);
-  await agentMemory.load();
-
-  final tradeProposals = TradeProposalRepository(store: config);
-  await tradeProposals.load();
-
-  final investInterestProposals =
-      InvestInterestProposalRepository(store: config);
-  await investInterestProposals.load();
-
-  final agentActivity = AgentActivityRepository(store: config);
-  await agentActivity.load();
-
-  final appNotifications = AppNotificationRepository(store: config);
-  await appNotifications.load();
+  await UserConfigBootstrap.runChatAndLlmMigrations(
+    config: config,
+    agents: agents,
+    llmRuntime: llmRuntime,
+    agentApp: agentApp,
+    chats: agentChats,
+    llmModels: llmModels,
+  );
 
   final agentRunner = GenkitAgentRunner();
   final llmConnectionStatus = LlmConnectionStatusStore();
@@ -181,7 +178,6 @@ Future<void> main() async {
     secrets: envSecrets,
     llmRuntime: llmRuntime,
     appSettings: agentApp,
-    mandate: mandate,
     agentMemory: agentMemory,
     investInterestProposals: investInterestProposals,
   );
@@ -199,7 +195,6 @@ Future<void> main() async {
         Provider<TradeExecutor>.value(value: tradeExecutor),
         ChangeNotifierProvider<EnvSecretsRepository>.value(value: envSecrets),
         ChangeNotifierProvider<FavoritesRepository>.value(value: favorites),
-        ChangeNotifierProvider<MandateSettings>.value(value: mandate),
         ChangeNotifierProvider<PortfolioRepository>.value(value: portfolio),
         ChangeNotifierProvider<AgentsRepository>.value(value: agents),
         ChangeNotifierProvider<LlmRuntimeSettings>.value(value: llmRuntime),

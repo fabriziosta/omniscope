@@ -70,10 +70,10 @@ void main() {
       );
       await app.updateScheduleLastRunAt(DateTime.utc(2026, 11, 23, 10));
 
-      final mandate = MandateSettings(store: store);
-      await mandate.load();
-      await mandate.setMaxAutopilotFillsPerDay(8);
-      await mandate.setMaxDailyRealizedLoss(250);
+      final mandate = const ChatMandate(
+        maxAutopilotFillsPerDay: 8,
+        maxDailyRealizedLoss: 250,
+      );
 
       final now = DateTime.utc(2026, 11, 23, 12);
       final status = AgentFleetStatus.build(
@@ -84,6 +84,7 @@ void main() {
             messages: const [],
             updatedAt: now,
             autopilotEnabled: true,
+            mandate: mandate,
           ),
           AgentChatThread(
             chatId: 'c_sched',

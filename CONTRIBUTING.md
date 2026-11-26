@@ -33,7 +33,7 @@ make run                 # DEVICE=linux by default
 # make run DEVICE=chrome
 ```
 
-Add LLM / exchange keys in the app under **Settings → Connections** and
+Add LLM / exchange keys in the app under **Settings → Agents** and
 **Settings → Data sources → Credentials** (saved in `omniscope.json`).
 **Never commit API keys or a filled config file.**
 

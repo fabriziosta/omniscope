@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscope/data/settings/favorites_repository.dart';
 import 'package:omniscope/data/settings/user_config_keys.dart';
@@ -79,16 +81,12 @@ void main() {
     expect(doc[UserConfigKeys.notifications], isA<Map>());
     expect(doc[UserConfigKeys.paperPortfolio], isA<Map>());
     expect(doc[UserConfigKeys.favorites], isA<Map>());
-    expect(doc[UserConfigKeys.mandate], isA<Map>());
+    expect(doc.containsKey(UserConfigKeys.mandate), isFalse);
 
     final display = doc[UserConfigKeys.display] as Map;
     expect(display['listDensity'], 'compact');
     expect(display['priceFormat'], 'full');
     expect(display['defaultChartRange'], '1mo');
-
-    final mandate = doc[UserConfigKeys.mandate] as Map;
-    expect(mandate['goal'], 'learn');
-    expect(mandate['maxSymbolCount'], 20);
   });
 
   test('missing fields are backfilled without wiping user values', () async {
@@ -115,7 +113,6 @@ void main() {
     expect(favorites['symbols'], ['AAPL']);
     expect(favorites['investInterest'], isA<List>());
 
-    expect(store.getSlice(UserConfigKeys.mandate), isA<Map>());
     expect(store.getSlice(UserConfigKeys.agentApp), isA<Map>());
   });
 
@@ -138,15 +135,8 @@ void main() {
         'priceFormat': 'scientific',
         'defaultChartRange': '99y',
       },
-      'mandate': {
-        'goal': 'yolo',
-        'horizon': 'forever',
-        'universe': 'nft',
-        'cadencePreference': 'everySecond',
-      },
       'agentApp': {
         'scheduleInterval': 'never',
-        'answerMood': 'screaming',
       },
       'favorites': {
         'symbols': ['AAPL'],
@@ -162,15 +152,8 @@ void main() {
     expect(display['priceFormat'], 'full');
     expect(display['defaultChartRange'], '1mo');
 
-    final mandate = store.getSlice(UserConfigKeys.mandate) as Map;
-    expect(mandate['goal'], 'learn');
-    expect(mandate['horizon'], 'medium');
-    expect(mandate['universe'], 'both');
-    expect(mandate['cadencePreference'], 'hour1');
-
     final agentApp = store.getSlice(UserConfigKeys.agentApp) as Map;
     expect(agentApp['scheduleInterval'], 'hour1');
-    expect(agentApp['answerMood'], 'plain');
 
     // Valid user data must survive sanitize.
     final favorites = store.getSlice(UserConfigKeys.favorites) as Map;
@@ -223,6 +206,64 @@ void main() {
     expect(favorites['symbols'], isA<List>());
   });
 
+  test('rapid setSlice coalesces debounced persists', () {
+    fakeAsync((async) {
+      SharedPreferences.setMockInitialValues({});
+      final store = UserConfigStore(
+        memoryOnly: true,
+        persistDebounce: const Duration(milliseconds: 400),
+      );
+      unawaited(store.load());
+      async.flushMicrotasks();
+      store.persistOperationCount = 0;
+
+      for (var i = 0; i < 15; i++) {
+        unawaited(
+          store.setSlice(UserConfigKeys.theme, {'mode': 'system', 'i': i}),
+        );
+      }
+      async.flushMicrotasks();
+      expect(store.persistOperationCount, 0);
+      expect(store.hasPendingPersist, isTrue);
+      expect(
+        (store.getSlice(UserConfigKeys.theme) as Map)['i'],
+        14,
+      );
+
+      async.elapse(const Duration(milliseconds: 399));
+      async.flushMicrotasks();
+      expect(store.persistOperationCount, 0);
+
+      async.elapse(const Duration(milliseconds: 1));
+      async.flushMicrotasks();
+      expect(store.persistOperationCount, 1);
+      expect(store.hasPendingPersist, isFalse);
+    });
+  });
+
+  test('flushPersist writes immediately without debounce', () {
+    fakeAsync((async) {
+      SharedPreferences.setMockInitialValues({});
+      final store = UserConfigStore(
+        memoryOnly: true,
+        persistDebounce: const Duration(milliseconds: 400),
+      );
+      unawaited(store.load());
+      async.flushMicrotasks();
+      store.persistOperationCount = 0;
+
+      unawaited(store.setSlice(UserConfigKeys.theme, 'dark'));
+      async.flushMicrotasks();
+      expect(store.persistOperationCount, 0);
+      expect(store.getSlice(UserConfigKeys.theme), 'dark');
+
+      unawaited(store.flushPersist());
+      async.flushMicrotasks();
+      expect(store.persistOperationCount, 1);
+      expect(store.hasPendingPersist, isFalse);
+    });
+  });
+
   test('valid enum values are preserved', () async {
     final store = await memoryConfig();
     await store.importJson(jsonEncode({
@@ -232,12 +273,6 @@ void main() {
         'listDensity': 'comfortable',
         'priceFormat': 'compact',
         'defaultChartRange': '1y',
-      },
-      'mandate': {
-        'goal': 'grow',
-        'horizon': 'long',
-        'universe': 'crypto',
-        'cadencePreference': 'daily',
       },
     }));
 
@@ -249,11 +284,5 @@ void main() {
     expect(display['listDensity'], 'comfortable');
     expect(display['priceFormat'], 'compact');
     expect(display['defaultChartRange'], '1y');
-
-    final mandate = store.getSlice(UserConfigKeys.mandate) as Map;
-    expect(mandate['goal'], 'grow');
-    expect(mandate['horizon'], 'long');
-    expect(mandate['universe'], 'crypto');
-    expect(mandate['cadencePreference'], 'daily');
   });
 }

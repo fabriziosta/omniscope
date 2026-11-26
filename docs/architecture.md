@@ -6,30 +6,33 @@ Agent handbook: [`AGENTS.md`](../AGENTS.md) (layout conventions, market data con
 
 ```text
 lib/
-  main.dart                 # DI: router + crypto registry + portfolio + agents
+  main.dart                 # DI: market router + venues + portfolio + agents
   app.dart                  # ShadApp theme shell
-  core/                     # formatting + brand colors
-  data/market/              # MarketDataClient, Yahoo, routing
+  core/                     # formatting, brand colors, shell navigation
+  data/market/              # MarketDataClient, Yahoo, caching, routing
   data/crypto/              # CryptoExchangeClient + Crypto.com adapter
   data/brokers/             # Alpaca (+ future equity brokers)
   data/venues/              # VenueCatalog, shared live portfolio models
-  data/portfolio/           # local paper portfolio (shared_preferences)
-  data/agents/              # connections, chat threads, GenkitAgentRunner, catalog
-  features/markets|crypto|asset_detail|portfolio|agents|activity|shell/
-  widgets/                  # chart + brand mark
+  data/trading/             # TradeExecutor, proposal actions, broker registry
+  data/portfolio/           # practice paper portfolio (omniscope.json slice)
+  data/agents/              # chats, Genkit runner/tools, catalog, proposals
+  data/settings/            # UserConfigStore + favorites / theme / secrets
+  data/notifications/       # Activity → Alerts
+  features/markets|crypto|asset_detail|portfolio|agents|activity|shell|settings|quotes/
+  widgets/                  # chart, master–detail shell, shared chrome
 assets/brand/               # master app icon (launchers + Android/iOS/Web splash)
 assets/agents/              # manifest.json (roles) + llm_models.json
 ```
 
 UI uses **[`shadcn_ui`](https://pub.dev/packages/shadcn_ui)** only (`ShadApp`). Charts are drawn with `CustomPaint` so no second UI kit is required.
 
-Non-UI packages: `http`, `shared_preferences`, `intl`, `provider`.
+Non-UI packages: `http`, `shared_preferences`, `path_provider`, `intl`, `provider`, Genkit stack.
 
 ## Market data (overview)
 
 Equities / indices use **Yahoo Finance** chart endpoints (keyless, unofficial). Crypto uses a swappable [`CryptoExchangeClient`](../lib/data/crypto/crypto_exchange_client.dart) registry; **Crypto.com Exchange** public REST is registered first. Equity brokers (e.g. **Alpaca**) register via [`VenueCatalog`](../lib/data/venues/venue_catalog.dart) for Live portfolio + agent orders — not as Markets quote sources.
 
-Optional venue API credentials: **Settings → Data sources → Credentials**. Market data is reached through [`RoutingMarketDataClient`](../lib/data/market/routing_market_data_client.dart). Secrets and other customizations share one **`omniscope.json`**.
+Optional venue API credentials: **Settings → Data sources → Credentials**. Market data is reached through [`RoutingMarketDataClient`](../lib/data/market/routing_market_data_client.dart). Secrets and other customizations share one **`omniscope.json`** via [`UserConfigStore`](../lib/data/settings/user_config_store.dart) (`path_provider` on native; prefs blob on Web). Practice portfolio holdings live in the same document’s `paperPortfolio` slice — not a separate SharedPreferences key.
 
 - Data may be delayed; endpoints can change or rate-limit without notice.
 - **Web:** Yahoo’s chart host omits CORS headers; equities on Web go through a public GET proxy inside [`YahooMarketDataClient`](../lib/data/market/yahoo_market_data_client.dart). Native targets call Yahoo directly. Private broker APIs may be blocked by CORS on Web.
@@ -49,7 +52,7 @@ make icons
 That runs:
 
 - [`flutter_launcher_icons`](https://pub.dev/packages/flutter_launcher_icons) — Android / iOS / macOS / Web / Windows icons (config in [`pubspec.yaml`](../pubspec.yaml))
-- Linux window icons under [`linux/runner/resources/`](../linux/runner/resources/)
+- Linux window icons under [`linux/runner/resources/`](../linux/runner/resources/) (Python 3 + Pillow; see [`docs/development.md`](development.md))
 - [`flutter_native_splash`](https://pub.dev/packages/flutter_native_splash) — branded Teal splash for **Android, iOS, and Web** (including Android 12+). Desktop (Linux / Windows / macOS) has no native OS splash; window/launcher icons still come from the same masters.
 
 [`lib/main.dart`](../lib/main.dart) keeps the native splash visible with `FlutterNativeSplash.preserve` until config/repos finish loading, then calls `remove` before `runApp`.

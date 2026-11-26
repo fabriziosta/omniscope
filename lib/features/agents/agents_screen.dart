@@ -4,19 +4,11 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../../core/formatting.dart';
 import '../../core/shell_navigation.dart';
-import '../../data/agents/agent_activity_repository.dart';
-import '../../data/agents/agent_app_settings.dart';
 import '../../data/agents/agent_chat_repository.dart';
 import '../../data/agents/chat_models.dart';
-import '../../data/agents/invest_interest_proposal_actions.dart';
-import '../../data/agents/invest_interest_proposal_repository.dart';
 import '../../data/agents/llm_model_router.dart';
 import '../../data/agents/llm_runtime_settings.dart';
 import '../../data/settings/env_secrets_repository.dart';
-import '../../data/settings/favorites_repository.dart';
-import '../../data/settings/mandate_settings.dart';
-import '../../widgets/app_confirm_dialog.dart';
-import '../../widgets/app_dialog.dart';
 import '../../widgets/app_empty_view.dart';
 import '../../widgets/app_text.dart';
 import '../../widgets/app_toast.dart';
@@ -24,8 +16,8 @@ import '../../widgets/app_tooltip.dart';
 import '../../widgets/autopilot_status_pill.dart';
 import '../../widgets/memory_status_pill.dart';
 import '../../widgets/master_detail_shell.dart';
-import '../../widgets/overflow_actions_menu.dart';
 import '../../widgets/schedule_status_pill.dart';
+import 'agent_chat_options_menu.dart';
 import 'agent_chat_screen.dart';
 
 /// Agents tab: chat history sidebar + embedded orchestrator chat.
@@ -150,7 +142,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
     showAppToast(
       context,
       title: 'Add an LLM key',
-      description: 'Settings → Connections first, then start a chat.',
+      description: 'Settings → Agents first, then start a chat.',
       destructive: true,
     );
     context.read<ShellNavigationController>().goToSettings(
@@ -172,127 +164,15 @@ class _AgentsScreenState extends State<AgentsScreen> {
     closeNav?.call();
   }
 
-  Future<void> _renameChat(AgentChatThread thread) async {
-    final controller = TextEditingController(text: thread.title);
-    final next = await showAppDialog<String>(
-      context: context,
-      builder: (context) => ShadDialog(
-        title: const Text('Rename chat'),
-        actions: [
-          ShadButton.outline(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          ShadButton(
-            onPressed: () => Navigator.of(context).pop(controller.text),
-            child: const Text('Save'),
-          ),
-        ],
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: ShadInput(
-            controller: controller,
-            autofocus: true,
-            placeholder: const Text('Chat name'),
-            onSubmitted: (value) => Navigator.of(context).pop(value),
-          ),
-        ),
-      ),
-    );
-    final trimmed = next?.trim();
-    controller.dispose();
-    if (trimmed == null || trimmed.isEmpty || !mounted) return;
-    if (trimmed == thread.title) return;
-    await context.read<AgentChatRepository>().renameChat(thread.chatId, trimmed);
-  }
-
-  Future<void> _deleteChat(AgentChatThread thread) async {
+  void _onChatDeleted(String chatId) {
     final chats = context.read<AgentChatRepository>();
-    final id = thread.chatId;
-    final wasScheduleChat =
-        context.read<AgentAppSettings>().scheduleChatId == id;
-    if (thread.pinned) {
-      final ok = await confirmDestructiveAction(
-        context,
-        title: 'Delete pinned chat?',
-        description: wasScheduleChat
-            ? '“${thread.title}” is pinned and linked to Schedule. '
-                'Deleting it removes the conversation and stops Schedule. '
-                'This cannot be undone.'
-            : '“${thread.title}” is pinned. Deleting it removes the '
-                'conversation from this device. This cannot be undone.',
-        confirmLabel: 'Delete',
-      );
-      if (!ok || !mounted) return;
-    }
-    await chats.deleteChat(id);
-    if (!mounted) return;
-    if (wasScheduleChat) {
-      showAppToast(
-        context,
-        description: 'Schedule stopped (chat deleted)',
-      );
-    }
     setState(() {
-      if (_selectedChatId == id) {
+      if (_selectedChatId == chatId) {
         final next = chats.threads.isEmpty ? null : chats.threads.first.chatId;
         _selectedChatId = next;
         _clearLaunchParams();
       }
     });
-  }
-
-  Future<void> _togglePin(AgentChatThread thread) async {
-    await context.read<AgentChatRepository>().togglePinned(thread.chatId);
-  }
-
-  Future<void> _toggleAutopilot(AgentChatThread thread) async {
-    final next = !thread.autopilotEnabled;
-    final chats = context.read<AgentChatRepository>();
-    if (next) {
-      final block = chats.autopilotEnableBlockReason(thread.chatId);
-      if (block != null) {
-        showAppToast(context, description: block);
-        return;
-      }
-    }
-    await chats.setAutopilotEnabled(thread.chatId, enabled: next);
-    var appliedIi = 0;
-    if (next && mounted) {
-      final actions = InvestInterestProposalActions(
-        proposals: context.read<InvestInterestProposalRepository>(),
-        activity: context.read<AgentActivityRepository>(),
-        favorites: context.read<FavoritesRepository>(),
-        mandate: context.read<MandateSettings>(),
-      );
-      appliedIi =
-          await actions.applyPendingAutopilotAddsForChat(thread.chatId);
-    }
-    if (!mounted) return;
-    showAppToast(
-      context,
-      description: next
-          ? (appliedIi > 0
-              ? 'Autopilot on · applied $appliedIi Invest interest '
-                  '${appliedIi == 1 ? 'add' : 'adds'}'
-              : 'Autopilot on for this chat')
-          : 'Autopilot off for this chat',
-    );
-  }
-
-  Future<void> _toggleMemory(AgentChatThread thread) async {
-    final next = !thread.memoryEnabled;
-    await context.read<AgentChatRepository>().setMemoryEnabled(
-          thread.chatId,
-          enabled: next,
-        );
-    if (!mounted) return;
-    showAppToast(
-      context,
-      description: next
-          ? 'Memory on for this chat'
-          : 'Memory off for this chat',
-    );
   }
 
   Widget _buildSidebar({
@@ -321,7 +201,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
                 ? AppEmptyView(
                     ready
                         ? 'No chats yet — tap New chat to start.'
-                        : 'Settings → Connections → add a provider key '
+                        : 'Settings → Agents → add a provider key '
                             'and pick light/heavy models.',
                   )
                 : ListView.separated(
@@ -338,11 +218,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
                           _selectChat(thread.chatId);
                           closeNav();
                         },
-                        onTogglePin: () => _togglePin(thread),
-                        onToggleAutopilot: () => _toggleAutopilot(thread),
-                        onToggleMemory: () => _toggleMemory(thread),
-                        onRename: () => _renameChat(thread),
-                        onDelete: () => _deleteChat(thread),
+                        onDeleted: () => _onChatDeleted(thread.chatId),
                       );
                     },
                   ),
@@ -402,7 +278,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
                 body: AppEmptyView(
                   ready
                       ? 'No chats yet — open the menu and tap New chat.'
-                      : 'Settings → Connections → add a provider key '
+                      : 'Settings → Agents → add a provider key '
                           'and pick light/heavy models.',
                 ),
               );
@@ -412,6 +288,7 @@ class _AgentsScreenState extends State<AgentsScreen> {
               child: AgentChatScreen(
                 chatId: chatId,
                 onOpenMenu: onOpenMenu,
+                onDeleted: () => _onChatDeleted(chatId),
                 initialSymbol: _launchSymbol,
                 initialExchangeId: _launchExchangeId,
                 autoRun: _launchAutoRun,
@@ -432,21 +309,13 @@ class _ChatNavTile extends StatelessWidget {
     required this.thread,
     required this.selected,
     required this.onOpen,
-    required this.onTogglePin,
-    required this.onToggleAutopilot,
-    required this.onToggleMemory,
-    required this.onRename,
-    required this.onDelete,
+    this.onDeleted,
   });
 
   final AgentChatThread thread;
   final bool selected;
   final VoidCallback onOpen;
-  final Future<void> Function() onTogglePin;
-  final Future<void> Function() onToggleAutopilot;
-  final Future<void> Function() onToggleMemory;
-  final Future<void> Function() onRename;
-  final Future<void> Function() onDelete;
+  final VoidCallback? onDeleted;
 
   @override
   Widget build(BuildContext context) {
@@ -549,53 +418,9 @@ class _ChatNavTile extends StatelessWidget {
                       ],
                     ),
                   ),
-                  OverflowActionsMenu(
-                    actions: [
-                      OverflowAction(
-                        label: thread.pinned ? 'Unpin' : 'Pin',
-                        icon: thread.pinned
-                            ? LucideIcons.pinOff
-                            : LucideIcons.pin,
-                        active: thread.pinned,
-                        onTap: () {
-                          onTogglePin();
-                        },
-                      ),
-                      OverflowAction(
-                        label: thread.autopilotEnabled
-                            ? 'Autopilot off'
-                            : 'Autopilot on',
-                        icon: LucideIcons.zap,
-                        active: thread.autopilotEnabled,
-                        onTap: () {
-                          onToggleAutopilot();
-                        },
-                      ),
-                      OverflowAction(
-                        label: thread.memoryEnabled
-                            ? 'Memory off'
-                            : 'Memory on',
-                        icon: LucideIcons.brain,
-                        active: thread.memoryEnabled,
-                        onTap: () {
-                          onToggleMemory();
-                        },
-                      ),
-                      OverflowAction(
-                        label: 'Rename',
-                        icon: LucideIcons.pencil,
-                        onTap: () {
-                          onRename();
-                        },
-                      ),
-                      OverflowAction(
-                        label: 'Delete',
-                        icon: LucideIcons.trash2,
-                        onTap: () {
-                          onDelete();
-                        },
-                      ),
-                    ],
+                  AgentChatOptionsMenu(
+                    thread: thread,
+                    onDeleted: onDeleted,
                   ),
                 ],
               ),

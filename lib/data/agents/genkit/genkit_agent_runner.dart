@@ -53,26 +53,26 @@ class GenkitSpecialtySpec {
 }
 
 /// Optional test hook that replaces the real Genkit turn.
-typedef GenkitAgentTurnOverride =
-    Future<GenkitAgentTurnResult> Function({
-      required LlmResolvedEndpoint endpoint,
-      required List<AgentChatMessage> messages,
-      OmniscopeAgentToolDeps? toolDeps,
-      List<GenkitSpecialtySpec> specialties,
-      LlmRuntimeSettings? runtime,
-    });
+typedef GenkitAgentTurnOverride = Future<GenkitAgentTurnResult> Function({
+  required LlmResolvedEndpoint endpoint,
+  required List<AgentChatMessage> messages,
+  OmniscopeAgentToolDeps? toolDeps,
+  List<GenkitSpecialtySpec> specialties,
+  LlmRuntimeSettings? runtime,
+});
 
 /// Runs Omniscope chat turns through an in-process orchestrator + specialists.
 class GenkitAgentRunner {
-  GenkitAgentRunner({
-    http.Client? httpClient,
-    this.turnOverride,
-  }) : _factory = GenkitRuntimeFactory(httpClient: httpClient);
+  GenkitAgentRunner({http.Client? httpClient, this.turnOverride})
+    : _factory = GenkitRuntimeFactory(httpClient: httpClient);
 
   final GenkitRuntimeFactory _factory;
+  final Map<String, _GenkitAgentGraph> _agentGraphs = {};
 
   /// When set (tests), skips Genkit and returns this function's result.
   final GenkitAgentTurnOverride? turnOverride;
+
+  void dispose() => _factory.dispose();
 
   /// Completes one assistant turn via `omniscope_orchestrator`.
   ///
@@ -116,109 +116,119 @@ class GenkitAgentRunner {
     }
 
     final prior = usable.sublist(0, usable.length - 1);
-    final built = _factory.create(endpoint);
-    final ai = built.ai;
-    final primaryModel = built.model;
+    final graphKey = _agentGraphCacheKey(
+      endpoint: endpoint,
+      specialties: specialties,
+      runtime: runtime,
+      toolDeps: toolDeps,
+    );
+    final cachedGraph = _agentGraphs[graphKey];
+    final Agent<void> agent;
+    if (cachedGraph != null) {
+      agent = cachedGraph.orchestrator;
+    } else {
+      final built = _factory.create(endpoint);
+      final ai = built.ai;
+      final primaryModel = built.model;
 
-    final peerNames = <String>[];
-    final enabledRoleIds = {for (final s in specialties) s.roleId};
+      final peerNames = <String>[];
+      final enabledRoleIds = {for (final s in specialties) s.roleId};
 
-    // Register non-trading peers first so trading can nested-delegate to them.
-    final orderedSpecs = [
-      for (final spec in specialties)
-        if (spec.roleId != 'intradayTrading') spec,
-      for (final spec in specialties)
-        if (spec.roleId == 'intradayTrading') spec,
-    ];
-
-    for (final spec in orderedSpecs) {
-      final peerTools = OmniscopeAgentTools.forRole(
-        ai: ai,
-        roleId: spec.roleId,
-        deps: toolDeps,
-      );
-      final weight = spec.workload.preferredModelWeight;
-      final specialtyModelId = spec.modelIdOverride?.trim().isNotEmpty == true
-          ? spec.modelIdOverride!.trim()
-          : _sameProviderModelId(
-              runtime: runtime,
-              provider: endpoint.provider,
-              weight: weight,
-            );
-
-      final nestedPeerNames = <String>[
-        if (spec.roleId == 'intradayTrading')
-          for (final peerId in AgentPeerDelegation.tradingNestedPeerRoleIds)
-            if (enabledRoleIds.contains(peerId))
-              AgentPeerDelegation.agentName(peerId),
+      // Register non-trading peers first so trading can nested-delegate to them.
+      final orderedSpecs = [
+        for (final spec in specialties)
+          if (spec.roleId != 'intradayTrading') spec,
+        for (final spec in specialties)
+          if (spec.roleId == 'intradayTrading') spec,
       ];
-      final specialtyUse = <GenerateMiddlewareRef>[
-        retry(),
-        if (nestedPeerNames.isNotEmpty)
-          agents(
-            agents: nestedPeerNames,
-            maxDelegations: 3,
-            historyLength: 2,
+
+      for (final spec in orderedSpecs) {
+        final peerTools = OmniscopeAgentTools.forRole(
+          ai: ai,
+          roleId: spec.roleId,
+          deps: toolDeps,
+        );
+        final weight = spec.workload.preferredModelWeight;
+        final specialtyModelId = spec.modelIdOverride?.trim().isNotEmpty == true
+            ? spec.modelIdOverride!.trim()
+            : _sameProviderModelId(
+                runtime: runtime,
+                provider: endpoint.provider,
+                weight: weight,
+              );
+
+        final nestedPeerNames = <String>[
+          if (spec.roleId == 'intradayTrading')
+            for (final peerId in AgentPeerDelegation.tradingNestedPeerRoleIds)
+              if (enabledRoleIds.contains(peerId))
+                AgentPeerDelegation.agentName(peerId),
+        ];
+        final specialtyUse = <GenerateMiddlewareRef>[
+          retry(),
+          if (nestedPeerNames.isNotEmpty)
+            agents(
+              agents: nestedPeerNames,
+              maxDelegations: 3,
+              historyLength: 2,
+            ),
+        ];
+
+        ai.defineAgent(
+          name: AgentPeerDelegation.agentName(spec.roleId),
+          description: spec.description,
+          system: AgentRolePrompts.forRoleId(
+            spec.roleId,
+            investInterestSymbols: toolDeps.investInterestSymbols,
+            focusSymbols: toolDeps.focusSymbols,
+            mandateSummary: toolDeps.mandate?.toAgentSummary(),
+            memorySummary: toolDeps.memorySummary,
+            answerMood: toolDeps.answerMood,
+            answerMoodNote: toolDeps.answerMoodNote,
+            autopilotEnabled: toolDeps.autopilotEnabled,
+            memoryEnabled: toolDeps.memoryEnabled,
           ),
+          tools: peerTools,
+          model: _factory.specialtyModel(
+            primary: endpoint,
+            primaryModel: primaryModel,
+            specialtyModelId: specialtyModelId,
+          ),
+          use: specialtyUse,
+          maxTurns: 8,
+        );
+        peerNames.add(AgentPeerDelegation.agentName(spec.roleId));
+      }
+
+      final middleware = <GenerateMiddlewareRef>[
+        retry(),
+        if (peerNames.isNotEmpty)
+          agents(agents: peerNames, maxDelegations: 5, historyLength: 2),
       ];
 
-      ai.defineAgent(
-        name: AgentPeerDelegation.agentName(spec.roleId),
-        description: spec.description,
-        system: AgentRolePrompts.forRoleId(
-          spec.roleId,
+      final orchestrator = ai.defineAgent(
+        name: AgentPeerDelegation.orchestratorName,
+        description:
+            'Routes user requests to the right Omniscope specialty agents '
+            'and synthesizes a clear answer.',
+        system: AgentRolePrompts.orchestratorSystem(
           investInterestSymbols: toolDeps.investInterestSymbols,
           focusSymbols: toolDeps.focusSymbols,
           mandateSummary: toolDeps.mandate?.toAgentSummary(),
           memorySummary: toolDeps.memorySummary,
+          specialtyRoleIds: [for (final s in specialties) s.roleId],
           answerMood: toolDeps.answerMood,
           answerMoodNote: toolDeps.answerMoodNote,
           autopilotEnabled: toolDeps.autopilotEnabled,
           memoryEnabled: toolDeps.memoryEnabled,
         ),
-        tools: peerTools,
-        model: _factory.specialtyModel(
-          primary: endpoint,
-          primaryModel: primaryModel,
-          specialtyModelId: specialtyModelId,
-        ),
-        use: specialtyUse,
-        maxTurns: 8,
+        tools: const [],
+        model: primaryModel,
+        use: middleware,
+        maxTurns: 10,
       );
-      peerNames.add(AgentPeerDelegation.agentName(spec.roleId));
+      _agentGraphs[graphKey] = _GenkitAgentGraph(orchestrator: orchestrator);
+      agent = orchestrator;
     }
-
-    final middleware = <GenerateMiddlewareRef>[
-      retry(),
-      if (peerNames.isNotEmpty)
-        agents(
-          agents: peerNames,
-          maxDelegations: 5,
-          historyLength: 2,
-        ),
-    ];
-
-    final agent = ai.defineAgent(
-      name: AgentPeerDelegation.orchestratorName,
-      description:
-          'Routes user requests to the right Omniscope specialty agents '
-          'and synthesizes a clear answer.',
-      system: AgentRolePrompts.orchestratorSystem(
-        investInterestSymbols: toolDeps.investInterestSymbols,
-        focusSymbols: toolDeps.focusSymbols,
-        mandateSummary: toolDeps.mandate?.toAgentSummary(),
-        memorySummary: toolDeps.memorySummary,
-        specialtyRoleIds: [for (final s in specialties) s.roleId],
-        answerMood: toolDeps.answerMood,
-        answerMoodNote: toolDeps.answerMoodNote,
-        autopilotEnabled: toolDeps.autopilotEnabled,
-        memoryEnabled: toolDeps.memoryEnabled,
-      ),
-      tools: const [],
-      model: primaryModel,
-      use: middleware,
-      maxTurns: 10,
-    );
 
     final history = <Message>[
       for (final m in prior)
@@ -240,10 +250,12 @@ class GenkitAgentRunner {
       }
 
       final toolOutputs = _toolOutputsFromMessages(res.messages);
-      final delegatedRoleIds =
-          AgentPeerDelegation.extractDelegatedRoleIds(toolOutputs);
-      final delegatedJson =
-          AgentPeerDelegation.extractDelegatedTradeJson(toolOutputs);
+      final delegatedRoleIds = AgentPeerDelegation.extractDelegatedRoleIds(
+        toolOutputs,
+      );
+      final delegatedJson = AgentPeerDelegation.extractDelegatedTradeJson(
+        toolOutputs,
+      );
 
       // Also accept trade JSON in the orchestrator reply when it forwards it.
       final replyJson = TradeProposalParser.extractJsonMap(text);
@@ -271,6 +283,52 @@ class GenkitAgentRunner {
     return prefs?.resolvedModelId(weight);
   }
 
+  static String _agentGraphCacheKey({
+    required LlmResolvedEndpoint endpoint,
+    required List<GenkitSpecialtySpec> specialties,
+    required LlmRuntimeSettings? runtime,
+    required OmniscopeAgentToolDeps toolDeps,
+  }) {
+    final sortedSpecs = [...specialties]
+      ..sort((a, b) => a.roleId.compareTo(b.roleId));
+    final rolePart = [
+      for (final s in sortedSpecs) '${s.roleId}:${s.modelIdOverride ?? ''}',
+    ].join(',');
+    final runtimePart = runtime == null
+        ? ''
+        : [
+            for (final prefs in runtime.providers)
+              '${prefs.provider.name}:${prefs.lightModelId}:'
+                  '${prefs.heavyModelId}',
+          ].join(';');
+    final practice = toolDeps.practice;
+    final holdingsPart = practice == null
+        ? ''
+        : [
+            practice.cash.toString(),
+            for (final h in practice.holdings)
+              '${h.symbol}:${h.shares}:${h.avgCost}',
+          ].join('|');
+    final proposalPart = [for (final p in toolDeps.tradeProposals) p.id]
+      ..sort();
+    final contextPart = [
+      toolDeps.chatId ?? '',
+      toolDeps.investInterestSymbols.join(','),
+      toolDeps.focusSymbols.join(','),
+      toolDeps.mandate?.toAgentSummary() ?? '',
+      toolDeps.memorySummary ?? '',
+      toolDeps.answerMood.name,
+      toolDeps.answerMoodNote ?? '',
+      toolDeps.autopilotEnabled,
+      toolDeps.memoryEnabled,
+      toolDeps.symbolHint ?? '',
+      holdingsPart,
+      proposalPart.join(','),
+    ].join('\u0002');
+    return '${genkitEndpointFingerprint(endpoint)}\u0003$rolePart\u0003'
+        '$runtimePart\u0003$contextPart';
+  }
+
   static List<({String toolName, Object? output})> _toolOutputsFromMessages(
     List<Message> messages,
   ) {
@@ -285,4 +343,10 @@ class GenkitAgentRunner {
     }
     return out;
   }
+}
+
+class _GenkitAgentGraph {
+  const _GenkitAgentGraph({required this.orchestrator});
+
+  final Agent<void> orchestrator;
 }

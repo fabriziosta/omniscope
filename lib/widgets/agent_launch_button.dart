@@ -135,7 +135,8 @@ class _AgentLaunchSingleButton extends StatelessWidget {
         child: Text(label),
       );
     }
-    return ShadButton.secondary(
+    // Primary fill — secondary can read as muted/disabled next to outline CTAs.
+    return ShadButton(
       size: size,
       onPressed: onPressed,
       child: Text(label),
@@ -185,7 +186,11 @@ class _AgentLaunchMenuButtonState extends State<_AgentLaunchMenuButton> {
     required String label,
     required IconData icon,
     required AgentLaunchIntent intent,
+    bool emphasize = false,
   }) {
+    final accent = emphasize
+        ? theme.colorScheme.primary
+        : theme.colorScheme.mutedForeground;
     return ShadButton.ghost(
       width: kOverflowMenuWidth,
       mainAxisAlignment: MainAxisAlignment.start,
@@ -193,14 +198,16 @@ class _AgentLaunchMenuButtonState extends State<_AgentLaunchMenuButton> {
       leading: Icon(
         icon,
         size: 16,
-        color: theme.colorScheme.mutedForeground,
+        color: accent,
       ),
       child: Text(
         label,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
         style: theme.textTheme.small.copyWith(
-          color: theme.colorScheme.foreground,
+          color: emphasize
+              ? theme.colorScheme.primary
+              : theme.colorScheme.foreground,
           fontWeight: FontWeight.w500,
         ),
       ),
@@ -242,7 +249,7 @@ class _AgentLaunchMenuButtonState extends State<_AgentLaunchMenuButton> {
         child: Text(widget.label),
       );
     }
-    return ShadButton.secondary(
+    return ShadButton(
       size: widget.size,
       onPressed: _controller.toggle,
       trailing: Icon(
@@ -285,6 +292,7 @@ class _AgentLaunchMenuButtonState extends State<_AgentLaunchMenuButton> {
               label: AgentLaunchIntent.tradeCheck.ctaLabel,
               icon: LucideIcons.candlestickChart,
               intent: AgentLaunchIntent.tradeCheck,
+              emphasize: true,
             ),
           ],
         ),

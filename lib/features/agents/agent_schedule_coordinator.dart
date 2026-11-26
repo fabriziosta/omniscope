@@ -16,6 +16,7 @@ import '../../data/agents/models.dart';
 import '../../data/agents/schedule_chat_binding.dart';
 import '../../data/agents/trade_proposal_repository.dart';
 import '../../data/crypto/crypto_exchange_registry.dart';
+import '../../data/market/fresh_market_data_client.dart';
 import '../../data/market/market_data_client.dart';
 import '../../data/notifications/app_notification.dart';
 import '../../data/notifications/app_notification_repository.dart';
@@ -23,7 +24,6 @@ import '../../data/portfolio/portfolio_repository.dart';
 import '../../data/settings/data_source_settings.dart';
 import '../../data/settings/env_secrets_repository.dart';
 import '../../data/settings/favorites_repository.dart';
-import '../../data/settings/mandate_settings.dart';
 import '../../data/trading/trade_executor.dart';
 import 'agent_chat_controller.dart';
 
@@ -45,7 +45,6 @@ class AgentScheduleCoordinator extends ChangeNotifier {
     required this._secrets,
     required this._llmRuntime,
     required this._appSettings,
-    this._mandate,
     this._agentMemory,
     this._investInterestProposals,
     this.pollInterval = const Duration(seconds: 60),
@@ -66,11 +65,12 @@ class AgentScheduleCoordinator extends ChangeNotifier {
   final EnvSecretsRepository _secrets;
   final LlmRuntimeSettings _llmRuntime;
   final AgentAppSettings _appSettings;
-  final MandateSettings? _mandate;
   final AgentMemoryRepository? _agentMemory;
   final InvestInterestProposalRepository? _investInterestProposals;
 
   final Duration pollInterval;
+
+  static const _scheduleConcurrency = 2;
 
   Timer? _timer;
   var _resumed = false;
@@ -123,8 +123,6 @@ class AgentScheduleCoordinator extends ChangeNotifier {
     _inFlight = true;
     if (!_disposed) notifyListeners();
     try {
-      await _appSettings.updateScheduleLastRunAt(at);
-
       final chat = await ScheduleChatBinding.ensureChat(
         app: _appSettings,
         chats: _chats,
@@ -145,22 +143,30 @@ class AgentScheduleCoordinator extends ChangeNotifier {
         llmRuntime: _llmRuntime,
         appSettings: _appSettings,
         favorites: _favorites,
-        mandate: _mandate,
         agentMemory: _agentMemory,
         investInterestProposals: _investInterestProposals,
         scheduleInFlight: () => true,
       );
 
       final intervalLabel = _appSettings.scheduleInterval.shortLabel;
-      final mandateSummary = _mandate?.toAgentSummary();
+      final mandateSummary =
+          _chats.threadFor(chat.chatId).mandate.toAgentSummary();
       final total = symbols.length;
 
+      await _prewarmScheduleQuotes(symbols);
+
+      // Runs stay sequential on one chat (append is not race-safe across
+      // awaits). Quote prewarm above uses [_scheduleConcurrency]; activity /
+      // notification writes coalesce once at the end of the batch.
+      final activityEvents = <AgentActivityEvent>[];
+      final notifications = <AppNotification>[];
+
       for (var i = 0; i < symbols.length; i++) {
-        final symbol = symbols[i];
         if (_disposed || !_resumed) break;
         if (!_appSettings.scheduleEnabled) break;
 
-        await _activity.add(
+        final symbol = symbols[i];
+        activityEvents.add(
           AgentActivityEvent(
             id: AgentActivityEvent.newId(),
             kind: AgentActivityKind.scheduledRun,
@@ -184,7 +190,7 @@ class AgentScheduleCoordinator extends ChangeNotifier {
           content: wake,
         );
         if (result is AgentChatSendFailed) {
-          await _activity.add(
+          activityEvents.add(
             AgentActivityEvent(
               id: AgentActivityEvent.newId(),
               kind: AgentActivityKind.scheduledRun,
@@ -200,10 +206,8 @@ class AgentScheduleCoordinator extends ChangeNotifier {
         final ok = okResult != null;
         final proposalId =
             okResult?.proposal?.id ?? okResult?.investInterestProposal?.id;
-        // Pending proposals already surface under Activity → Pending (and the
-        // Agents badge). Only enqueue Alerts for outcomes without a proposal.
         if (proposalId == null) {
-          await _notifications.enqueue(
+          notifications.add(
             AppNotification(
               id: AppNotification.newId(),
               kind: ok
@@ -221,9 +225,37 @@ class AgentScheduleCoordinator extends ChangeNotifier {
           );
         }
       }
+
+      await _activity.addAll(activityEvents);
+      await _notifications.enqueueAll(notifications);
+
+      await _appSettings.updateScheduleLastRunAt(at);
     } finally {
       _inFlight = false;
       if (!_disposed) notifyListeners();
     }
+  }
+
+  /// Warms the agent-turn quote cache before sequential per-symbol Runs.
+  Future<void> _prewarmScheduleQuotes(List<String> symbols) async {
+    final turnMarket = FreshMarketDataClient.forAgentTurn(_marketData);
+    var next = 0;
+    Future<void> worker() async {
+      while (true) {
+        final i = next++;
+        if (i >= symbols.length) return;
+        final sym = symbols[i].trim().toUpperCase();
+        if (sym.isEmpty) continue;
+        try {
+          await turnMarket.getQuotes([sym]);
+        } catch (_) {
+          // Best-effort — sendRun still fetches on miss.
+        }
+      }
+    }
+
+    await Future.wait(
+      List.generate(_scheduleConcurrency, (_) => worker()),
+    );
   }
 }

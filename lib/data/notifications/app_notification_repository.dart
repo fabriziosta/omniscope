@@ -103,6 +103,38 @@ class AppNotificationRepository extends ChangeNotifier {
     return incoming;
   }
 
+  /// Enqueues many alerts and persists once (schedule batch coalescing).
+  Future<List<AppNotification>> enqueueAll(
+    List<AppNotification> notifications,
+  ) async {
+    if (notifications.isEmpty) return const [];
+    final accepted = <AppNotification>[];
+    var next = _items;
+    for (final notification in notifications.reversed) {
+      if (notification.isSticky) {
+        setConfigureAgentsNeeded(true);
+        accepted.add(AppNotification.configureAgentsReminder());
+        continue;
+      }
+      final incoming = notification.copyWith(
+        status: AppNotificationStatus.active,
+      );
+      next = ConfigListSlice.prependCapped(
+        next,
+        incoming,
+        maxStored: maxStored,
+        exclude: (existing) =>
+            existing.isActive && _isDuplicate(existing, incoming),
+      );
+      accepted.add(incoming);
+    }
+    _items = next;
+    _trimExcessActive();
+    await _persist();
+    notifyListeners();
+    return accepted.reversed.toList(growable: false);
+  }
+
   Future<void> markRead(String id) async {
     if (id == AppNotification.configureAgentsId) return;
     final index = _items.indexWhere((n) => n.id == id);

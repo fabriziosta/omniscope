@@ -2,14 +2,11 @@ import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-import '../../core/brand_colors.dart';
-import '../../core/formatting.dart';
 import '../../core/shell_navigation.dart';
 import '../../data/agents/agent_activity.dart';
 import '../../data/agents/agent_activity_repository.dart';
 import '../../data/agents/agent_app_settings.dart';
 import '../../data/agents/agent_chat_repository.dart';
-import '../../data/agents/agent_launch.dart';
 import '../../data/agents/agent_pnl_service.dart';
 import '../../data/agents/agents_repository.dart';
 import '../../data/agents/invest_interest_proposal.dart';
@@ -20,15 +17,15 @@ import '../../data/market/market_data_client.dart';
 import '../../data/notifications/app_notification.dart';
 import '../../data/notifications/app_notification_repository.dart';
 import '../../data/portfolio/portfolio_repository.dart';
-import '../../data/settings/mandate_settings.dart';
 import '../../data/trading/trade_executor.dart';
 import '../../data/trading/trade_proposal_actions.dart';
-import '../../widgets/agent_launch_button.dart';
 import '../../widgets/agent_pnl_strip.dart';
 import '../../widgets/app_empty_view.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/in_tab_back.dart';
 import '../../widgets/master_detail_shell.dart';
+import 'activity_operation_detail.dart';
+import 'activity_operation_tile.dart';
 
 /// Sidebar destinations for Activity. Only one body is mounted at a time.
 enum ActivityNavSection {
@@ -76,6 +73,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
   String? _selectedProposalId;
   String? _filterPortfolioId;
   TradeProposalStatus? _filterStatus;
+
+  _ActivityFilteredListsCache? _filteredListsCache;
 
   static const _statusFilters = <TradeProposalStatus?>[
     null,
@@ -210,7 +209,6 @@ class _ActivityScreenState extends State<ActivityScreen> {
       proposals: context.read<TradeProposalRepository>(),
       activity: context.read<AgentActivityRepository>(),
       tradeExecutor: context.read<TradeExecutor>(),
-      mandate: context.read<MandateSettings>(),
       marketData: context.read<MarketDataClient>(),
       portfolio: context.read<PortfolioRepository>(),
       chats: context.read<AgentChatRepository>(),
@@ -257,6 +255,25 @@ class _ActivityScreenState extends State<ActivityScreen> {
         );
   }
 
+  /// Permanently removes a trade or Invest interest operation from Activity.
+  Future<void> _deleteOperation(String proposalId) async {
+    final trades = context.read<TradeProposalRepository>();
+    final invest = context.read<InvestInterestProposalRepository>();
+    final activity = context.read<AgentActivityRepository>();
+
+    final removedTrade = await trades.delete(proposalId);
+    final removedInvest =
+        removedTrade ? false : await invest.delete(proposalId);
+    if (!removedTrade && !removedInvest) return;
+
+    await activity.deleteForProposal(proposalId);
+    if (!mounted) return;
+    if (_selectedProposalId == proposalId) {
+      setState(() => _selectedProposalId = null);
+    }
+    showAppToast(context, description: 'Operation removed from Activity.');
+  }
+
   /// Operation timeline only — exclude chat-message noise.
   List<AgentActivityEvent> _operationEvents(
     AgentActivityRepository activity,
@@ -274,6 +291,57 @@ class _ActivityScreenState extends State<ActivityScreen> {
     }
     if (_filterStatus != null && p.status != _filterStatus) return false;
     return true;
+  }
+
+  _ActivityFilteredLists _filteredListsFor({
+    required TradeProposalRepository proposals,
+    required InvestInterestProposalRepository investInterest,
+  }) {
+    final key = _ActivityFilteredListsCacheKey(
+      tradeFingerprint: _tradeProposalFingerprint(proposals.proposals),
+      investFingerprint:
+          _investInterestProposalFingerprint(investInterest.proposals),
+      filterPortfolioId: _filterPortfolioId,
+      filterStatus: _filterStatus,
+    );
+    final cached = _filteredListsCache;
+    if (cached != null && cached.key == key) return cached.lists;
+
+    final pending = [
+      for (final p in proposals.pendingActionable)
+        if (_matchesFilters(p)) p,
+    ];
+    final pendingInvestInterest = [
+      for (final p in investInterest.pendingActionable)
+        if (_matchesInvestInterestFilters(p)) p,
+    ];
+    final history = [
+      for (final p in proposals.proposals)
+        if (p.status != TradeProposalStatus.pending && _matchesFilters(p)) p,
+    ];
+    final investInterestHistory = [
+      for (final p in investInterest.proposals)
+        if (p.status != InvestInterestProposalStatus.pending &&
+            _matchesInvestInterestFilters(p))
+          p,
+    ];
+  final pendingNonActionable = [
+      for (final p in proposals.proposals)
+        if (p.status == TradeProposalStatus.pending &&
+            (p.side == TradeProposalSide.hold || p.quantity <= 0) &&
+            _matchesFilters(p))
+          p,
+    ];
+    final historyTrades = [...history, ...pendingNonActionable];
+
+    final lists = _ActivityFilteredLists(
+      pending: pending,
+      pendingInvestInterest: pendingInvestInterest,
+      historyTrades: historyTrades,
+      investInterestHistory: investInterestHistory,
+    );
+    _filteredListsCache = _ActivityFilteredListsCache(key: key, lists: lists);
+    return lists;
   }
 
   bool _matchesInvestInterestFilters(InvestInterestProposal p) {
@@ -308,34 +376,14 @@ class _ActivityScreenState extends State<ActivityScreen> {
     final unreadAlerts = notifications.unreadCount;
     final canDismissAllAlerts = notifications.dismissibleActive.isNotEmpty;
 
-    final pending = [
-      for (final p in proposals.pendingActionable)
-        if (_matchesFilters(p)) p,
-    ];
-    final pendingInvestInterest = [
-      for (final p in investInterest.pendingActionable)
-        if (_matchesInvestInterestFilters(p)) p,
-    ];
-    final history = [
-      for (final p in proposals.proposals)
-        if (p.status != TradeProposalStatus.pending && _matchesFilters(p)) p,
-    ];
-    final investInterestHistory = [
-      for (final p in investInterest.proposals)
-        if (p.status != InvestInterestProposalStatus.pending &&
-            _matchesInvestInterestFilters(p))
-          p,
-    ];
-    // Also include pending holds / non-actionable under history filters when
-    // status filter is pending or All.
-    final pendingNonActionable = [
-      for (final p in proposals.proposals)
-        if (p.status == TradeProposalStatus.pending &&
-            (p.side == TradeProposalSide.hold || p.quantity <= 0) &&
-            _matchesFilters(p))
-          p,
-    ];
-    final historyTrades = [...history, ...pendingNonActionable];
+    final filtered = _filteredListsFor(
+      proposals: proposals,
+      investInterest: investInterest,
+    );
+    final pending = filtered.pending;
+    final pendingInvestInterest = filtered.pendingInvestInterest;
+    final historyTrades = filtered.historyTrades;
+    final investInterestHistory = filtered.investInterestHistory;
 
     final pendingCount = pending.length + pendingInvestInterest.length;
     final historyCount =
@@ -363,7 +411,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
     Widget detailForSelection({required bool withBack}) {
       if (selectedInvestInterest != null) {
-        return _InvestInterestDetail(
+        return InvestInterestDetail(
           proposal: selectedInvestInterest,
           events: _operationEvents(activity, selectedInvestInterest.id),
           roleTitle: _roleTitle(agents, selectedInvestInterest.roleId),
@@ -375,10 +423,11 @@ class _ActivityScreenState extends State<ActivityScreen> {
             chatId: selectedInvestInterest.chatId,
             sourceMessageId: selectedInvestInterest.sourceMessageId,
           ),
+          onDelete: () => _deleteOperation(selectedInvestInterest.id),
         );
       }
       final selected = selectedTrade!;
-      return _ProposalDetail(
+      return ProposalDetail(
         proposal: selected,
         events: _operationEvents(activity, selected.id),
         roleTitle: _roleTitle(agents, selected.roleId),
@@ -391,6 +440,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
           chatId: selected.chatId,
           sourceMessageId: selected.sourceMessageId,
         ),
+        onDelete: () => _deleteOperation(selected.id),
       );
     }
 
@@ -545,6 +595,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
       selectedId: selectedId,
       hasAnyData: hasAnyData,
       onSelect: (id) => setState(() => _selectedProposalId = id),
+      onDelete: _deleteOperation,
       roleTitle: (roleId) => _roleTitle(agents, roleId),
       portfolioLabel: (exchangeId) =>
           _portfolioLabel(actions, exchangeId),
@@ -554,7 +605,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
     Widget detail;
     if (selectedInvestInterest != null) {
-      detail = _InvestInterestDetail(
+      detail = InvestInterestDetail(
         proposal: selectedInvestInterest,
         events: _operationEvents(activity, selectedInvestInterest.id),
         roleTitle: _roleTitle(agents, selectedInvestInterest.roleId),
@@ -563,9 +614,10 @@ class _ActivityScreenState extends State<ActivityScreen> {
           chatId: selectedInvestInterest.chatId,
           sourceMessageId: selectedInvestInterest.sourceMessageId,
         ),
+        onDelete: () => _deleteOperation(selectedInvestInterest.id),
       );
     } else if (selectedTrade != null) {
-      detail = _ProposalDetail(
+      detail = ProposalDetail(
         proposal: selectedTrade,
         events: _operationEvents(activity, selectedTrade.id),
         roleTitle: _roleTitle(agents, selectedTrade.roleId),
@@ -575,6 +627,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
           chatId: selectedTrade.chatId,
           sourceMessageId: selectedTrade.sourceMessageId,
         ),
+        onDelete: () => _deleteOperation(selectedTrade.id),
       );
     } else {
       detail = Center(
@@ -744,6 +797,7 @@ class _ActivityList extends StatelessWidget {
     required this.selectedId,
     required this.hasAnyData,
     required this.onSelect,
+    required this.onDelete,
     required this.roleTitle,
     required this.portfolioLabel,
   });
@@ -756,6 +810,7 @@ class _ActivityList extends StatelessWidget {
   final String? selectedId;
   final bool hasAnyData;
   final ValueChanged<String> onSelect;
+  final ValueChanged<String> onDelete;
   final String Function(String roleId) roleTitle;
   final String Function(String exchangeId) portfolioLabel;
 
@@ -787,42 +842,46 @@ class _ActivityList extends StatelessWidget {
           )
         else if (showingPending) ...[
           for (final p in pendingInvestInterest) ...[
-            _InvestInterestTile(
+            InvestInterestTile(
               proposal: p,
               roleTitle: roleTitle(p.roleId),
               selected: selectedId == p.id,
               onTap: () => onSelect(p.id),
+              onDelete: () => onDelete(p.id),
             ),
             const SizedBox(height: 8),
           ],
           for (final p in pending) ...[
-            _ProposalTile(
+            ProposalTile(
               proposal: p,
               roleTitle: roleTitle(p.roleId),
               portfolioLabel: portfolioLabel(p.exchangeId),
               selected: selectedId == p.id,
               onTap: () => onSelect(p.id),
+              onDelete: () => onDelete(p.id),
             ),
             const SizedBox(height: 8),
           ],
         ] else ...[
           ..._pnlRollup(context),
           for (final p in investInterestHistory) ...[
-            _InvestInterestTile(
+            InvestInterestTile(
               proposal: p,
               roleTitle: roleTitle(p.roleId),
               selected: selectedId == p.id,
               onTap: () => onSelect(p.id),
+              onDelete: () => onDelete(p.id),
             ),
             const SizedBox(height: 8),
           ],
           for (final p in history) ...[
-            _ProposalTile(
+            ProposalTile(
               proposal: p,
               roleTitle: roleTitle(p.roleId),
               portfolioLabel: portfolioLabel(p.exchangeId),
               selected: selectedId == p.id,
               onTap: () => onSelect(p.id),
+              onDelete: () => onDelete(p.id),
             ),
             const SizedBox(height: 8),
           ],
@@ -849,398 +908,93 @@ class _ActivityList extends StatelessWidget {
   }
 }
 
-class _ProposalTile extends StatelessWidget {
-  const _ProposalTile({
-    required this.proposal,
-    required this.roleTitle,
-    required this.portfolioLabel,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final TradeProposal proposal;
-  final String roleTitle;
-  final String portfolioLabel;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    final timeLabel = _relativeTime(proposal.createdAt);
-    return GestureDetector(
-      onTap: onTap,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: selected ? theme.colorScheme.secondary : null,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: theme.colorScheme.border),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${proposal.side.label} ${proposal.quantity} ${proposal.symbol}',
-                style: theme.textTheme.p.copyWith(
-                  color: selected
-                      ? theme.colorScheme.secondaryForeground
-                      : theme.colorScheme.foreground,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '$roleTitle · ${proposal.status.dashboardLabel} · '
-                '$portfolioLabel · $timeLabel',
-                style: theme.textTheme.muted.copyWith(
-                  color: selected
-                      ? theme.colorScheme.secondaryForeground
-                      : null,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _InvestInterestTile extends StatelessWidget {
-  const _InvestInterestTile({
-    required this.proposal,
-    required this.roleTitle,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final InvestInterestProposal proposal;
-  final String roleTitle;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    final timeLabel = _relativeTime(proposal.createdAt);
-    return GestureDetector(
-      onTap: onTap,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: selected ? theme.colorScheme.secondary : null,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: theme.colorScheme.border),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                proposal.summaryLabel,
-                style: theme.textTheme.p.copyWith(
-                  color: selected
-                      ? theme.colorScheme.secondaryForeground
-                      : theme.colorScheme.foreground,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '$roleTitle · Invest interest · '
-                '${proposal.status.dashboardLabel} · $timeLabel',
-                style: theme.textTheme.muted.copyWith(
-                  color: selected
-                      ? theme.colorScheme.secondaryForeground
-                      : null,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _EventTile extends StatelessWidget {
-  const _EventTile({
-    required this.event,
-    required this.roleTitle,
-    this.portfolioLabel,
-  });
-
-  final AgentActivityEvent event;
-  final String roleTitle;
-  final String? portfolioLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    final timeLabel = _relativeTime(event.createdAt);
-    final meta = [
-      event.kind.label,
-      roleTitle,
-      ?portfolioLabel,
-      timeLabel,
-    ].join(' · ');
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: theme.colorScheme.border),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              meta,
-              style: theme.textTheme.small.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            if (event.summary.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(event.summary, style: theme.textTheme.muted),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _InvestInterestDetail extends StatelessWidget {
-  const _InvestInterestDetail({
-    required this.proposal,
-    required this.events,
-    required this.roleTitle,
-    required this.onOpenChat,
-    this.onBack,
-  });
-
-  final InvestInterestProposal proposal;
-  final List<AgentActivityEvent> events;
-  final String roleTitle;
-  final VoidCallback onOpenChat;
-  final VoidCallback? onBack;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    final pending =
-        proposal.status == InvestInterestProposalStatus.pending;
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-      children: [
-        if (onBack != null) ...[
-          Align(
-            alignment: Alignment.centerLeft,
-            child: ShadButton.outline(
-              size: ShadButtonSize.sm,
-              onPressed: onBack,
-              child: const Text('Back'),
-            ),
-          ),
-          const SizedBox(height: 12),
-        ],
-        Text(proposal.summaryLabel, style: theme.textTheme.h4),
-        const SizedBox(height: 6),
-        Text(
-          '$roleTitle · Invest interest · ${proposal.status.dashboardLabel}',
-          style: theme.textTheme.muted,
-        ),
-        const SizedBox(height: 4),
-        Text(
-          _relativeTime(proposal.createdAt),
-          style: theme.textTheme.muted.copyWith(fontSize: 11),
-        ),
-        if (proposal.add.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          Text('Add: ${proposal.add.join(', ')}', style: theme.textTheme.p),
-        ],
-        if (proposal.remove.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text(
-            'Remove: ${proposal.remove.join(', ')}',
-            style: theme.textTheme.p,
-          ),
-        ],
-        if (proposal.setSymbols != null) ...[
-          const SizedBox(height: 8),
-          Text(
-            'Set to: ${proposal.setSymbols!.join(', ')}',
-            style: theme.textTheme.p,
-          ),
-        ],
-        if (proposal.rationale.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          Text(proposal.rationale, style: theme.textTheme.p),
-        ],
-        if (proposal.applyError != null) ...[
-          const SizedBox(height: 8),
-          Text(
-            proposal.applyError!,
-            style: theme.textTheme.small.copyWith(
-              color: BrandColors.lossOf(context),
-            ),
-          ),
-        ],
-        const SizedBox(height: 16),
-        SizedBox(
-          height: 44,
-          child: ShadButton(
-            onPressed: onOpenChat,
-            child: Text(pending ? 'Open chat to confirm' : 'Open chat'),
-          ),
-        ),
-        const SizedBox(height: 20),
-        Text('Timeline', style: theme.textTheme.large),
-        const SizedBox(height: 8),
-        if (events.isEmpty)
-          Text('No linked events.', style: theme.textTheme.muted)
-        else
-          for (final e in events) ...[
-            _EventTile(event: e, roleTitle: roleTitle),
-            const SizedBox(height: 6),
-          ],
-      ],
-    );
-  }
-}
-
-class _ProposalDetail extends StatelessWidget {
-  const _ProposalDetail({
-    required this.proposal,
-    required this.events,
-    required this.roleTitle,
-    required this.portfolioLabel,
-    required this.onOpenChat,
-    this.onBack,
-  });
-
-  final TradeProposal proposal;
-  final List<AgentActivityEvent> events;
-  final String roleTitle;
-  final String portfolioLabel;
-  final VoidCallback onOpenChat;
-  final VoidCallback? onBack;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    final riskColor = proposal.riskApproved
-        ? BrandColors.gainOf(context)
-        : BrandColors.lossOf(context);
-    final pending = proposal.status == TradeProposalStatus.pending;
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-      children: [
-        if (onBack != null) ...[
-          Align(
-            alignment: Alignment.centerLeft,
-            child: ShadButton.outline(
-              size: ShadButtonSize.sm,
-              onPressed: onBack,
-              child: const Text('Back'),
-            ),
-          ),
-          const SizedBox(height: 12),
-        ],
-        Text(
-          '${proposal.side.label} ${proposal.quantity} ${proposal.symbol}',
-          style: theme.textTheme.h4,
-        ),
-        const SizedBox(height: 6),
-        Text(
-          '$roleTitle · ${proposal.status.dashboardLabel} · $portfolioLabel',
-          style: theme.textTheme.muted,
-        ),
-        const SizedBox(height: 4),
-        Text(
-          _relativeTime(proposal.createdAt),
-          style: theme.textTheme.muted.copyWith(fontSize: 11),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          proposal.riskApproved ? 'Risk approved' : 'Risk veto',
-          style: theme.textTheme.small.copyWith(
-            color: riskColor,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        if (proposal.rationale.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          Text(proposal.rationale, style: theme.textTheme.p),
-        ],
-        if (proposal.orderId != null) ...[
-          const SizedBox(height: 8),
-          Text('Order: ${proposal.orderId}', style: theme.textTheme.small),
-        ],
-        if (proposal.executionError != null) ...[
-          const SizedBox(height: 8),
-          Text(
-            proposal.executionError!,
-            style: theme.textTheme.small.copyWith(
-              color: BrandColors.lossOf(context),
-            ),
-          ),
-        ],
-        const SizedBox(height: 16),
-        SizedBox(
-          height: 44,
-          child: ShadButton(
-            onPressed: onOpenChat,
-            child: Text(pending ? 'Open chat to confirm' : 'Open chat'),
-          ),
-        ),
-        if (pending && proposal.symbol.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: AgentLaunchButton(
-              symbol: proposal.symbol,
-              intent: AgentLaunchIntent.tradeCheck,
-              exchangeId: proposal.exchangeId == 'practice'
-                  ? null
-                  : proposal.exchangeId,
-              side: proposal.side.name,
-              quantity: proposal.quantity > 0 ? proposal.quantity : null,
-            ),
-          ),
-        ],
-        const SizedBox(height: 20),
-        Text('Timeline', style: theme.textTheme.large),
-        const SizedBox(height: 8),
-        if (events.isEmpty)
-          Text('No linked events.', style: theme.textTheme.muted)
-        else
-          for (final e in events) ...[
-            _EventTile(
-              event: e,
-              roleTitle: roleTitle,
-              portfolioLabel: e.exchangeId == null
-                  ? null
-                  : (e.exchangeId == proposal.exchangeId
-                      ? portfolioLabel
-                      : e.exchangeId),
-            ),
-            const SizedBox(height: 6),
-          ],
-      ],
-    );
-  }
-}
-
-String _relativeTime(DateTime utc) => formatRelativeTime(utc);
-
 String _formatAlertClock(DateTime local) {
   final h = local.hour.toString().padLeft(2, '0');
   final m = local.minute.toString().padLeft(2, '0');
   return '$h:$m';
+}
+
+class _ActivityFilteredLists {
+  const _ActivityFilteredLists({
+    required this.pending,
+    required this.pendingInvestInterest,
+    required this.historyTrades,
+    required this.investInterestHistory,
+  });
+
+  final List<TradeProposal> pending;
+  final List<InvestInterestProposal> pendingInvestInterest;
+  final List<TradeProposal> historyTrades;
+  final List<InvestInterestProposal> investInterestHistory;
+}
+
+class _ActivityFilteredListsCacheKey {
+  const _ActivityFilteredListsCacheKey({
+    required this.tradeFingerprint,
+    required this.investFingerprint,
+    required this.filterPortfolioId,
+    required this.filterStatus,
+  });
+
+  final String tradeFingerprint;
+  final String investFingerprint;
+  final String? filterPortfolioId;
+  final TradeProposalStatus? filterStatus;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _ActivityFilteredListsCacheKey &&
+        tradeFingerprint == other.tradeFingerprint &&
+        investFingerprint == other.investFingerprint &&
+        filterPortfolioId == other.filterPortfolioId &&
+        filterStatus == other.filterStatus;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        tradeFingerprint,
+        investFingerprint,
+        filterPortfolioId,
+        filterStatus,
+      );
+}
+
+class _ActivityFilteredListsCache {
+  const _ActivityFilteredListsCache({
+    required this.key,
+    required this.lists,
+  });
+
+  final _ActivityFilteredListsCacheKey key;
+  final _ActivityFilteredLists lists;
+}
+
+String _tradeProposalFingerprint(List<TradeProposal> items) {
+  final buf = StringBuffer('${items.length}');
+  for (final p in items) {
+    buf
+      ..write('|')
+      ..write(p.id)
+      ..write(':')
+      ..write(p.status.index)
+      ..write(':')
+      ..write(p.exchangeId)
+      ..write(':')
+      ..write(p.side.index)
+      ..write(':')
+      ..write(p.quantity);
+  }
+  return buf.toString();
+}
+
+String _investInterestProposalFingerprint(List<InvestInterestProposal> items) {
+  final buf = StringBuffer('${items.length}');
+  for (final p in items) {
+    buf
+      ..write('|')
+      ..write(p.id)
+      ..write(':')
+      ..write(p.status.index);
+  }
+  return buf.toString();
 }

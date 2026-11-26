@@ -40,6 +40,7 @@ Editor AI helpers (Cursor, Codex, Claude Code, and similar) — **not** the in-a
 |------|------|
 | [`AGENTS.md`](AGENTS.md) | Shared project guidance for Codex, Claude Code, Cursor, and humans |
 | [`.agents/skills/`](.agents/skills/) | Official Flutter + Dart [Agent Skills](https://docs.flutter.dev/ai/tools) plus [Genkit](https://genkit.dev/docs/dart/get-started/) (on-demand recipes: layouts, tests, analysis, Genkit flows, etc.) |
+| [`skills-lock.json`](skills-lock.json) | Pin file for `make agent-skills` / `npx skills` — keep committed with `.agents/skills/` |
 | [`.cursor/rules/`](.cursor/rules/) | Cursor-only persistent Omniscope product rules plus official [`flutter-hot-reload.mdc`](.cursor/rules/flutter-hot-reload.mdc) |
 | [`.cursor/mcp.json`](.cursor/mcp.json) | Cursor Dart / Flutter MCP server (`dart mcp-server`) for analyzer, tests, and runtime hot reload |
 
@@ -100,7 +101,7 @@ lib/
 - Map provider-specific JSON **inside** the Yahoo / crypto exchange client, not in widgets.
 - Feature folders own their screens; shared chart stays under `widgets/`.
 - **Screen-scoped `ChangeNotifier`s** (provided at the route/screen with `ChangeNotifierProvider`, not in `main.dart`) own feature async: [`QuotesListController`](lib/features/quotes/quotes_list_controller.dart), [`PortfolioScreenController`](lib/features/portfolio/portfolio_screen_controller.dart), [`AssetDetailController`](lib/features/asset_detail/asset_detail_controller.dart), [`AgentChatController`](lib/features/agents/agent_chat_controller.dart). Use load-generation tokens so stale responses are ignored.
-- Shared chrome: `TabPageHeader`, `SubscreenAppBar`, `AppEmptyView`, `QuotesAsyncBody`, `MetricStat`, `SummaryWell`, `ThemedAccordionItem`, [`MasterDetailShell`](lib/widgets/master_detail_shell.dart) / `MasterDetailNavList` / `MasterDetailNavTile` / `MasterDetailContentPane` (Portfolio, Markets, Settings, Agents — content always visible; burger toggles nav — push layout at ≥720, overlay drawer below), `pushFadePage` / `FadePageRoute`, [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart) (in-context Investigate / Trade check), [`SymbolSearchBar`](lib/widgets/symbol_search.dart) (Markets quote panes curated symbol search → asset detail). Prefer [`showAppToast`](lib/widgets/app_toast.dart) over raw `ShadToaster`.
+- Shared chrome: `SubscreenAppBar`, `AppEmptyView`, `QuotesAsyncBody`, `MetricStat`, `SummaryWell`, `ThemedAccordionItem`, [`MasterDetailShell`](lib/widgets/master_detail_shell.dart) / `MasterDetailNavList` / `MasterDetailNavTile` / `MasterDetailContentPane` (Portfolio, Markets, Settings, Agents — content always visible; burger toggles nav — push layout at ≥720, overlay drawer below), `pushFadePage` / `FadePageRoute`, [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart) (in-context Investigate / Trade check), [`SymbolSearchBar`](lib/widgets/symbol_search.dart) (Markets quote panes curated symbol search → asset detail). Prefer [`showAppToast`](lib/widgets/app_toast.dart) over raw `ShadToaster`.
 - Quote lists (Markets equity kinds + crypto exchange spot) always go through [`MarketDataClient`](lib/data/market/market_data_client.dart) — never call `CryptoExchangeClient.getQuotes` from UI.
 
 ## Market data — always use `MarketDataClient`
@@ -226,9 +227,9 @@ Do **not** add curl suites or live network calls to `make check` / pre-push. Tra
 
 ## Agents (AI helpers)
 
-Optional on-device LLM helpers for roles listed in the Genkit role catalog. Practice is simulated; live wallets may hold **real money** — agent prompts must not frame investing as “learning only.” Users Confirm live suggestions; Autopilot is a **per-chat** opt-in (Agents list / chat header pill).
+Optional on-device LLM helpers for roles listed in the Genkit role catalog. Practice is simulated; live wallets may hold **real money** — agent prompts must not frame investing as “learning only.” Users Confirm live suggestions; Autopilot is a **per-chat** opt-in (Agents list pill + shared [`AgentChatOptionsMenu`](lib/features/agents/agent_chat_options_menu.dart) on list rows and the chat title ⋯).
 
-**Practice (paper) and live exchanges are both valid agent trade targets.** Settings → Agents can set an optional **default portfolio**; Confirm uses that default when set, otherwise asks the user to pick (Practice + live venues). Autopilot requires a default (or a single available target). With no live credentials, Practice alone unlocks trading Runs and is the default target. Live venues still need credentials under Settings → Data sources.
+**Practice (paper) and live exchanges are both valid agent trade targets.** Each chat can set a preferred **Autopilot portfolio** (Agents list / chat ⋯ **Agent settings…**); Confirm uses that when set, otherwise asks the user to pick (Practice + live venues). Autopilot requires a preferred portfolio (or a single available target). With no live credentials, Practice alone unlocks trading Runs and is the default target. Live venues still need credentials under Settings → Data sources.
 
 ### Role → Genkit (in-process)
 
@@ -243,7 +244,7 @@ Optional on-device LLM helpers for roles listed in the Genkit role catalog. Prac
 
 The specialty catalog is **populated from** [`assets/agents/manifest.json`](assets/agents/manifest.json). Chat turns run **in-process Genkit** via an **orchestrator** (`omniscope_orchestrator`) plus specialty `defineAgent`s and `agents()` middleware ([`GenkitAgentRunner`](lib/data/agents/genkit/genkit_agent_runner.dart)) — not HTTP agent serving and not Python.
 
-**Default UX:** Settings → Connections holds **multi-provider** API keys plus **light/heavy** model picks ([`LlmRuntimeSettings`](lib/data/agents/llm_runtime_settings.dart) / [`LlmModelRouter`](lib/data/agents/llm_model_router.dart)). The Agents tab is **agent-agnostic chats** + **starter prompts** (one per enabled specialty). There is **no** per-role Connect card. Advanced role enable / default Autopilot portfolio / Schedule live under Settings → Agents; Autopilot enable is per chat.
+**Default UX:** Settings → Agents holds **multi-provider** API keys plus **light/heavy** model picks ([`LlmRuntimeSettings`](lib/data/agents/llm_runtime_settings.dart) / [`LlmModelRouter`](lib/data/agents/llm_model_router.dart)), plus shared memory and Schedule. The Agents **shell tab** is **agent-agnostic chats** + **starter prompts** (one per specialty enabled on that chat). There is **no** per-role Connect card. Answer mood, specialty enablement, and Autopilot portfolio are **per chat** ([`ChatAgentSettings`](lib/data/agents/chat_agent_settings.dart) via **Agent settings…**). Autopilot on/off is also per chat. Legacy deep-link id `connections` still opens Settings → Agents.
 
 Genkit plugins (`genkit_google_genai`, `genkit_openai`, `genkit_anthropic`) talk to providers under the hood. Investigation specialties prefer the light model; trading prefers heavy — on whichever configured provider has a key.
 
@@ -273,16 +274,16 @@ Trade proposal fields `{ticker, action, quantity, rationale, risk_approved}` —
 
 1. Implement with `ai.defineTool` in [`OmniscopeAgentTools.defineAll`](lib/data/agents/genkit/omniscope_agent_tools.dart). Extend [`OmniscopeAgentToolDeps`](lib/data/agents/genkit/omniscope_agent_tools.dart) / chat-controller wiring if the tool needs new services.
 2. Add a stable id to [`AgentToolIds`](lib/data/agents/genkit/agent_tool_registry.dart) + catalog entry, and grant it on the target role ids in `AgentToolRegistry.toolsByRole`.
-3. Prompts (`AgentRolePrompts.toolsPreamble`) and robustness T (`AgentRobustness.contextToolsForRole`) update from the registry — no separate hand-maintained tool lists.
-4. Add/adjust unit tests in `test/agent_tool_registry_test.dart` and locked robustness scores if the T-band changes.
+3. Prompts (`AgentRolePrompts.toolsPreamble`) update from the registry — no separate hand-maintained tool lists.
+4. Add/adjust unit tests in `test/agent_tool_registry_test.dart`.
 
 ### Live trade suggestions (in-app)
 
 - The trading specialty (or orchestrator forwarding its result) emits fenced trade JSON → [`TradeProposal`](lib/data/agents/trade_proposal.dart). Confirm still gates fills.
 - [`TradeExecutor`](lib/data/trading/trade_executor.dart) routes Confirm / Autopilot to Practice or live venues with `canPlaceOrders` (Crypto.com + Alpaca).
-- Chat shows Confirm / Dismiss for trade and Invest interest; Autopilot is **per chat** (default **off**; pill on the Agents list / chat header, or agent tool `setChatAutopilot`). At most **5** chats may have Autopilot on ([`AgentChatRepository.maxAutopilotEnabledChats`](lib/data/agents/agent_chat_repository.dart)); enabling Autopilot **auto-pins** that chat (Unpin still allowed; disable leaves pin) and flushes pending add-only Invest interest. When that chat has Autopilot on, risk-approved trades auto-submit to the Settings default portfolio, and investigation roles (`marketResearch`, `portfolioGuide`) may **auto-add** Invest interest symbols (add-only — remove/set still need Confirm). Same-turn enable via tool is honored before auto-submit. Autopilot also enforces Mandate **max notional**, **max Autopilot fills per UTC day**, and optional **max daily realized loss** (loss stop turns Autopilot off on that chat). Executed proposals store fill price / notional / optional realized P&L; chat header and Activity show profit/loss by chat·symbol and specialty·symbol ([`AgentPnlService`](lib/data/agents/agent_pnl_service.dart)); trading/portfolio tools expose read-only `getAgentPnl`.
-- **Shared memory** — durable facts in the `agentMemory` config slice ([`AgentMemoryRepository`](lib/data/agents/agent_memory_repository.dart)), shared across chats that have Memory on. Per-chat **`memoryEnabled`** on [`AgentChatThread`](lib/data/agents/chat_models.dart) defaults **on** (opt-out via Memory pill under Autopilot on the Agents list / chat header). Memory-on chats inject a compact preamble and get `getAgentMemory` / `rememberFact` / `forgetFact` tools (writes apply immediately — no Confirm). Users edit/clear facts under Settings → Agents; Data & privacy can clear the whole store. Memory-off chats neither read nor write.
-- **Chat focus symbols** — per-chat ordered list on [`AgentChatThread.focusSymbols`](lib/data/agents/chat_models.dart) (cap 12; not Markets → Invest interest). Chips above the composer (tap → asset detail, × unpin). Injected into Genkit system prompts; tools `getChatFocusSymbols` / `pinChatSymbols` / `unpinChatSymbols` apply immediately on all specialties. Auto-pin on Investigate / Trade check launches with a symbol and when trade / Invest interest proposals mention symbols.
+- Chat shows Confirm / Dismiss for trade and Invest interest; Autopilot is **per chat** (default **off**; status pill on the Agents list, toggle via shared [`AgentChatOptionsMenu`](lib/features/agents/agent_chat_options_menu.dart) on list rows / chat title, or agent tool `setChatAutopilot`). At most **5** chats may have Autopilot on ([`AgentChatRepository.maxAutopilotEnabledChats`](lib/data/agents/agent_chat_repository.dart)); enabling Autopilot **auto-pins** that chat (Unpin still allowed; disable leaves pin) and flushes pending add-only Invest interest. When that chat has Autopilot on, risk-approved trades auto-submit to the Settings default portfolio, and investigation roles (`marketResearch`, `portfolioGuide`) may **auto-add** Invest interest symbols (add-only — remove/set still need Confirm). Same-turn enable via tool is honored before auto-submit. Autopilot also enforces that chat’s Mandate **max notional**, **max Autopilot fills per UTC day**, and optional **max daily realized loss** (loss stop turns Autopilot off on that chat). Executed proposals store fill price / notional / optional realized P&L; chat header and Activity show profit/loss by chat·symbol and specialty·symbol ([`AgentPnlService`](lib/data/agents/agent_pnl_service.dart)); trading/portfolio tools expose read-only `getAgentPnl`.
+- **Shared memory** — durable facts in the `agentMemory` config slice ([`AgentMemoryRepository`](lib/data/agents/agent_memory_repository.dart)), shared across chats that have Memory on. Per-chat **`memoryEnabled`** on [`AgentChatThread`](lib/data/agents/chat_models.dart) defaults **on** (opt-out via [`AgentChatOptionsMenu`](lib/features/agents/agent_chat_options_menu.dart)). Memory-on chats inject a compact preamble and get `getAgentMemory` / `rememberFact` / `forgetFact` tools (writes apply immediately — no Confirm). Users edit/clear facts under Settings → Agents. Memory-off chats neither read nor write.
+- **Chat focus symbols** — per-chat ordered list on [`AgentChatThread.focusSymbols`](lib/data/agents/chat_models.dart) (cap 12; not Markets → Invest interest). Chips above the composer are **read-only for the user** (tap → asset detail; no × unpin). Only the agent may add/remove via tools `getChatFocusSymbols` / `pinChatSymbols` / `unpinChatSymbols` (immediate on all specialties). Auto-pin on Investigate / Trade check launches with a symbol and when trade / Invest interest proposals mention symbols.
 - **Fleet status (operational)** — read-only `getAgentFleetStatus` ([`AgentFleetStatus`](lib/data/agents/agent_fleet_status.dart)) exposes Autopilot-on chat titles/ids (cap 5), Schedule enabled/running/ETA, pending Confirm trade + Invest interest counts (top symbols), and today’s Autopilot fill count vs Mandate daily cap plus realized P&L vs optional loss stop. No sibling transcripts. Granted on all specialties; system prompts hint the tool when Autopilot or Memory is on for the current chat.
 - Shell tab **Activity** is a historical archive of proposals and events with portfolio labels; pending rows are read-only and deep-link to the originating chat.
 
@@ -294,7 +295,7 @@ Trade proposal fields `{ticker, action, quantity, rationale, risk_approved}` —
 - Role list: [`AgentRoleCatalog`](lib/data/agents/agent_role_catalog.dart) ← `assets/agents/manifest.json`.
 - Model IDs come from [`assets/agents/llm_models.json`](assets/agents/llm_models.json) via `LlmModelCatalog`. Custom provider uses free-text model id + base URL.
 - Secrets keys use `OMNISCOPE_*` names in the config `secrets` slice via [`EnvSecretsRepository`](lib/data/settings/env_secrets_repository.dart).
-  - LLM: `OMNISCOPE_<PROVIDER>_API_KEY` → Settings → Connections.
+  - LLM: `OMNISCOPE_<PROVIDER>_API_KEY` → Settings → Agents.
   - Exchanges: `OMNISCOPE_<EXCHANGE_ID>_API_{KEY|SECRET|TOKEN}` → Settings → Credentials.
   - Venue canary / CI may also supply the same names as process environment variables.
 
@@ -309,48 +310,28 @@ Trade proposal fields `{ticker, action, quantity, rationale, risk_approved}` —
 - Proposal cards under assistant bubbles (trade + Invest interest): Confirm → [`TradeExecutor.submit`](lib/data/trading/trade_executor.dart) or Invest interest apply; portfolio picker when no Autopilot default. Fills are never auto-executed by delegation alone.
 - Many agent-agnostic `chatId` threads; Delete is local-only.
 
-### Robustness score (1–100)
-
-Each specialty in Settings → Agents (advanced) can show a **Robustness N** badge ([`AgentRobustness`](lib/data/agents/agent_robustness.dart)). The score is **computed** (not stored in `manifest.json`):
-
-\[
-score = \mathrm{clamp}(W + F + D + G + T,\ 1,\ 100)
-\]
-
-| Factor | Max | Points |
-|--------|-----|--------|
-| Workload \(W\) | 20 | investigation 8 / trading 20 |
-| Framework \(F\) | 20 | Genkit 14 |
-| Pipeline depth \(D\) | 25 | 1 stage 6 / 2–3 14 / 4–6 20 / 7+ 25 |
-| Risk gates \(G\) | 20 | none 0 / soft 10 / hard veto + trade JSON 20 |
-| Context & tools \(T\) | 15 | quotes-only 5 / portfolio snapshot 10 / multi-source 15 (derived from [`AgentToolRegistry`](lib/data/agents/genkit/agent_tool_registry.dart) ACL) |
-
-**Meaning:** higher = more complex pipeline and stronger controls — **not** “better advice” or live reliability.
-
-Locked examples: Market Research **41**, Live Balance **46**, Portfolio Guide **51**, Intraday **89**, Crypto Spot Primer **41**, Markets Literacy **41**.
-
 ### UI
 
 - Shell tab **Activity** → **Alerts** (scheduled run outcomes without a pending proposal, Autopilot halt, sticky setup reminder via [`AppNotificationRepository`](lib/data/notifications/app_notification_repository.dart)), plus pending + accepted/refused operations (not chat messages); Open chat deep-links to the originating thread when it still exists ([`ActivityScreen`](lib/features/activity/activity_screen.dart)). Activity tab badge = unread Alerts. Confirm / Dismiss only in Agents chats. Shared confirm path: [`TradeProposalActions`](lib/data/trading/trade_proposal_actions.dart) / [`InvestInterestProposalActions`](lib/data/agents/invest_interest_proposal_actions.dart).
-- Shell tab **Agents** → **chat list** + **New chat**; empty / new chat shows **starter prompt chips** (one per enabled specialty from [`agent_role_prompts.dart`](lib/data/agents/agent_role_prompts.dart)). Soft hint to Settings → Connections for models/keys. No per-role Connect cards.
-- Settings → **Agents** (advanced) → enable/disable specialties, optional per-role model override, **default Autopilot portfolio**, and **Schedule**. Autopilot enable is per chat (Agents list overflow / header pill).
+- Shell tab **Agents** → **chat list** + **New chat**; empty / new chat shows **starter prompt chips** (one per specialty enabled on that chat from [`agent_role_prompts.dart`](lib/data/agents/agent_role_prompts.dart)). Soft hint to Settings → Agents for models/keys. No per-role Connect cards. Chat ⋯ / list overflow: **Agent settings…** (mood, specialties, portfolio), **Mandate…**, Autopilot / Memory toggles ([`AgentChatOptionsMenu`](lib/features/agents/agent_chat_options_menu.dart)).
+- Settings → **Agents** → shared memory editor and **Schedule** only ([`AgentAppSettings`](lib/data/agents/agent_app_settings.dart)). Mood / specialties / Autopilot portfolio live on [`AgentChatThread.agentSettings`](lib/data/agents/chat_models.dart).
 - **Schedule** (foreground only) — configured under Settings → Agents; [`AgentScheduleCoordinator`](lib/features/agents/agent_schedule_coordinator.dart) polls while the app is open and resumed (Linux / Windows / Android / iOS / macOS / Web). Pauses on background / hidden tab; does **not** run with the app closed. When enabled, Schedule binds to one persistent pinned chat (`scheduleChatId` via [`ScheduleChatBinding`](lib/data/agents/schedule_chat_binding.dart)); deleting that chat (or clearing all chats) **stops Schedule**. When `scheduleUseInvestInterest` is on, the batch uses [`FavoritesRepository.investInterestSymbols`](lib/data/settings/favorites_repository.dart); otherwise typed `scheduleSymbols`. Each due tick **reuses** that chat (Autopilot off by default) and Runs Market Research with a schedule-aware wake prompt ([`AgentRolePrompts.scheduledRunUserPrompt`](lib/data/agents/agent_role_prompts.dart): cadence, batch index, Mandate hint). The schedule chat header / list row show next-run ETA (or Running…) via [`ScheduleStatusPill`](lib/widgets/schedule_status_pill.dart). Activity logs `scheduledRun` events. Scheduled outcomes **without** a pending proposal enqueue an Activity → Alerts row ([`AppNotificationRepository`](lib/data/notifications/app_notification_repository.dart)) so the user can **Open** the schedule chat to review (Dismiss clears the alert). When a run creates a pending proposal, Activity → Pending and the Agents badge cover Confirm — no duplicate alert. The Agents tab badge shows pending actionable proposals; the Activity tab badge shows unread Alerts.
 - **Invest interest context** — chat/Run injects the list into the system prompt (when non-empty) and exposes read-only `getInvestInterest` via [`OmniscopeAgentTools`](lib/data/agents/genkit/omniscope_agent_tools.dart) for market research, trading, and portfolio guidance roles. `proposeInvestInterestDiff` creates pending proposals; with that chat’s Autopilot on, add-only investigation proposals apply automatically. Markets → Invest interest rows show **You** / **Agent** provenance badges ([`investInterestProvenance`](lib/data/settings/invest_interest_provenance.dart) in the `favorites` slice). Distinct from **chat focus symbols** (per-thread chips above the composer).
-- **Chat focus symbols UI** — [`AgentChatScreen`](lib/features/agents/agent_chat_screen.dart) shows an “In this chat” chip row above the message input when `focusSymbols` is non-empty.
+- **Chat focus symbols UI** — [`AgentChatScreen`](lib/features/agents/agent_chat_screen.dart) shows an “In this chat” chip row above the message input when `focusSymbols` is non-empty. Users cannot add or remove chips; pin/unpin is agent-only.
 - **In-app launches** — other screens deep-link into an orchestrator chat via [`AgentLaunchActions`](lib/features/agents/agent_launch_actions.dart) + [`AgentLaunchIntent`](lib/data/agents/agent_launch.dart) (`investigate` → Market Research; `tradeCheck` → Intraday; `explainLive` → Live Balance Explainer; `explainPortfolio` → Portfolio Guide; `explainCryptoSpot` → Crypto Spot Primer; `explainMarketsLiteracy` → Markets & Instruments Tutor). Shared CTA: [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart).
  - Asset detail / equity quote sparkles / symbol search **Investigate** is a popover with **Investigate** + **Trade check**. Crypto exchange rows / spot symbols use **Spot primer** (+ Investigate + Trade check). Both draft the matching starter into the composer (do **not** auto-send) and open Agents with the chat-list sidebar closed.
  - Markets equity kind panes offer **Markets tutor**; crypto Spot pairs panes offer **Spot primer**. Empty asset overviews deep-link to Markets tutor (equities) or Spot primer (crypto pairs).
-  - Practice trade card **Review portfolio** + **Trade check**; successful paper trade offers a Trade check dialog.
+  - Asset detail **Trade with agents** card → **Review portfolio** + **Trade check** (no manual Buy/Sell).
   - Portfolio practice holdings sparkles → Trade check.
   - Portfolio **Practice** summary **Review**; Portfolio **Live** **Balances** / **Allocation** + per-asset sparkles → Live Balance Explainer.
   - Settings → Portfolios Practice **Review**; live cards **Balances** / **Allocation** when credentials are ready.
-  - Settings → Connections **Try Investigate** when an LLM key is configured (sample symbol from the default watchlist).
-  - With a key: open Agents → **create a new chat** titled for the intent (e.g. `Investigate asset AAPL`, `Portfolio review for Practice`) → **draft** the matching starter into the composer (user sends); never auto-send from in-app CTAs ([`AgentLaunchActions.launch`](lib/features/agents/agent_launch_actions.dart) / [`ShellNavigationController.goToAgentChat`](lib/core/shell_navigation.dart)). Without a key: Settings → Connections.
+  - Settings → Agents **Try Investigate** when an LLM key is configured (sample symbol from the default watchlist).
+  - With a key: open Agents → **reuse an empty chat** with the same intent title when one exists, otherwise create one (e.g. `Investigate asset AAPL`, `Trade check for AAPL`) → **draft** the matching starter into the composer (user sends); never auto-send from in-app CTAs. [`goToAgentChat`](lib/core/shell_navigation.dart) clears pushed tab overlays (e.g. Asset detail opened from a focus chip) so the Agents chat is visible ([`AgentLaunchActions.launch`](lib/features/agents/agent_launch_actions.dart)). Without a key: Settings → Agents.
   - [`AgentChatScreen`](lib/features/agents/agent_chat_screen.dart) is chatId-scoped and accepts starter / draft-launch args for these launches.
 
 ### Roadmap (more agent surfaces)
 
-When adding UI that involves a symbol, P&L decision, or “what does this mean?”, prefer wiring an `AgentLaunchIntent` CTA rather than a dead-end copy-only tip. Shipped: Settings → Connections **Try Investigate**, Asset detail chart period explainers, post-trade → Trade check dialog, Portfolio Live / Settings Portfolios balance explainers, Practice **Review**, **Crypto Spot Primer**, **Markets & Instruments Tutor**. Candidates still open: Mandate / risk-rails coach, Connections setup tutor.
+When adding UI that involves a symbol, P&L decision, or “what does this mean?”, prefer wiring an `AgentLaunchIntent` CTA rather than a dead-end copy-only tip. Shipped: Settings → Agents **Try Investigate**, Asset detail chart period explainers + **Trade with agents**, Portfolio Live / Settings Portfolios balance explainers, Practice **Review**, **Crypto Spot Primer**, **Markets & Instruments Tutor**. Candidates still open: Mandate / risk-rails coach, Agents setup tutor. Users never place Buy/Sell themselves — fills go through agent proposals (Confirm when Autopilot is off).
 
 ## User config file
 
@@ -359,12 +340,13 @@ Single JSON document for secrets, favorites, and all customizations ([`UserConfi
 - **Default path (native):** `{getApplicationSupportDirectory()}/omniscope.json` via `path_provider`.
 - **Custom path:** desktop only (Linux / Windows / macOS) — Settings → Data & privacy; override stored in prefs key `omniscope.config_path.v1`.
 - **Web:** no filesystem path — full document in prefs blob `omniscope.config.v1`; Import / Export in Settings → Data & privacy.
-- **Slices:** `theme`, `display`, `dataSources`, `secrets`, `agents`, `llmRuntime`, `agentApp`, `agentChats`, `agentMemory`, `tradeProposals`, `investInterestProposals`, `agentActivity`, `notifications`, `paperPortfolio`, `favorites`, `mandate`.
-- **Defaults:** [`UserConfigDefaults`](lib/data/settings/user_config_defaults.dart) seeds every slice when the file is created. On load (and Import), missing top-level or nested keys are deep-merged from those defaults and written back — existing user values win; new feature fields never fail the load. **Invalid values** (wrong JSON type or unknown enum token such as a bogus theme mode / palette / mandate goal) are overwritten with the matching default and persisted so a hand-edited `omniscope.json` cannot crash startup. When adding a config field, update `UserConfigDefaults` (including any enum allowlist) so older files pick it up next session.
-- **Legacy migration:** first load absorbs old per-feature prefs keys then removes them. Legacy per-role `agents` connections promote keys into `secrets` / `llmRuntime` and Autopilot/Schedule into `agentApp`; legacy `roleId` chat threads become `chatId` threads on load. Legacy global `agentApp.autopilotEnabled` seeds every existing thread’s Autopilot once, then clears the global flag ([`AgentChatRepository.migrateGlobalAutopilotIfNeeded`](lib/data/agents/agent_chat_repository.dart)).
-- Treat the file as secrets — it may contain API keys. Enter keys in Settings → Connections / Credentials, or Import a config JSON; there is no project `.env` dual-sync.
+- **Slices:** `theme`, `display`, `dataSources`, `secrets`, `agents`, `llmRuntime`, `agentApp` (Schedule + silent legacy caps), `agentChats` (includes per-thread `mandate` + `agentSettings`), `agentMemory`, `tradeProposals`, `investInterestProposals`, `agentActivity`, `notifications`, `paperPortfolio`, `favorites`. Legacy top-level `mandate` and chat-scoped `agentApp` mood/roles/portfolio are read once to seed chats, then cleared.
+- **Defaults:** [`UserConfigDefaults`](lib/data/settings/user_config_defaults.dart) seeds every slice when the file is created. On load (and Import), missing top-level or nested keys are deep-merged from those defaults and written back — existing user values win; new feature fields never fail the load. **Invalid values** (wrong JSON type or unknown enum token such as a bogus theme mode / palette) are overwritten with the matching default and persisted so a hand-edited `omniscope.json` cannot crash startup. When adding a config field, update `UserConfigDefaults` (including any enum allowlist) so older files pick it up next session.
+- **Config version:** [`UserConfigKeys.currentVersion`](lib/data/settings/user_config_keys.dart) is **2** (fresh installs seed v2). **v1→v2** is a one-shot upgrade on first load after repos hydrate: [`UserConfigMigrations.runOnce`](lib/data/settings/user_config_migrations.dart) (wired from [`UserConfigBootstrap`](lib/data/settings/user_config_bootstrap.dart) / cold start and Import reload) promotes legacy `agents.connections` into `llmRuntime` / `agentApp`, seeds per-chat fields from global flags, strips legacy chat `roleId` keys, clears the connections slice, then persists `version: 2`. A second load is a no-op. Legacy SharedPreferences keys still absorb once on load (separate from document version).
+- **Pre-v2 legacy (v1 document):** legacy `roleId` chat threads still parse to `chatId` on load; until v2 is written, persisted chat JSON may retain transitional `roleId` / `legacyRoleId` keys. Specialty `roleId` on trade proposals / Activity is unchanged.
+- Treat the file as secrets — it may contain API keys. Enter keys in Settings → Agents / Data sources → Credentials, or Import a config JSON; there is no project `.env` dual-sync.
 
-Favorites ([`FavoritesRepository`](lib/data/settings/favorites_repository.dart)): ordered `symbols` (starred) plus ordered `investInterest` (agent-facing) under the same `favorites` slice, with optional `investInterestProvenance` map (`user` | `agent` per symbol; missing → You). Markets sidebar has **Favorites** and **Invest interest** subgroups. Legacy `{ markets, crypto }` config slices migrate on load (`investInterest` defaults to `[]`). Clearing favorites does not wipe invest interest (and vice versa).
+Favorites ([`FavoritesRepository`](lib/data/settings/favorites_repository.dart)): ordered `symbols` (starred) plus ordered `investInterest` (agent-facing) under the same `favorites` slice, with optional `investInterestProvenance` map (`user` | `agent` per symbol; missing → You). Markets sidebar has **Favorites** and **Invest interest** subgroups; each pane can **Clear all** (confirm). Legacy `{ markets, crypto }` config slices migrate on load (`investInterest` defaults to `[]`). Clearing favorites does not wipe invest interest (and vice versa).
 
 ## Settings
 
@@ -372,17 +354,16 @@ Shell tab **Settings** (and Markets, Portfolio, Agents) use [`MasterDetailShell`
 
 - **About** — tagline ([`AppCopy`](lib/core/app_copy.dart)), version ([`AppInfo`](lib/core/app_info.dart)), educational disclaimer.
 - **Appearance** — brightness + color set ([`ThemeSettings`](lib/data/settings/theme_settings.dart) / [`BrandPalette`](lib/core/brand_colors.dart)), list density / price format / default chart range ([`DisplaySettings`](lib/data/settings/display_settings.dart)).
-- **Mandate** — investing goal, horizon, universe, risk rails (max Invest interest symbols, max open proposals, max Autopilot fills/day, optional max daily realized loss, optional max notional — **enforced** on Confirm/Autopilot), and preferred schedule cadence ([`MandateSettings`](lib/data/settings/mandate_settings.dart)). Agents read via `getMandate` and may propose Invest interest diffs (Confirm, or Autopilot add-only).
+- **Mandate (per chat)** — investing goal, horizon, universe, risk rails (max Invest interest symbols, max open proposals, max Autopilot fills/day for that chat, optional max daily realized loss, optional max notional — **enforced** on Confirm/Autopilot), and preferred schedule cadence ([`ChatMandate`](lib/data/settings/mandate_settings.dart) on [`AgentChatThread`](lib/data/agents/chat_models.dart)). Edit via Agents list / chat ⋯ **Mandate…**. Agents read via `getMandate` and may propose Invest interest diffs (Confirm, or Autopilot add-only). New chats use the same defaults as before; existing chats without a mandate are seeded once from any legacy global `mandate` slice.
 - **Data sources** — equities / crypto enable toggles + Crypto.com credentials (existing).
 - **Portfolios** — practice starting cash / reset, plus status of live exchange portfolios (credentials under Data sources).
-- **Connections** — LLM provider keys + **light/heavy** model picks per provider (Add/Edit via dialog; on-device only via [`EnvSecretsRepository.setLlmApiKey`](lib/data/settings/env_secrets_repository.dart) / [`LlmRuntimeSettings`](lib/data/agents/llm_runtime_settings.dart)). Status: red = missing key; after **Save** or **Test**, green = Connected / red = Needs attention from a cheap list-models probe ([`LlmConnectionProbe`](lib/data/agents/llm_connection_probe.dart)); session-only ([`LlmConnectionStatusStore`](lib/data/agents/llm_connection_status_store.dart)) — never auto-clears keys. Chat/schedule auth failures use the same classification and nudge back here. Plus a summary of exchange credentials.
-- **Agents** — advanced: shared memory editor, enable specialties, optional model overrides, default Autopilot portfolio, Schedule ([`AgentAppSettings`](lib/data/agents/agent_app_settings.dart)). Per-chat Autopilot / Memory live on [`AgentChatThread`](lib/data/agents/chat_models.dart).
-- **Data & privacy** — config path, desktop custom path, Import / Export JSON, plus clear favorites / invest interest / shared memory / chats / **Reset LLM and agent prefs** / reset paper / clear exchange credentials.
+- **Agents** — LLM provider keys + **light/heavy** model picks per provider (Add/Edit via dialog; on-device only via [`EnvSecretsRepository.setLlmApiKey`](lib/data/settings/env_secrets_repository.dart) / [`LlmRuntimeSettings`](lib/data/agents/llm_runtime_settings.dart)); status: red = missing key; after **Save** or **Test**, green = Connected / red = Needs attention from a cheap list-models probe ([`LlmConnectionProbe`](lib/data/agents/llm_connection_probe.dart)); session-only ([`LlmConnectionStatusStore`](lib/data/agents/llm_connection_status_store.dart)) — never auto-clears keys. Also: exchange-credential summary + bulk clear, shared memory editor, Schedule ([`AgentAppSettings`](lib/data/agents/agent_app_settings.dart)), clear chats / proposals+activity, **Reset LLM keys & models**, **Reset agent prefs**. Per-chat mood / specialties / Autopilot portfolio ([`ChatAgentSettings`](lib/data/agents/chat_agent_settings.dart)), Autopilot on/off, Memory, and Mandate live on [`AgentChatThread`](lib/data/agents/chat_models.dart) (edit via Agents list / chat ⋯).
+- **Data & privacy** — config path, desktop custom path, Import / Export JSON. Clear favorites / Invest interest from Markets panes; practice reset under Portfolios.
 
 ## Portfolio
 
 - **Unified list** — [`PortfolioCatalog`](lib/data/portfolio/portfolio_catalog.dart) lists Practice plus each live exchange portfolio for Settings and the Portfolio tab.
-- **Practice (paper)** — `paperPortfolio` slice in the unified config file. Manual trades on asset detail; agents may also Confirm / Autopilot into Practice when selected as the target portfolio.
+- **Practice (paper)** — `paperPortfolio` slice in the unified config file. Fills only via agent Confirm / Autopilot when Practice is the target portfolio (no manual Buy/Sell UI).
   - Default starting cash: **$10,000** (`PortfolioState.defaultStartingCash`); configurable via Settings → Portfolios / `PortfolioRepository.startingCash` (stored in the same JSON blob).
   - Holdings: `{ symbol, shares, avgCost }`; buy averages cost; sell removes the row at zero shares.
   - Mark-to-market using `MarketDataClient.getQuotes` — never hard-code prices in the repository.
@@ -430,75 +411,30 @@ Canonical tokens live in [`lib/core/brand_colors.dart`](lib/core/brand_colors.da
 - Trade feedback: `ShadToaster` + `ShadToast` (use `.destructive` for failures).
 - Theme: slate neutrals + brand primary/secondary via `BrandColors` in `app.dart`.
 - Keep copy plain — this product is for people who find finance intimidating.
-- Shared brand mark: [`lib/widgets/app_placeholder_icon.dart`](lib/widgets/app_placeholder_icon.dart) (transparent [`assets/brand/app_icon_foreground.png`](assets/brand/app_icon_foreground.png) on `colorScheme.secondary`; launcher master remains [`assets/brand/app_icon.png`](assets/brand/app_icon.png)). Cold start opens the **Home** tab — [`PortfolioScreen`](lib/features/portfolio/portfolio_screen.dart) via [`ShellNavigationController.goToHome`](lib/core/shell_navigation.dart).
-- Launcher / favicon / splash pipeline: edit masters under `assets/brand/`, then run `make icons` (or [`tool/regen_icons.sh`](tool/regen_icons.sh)) — Android / iOS / macOS / Web / Windows via `flutter_launcher_icons`, Linux `linux/runner/resources/`, plus Android / iOS / Web splash via `flutter_native_splash` (Teal `#CCFBF1` / `#134E4A`; desktop has no native splash).
+- Cold start opens the **Home** tab — [`PortfolioScreen`](lib/features/portfolio/portfolio_screen.dart) via [`ShellNavigationController.goToHome`](lib/core/shell_navigation.dart).
+- Launcher / favicon / splash pipeline: edit masters under `assets/brand/` (`app_icon.png` + `app_icon_foreground.png`), then run `make icons` (or [`tool/regen_icons.sh`](tool/regen_icons.sh)) — Android / iOS / macOS / Web / Windows via `flutter_launcher_icons`, Linux `linux/runner/resources/`, plus Android / iOS / Web splash via `flutter_native_splash` (Teal `#CCFBF1` / `#134E4A`; desktop has no native splash). Needs Python 3 + Pillow — see [`docs/development.md`](docs/development.md).
 
 ## Commands
 
-Root [`Makefile`](Makefile) is the developer catalog (`make help`). On Windows hosts, use Git Bash or WSL. Hooks still call `tool/*.sh` directly.
+Root [`Makefile`](Makefile) is the developer catalog (`make help`). On Windows hosts, use Git Bash or WSL.
 
 ```bash
 export PATH="$HOME/flutter/bin:$PATH"
 make get
-make check              # analyze + test + linux release (same as pre-push / CI; excludes live_canary)
-make venue-canary       # live Yahoo / Crypto.com / Alpaca probes (optional)
-make run                # DEVICE=linux by default
-make run DEVICE=windows # needs Windows desktop toolchain
-make run DEVICE=android # needs Android SDK / device
-make run DEVICE=ios     # needs Xcode / Apple toolchain (macOS host)
-make run DEVICE=macos   # needs Xcode / macOS desktop toolchain
-make run DEVICE=chrome  # Web (or edge / web-server)
-make build              # host-capable release builds (skips other OS targets)
-make build-linux        # or: build-windows / build-macos / build-ios / build-apk / build-appbundle / build-web
-make icons
-make agent-skills       # refresh Flutter/Dart/Genkit skills into .agents/skills/
-make bump-patch         # local patch bump (pubspec + AppInfo); CI also runs this on main
-make container-build    # podman: slim Linux runtime image (omniscope:runtime)
-make container-run      # podman run (needs host DISPLAY)
-# equivalents: flutter pub get | flutter analyze | flutter test
-#              tool/flutter_checks.sh all | tool/regen_icons.sh
+make check              # analyze + test + linux release (same as pre-push / CI)
+make run                # DEVICE=linux by default (also: windows / android / ios / macos / chrome)
+make build-linux        # via tool/flutter_checks.sh build-linux
+make icons              # needs Python 3 + Pillow — see docs/development.md
+make agent-skills       # refresh .agents/skills/ (pin: skills-lock.json)
 ```
 
-Release builds need the matching host toolchain (Linux/Windows/macOS desktop and iOS are not cross-compiled). See [`docs/build-and-release.md`](docs/build-and-release.md).
+Procedural detail lives in the docs map above — do not duplicate long CI/release/Linux package lists here:
 
-### Podman (Linux runtime image)
+- Setup / hooks / Linux deps: [`docs/development.md`](docs/development.md)
+- Build, versioning, CI workflows, tags: [`docs/build-and-release.md`](docs/build-and-release.md)
+- Podman / Containerfile / GHCR: [`docs/container.md`](docs/container.md)
 
-[`Containerfile`](Containerfile) is a multi-stage build: Flutter + Linux **build** deps live only in a throwaway builder; the published tag is **`omniscope:runtime`** (GTK/EGL runtime libs + `build/linux/x64/release/bundle/`). Secrets are not baked in.
-
-```bash
-make container-build    # podman build -t omniscope:runtime
-make container-run      # needs DISPLAY + /tmp/.X11-unix
-# CI also pushes ghcr.io/<owner>/omniscope on v* tags (see container.yml)
-```
-
-**Keep the Containerfile in sync:** whenever Linux OS packages (builder or runtime), Flutter install channel/flags used in the Containerfile, or the Linux bundle packaging path change, update [`Containerfile`](Containerfile) in the **same** change. Keep the Fedora build list in [`docs/development.md`](docs/development.md) and CI `apt-get` Linux deps consistent with the builder stage. Full Podman/GHCR notes: [`docs/container.md`](docs/container.md). Do not leave the image definition stale.
-
-### CI (GitHub Actions)
-
-- **PR / `main`:** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — gitleaks + `tool/flutter_checks.sh all` (version verify + analyze + test + `flutter build linux --release`; same gate as pre-push / `make check`), plus a dedicated `build-linux` job. Web smoke paused. Offline only — excludes `live_canary`. Linux host + GTK desktop deps required for local hooks.
-- **Venue canary (scheduled):** [`.github/workflows/venue-canary.yml`](.github/workflows/venue-canary.yml) — daily + `workflow_dispatch`; live probes via Dart adapters; job may go red on outages without blocking merges. Optional repo secrets unlock portfolio probes.
-- **Tags `v*` only:** [`.github/workflows/release.yml`](.github/workflows/release.yml) — build Linux / APK and publish a GitHub Release (web asset paused; not on every main merge).
-- **Container (GHCR):** [`.github/workflows/container.yml`](.github/workflows/container.yml) — on `v*` tags (and `workflow_dispatch`), build [`Containerfile`](Containerfile) and push `ghcr.io/<owner>/<repo>` with `GITHUB_TOKEN` (`packages: write`). OCI `org.opencontainers.image.source` links the package to the repo.
-- **Patch bump on `main`:** [`.github/workflows/bump-patch-version.yml`](.github/workflows/bump-patch-version.yml) — does not create tags. See [`docs/build-and-release.md`](docs/build-and-release.md) for the tag-and-release steps.
-
-### Versioning
-
-- Single version everywhere: `MAJOR.MINOR.PATCH+BUILD` — **BUILD is always numeric** (Android `versionCode` / iOS build).
-- [`pubspec.yaml`](pubspec.yaml) is the source of truth; [`AppInfo.version`](lib/core/app_info.dart) (Settings sidebar footer) mirrors that exact string.
-- **Patch**: `make bump-patch` / [`tool/bump_patch_version.sh`](tool/bump_patch_version.sh) increments patch (+ numeric build) and rewrites both files. CI runs this on every push to `main` ([`.github/workflows/bump-patch-version.yml`](.github/workflows/bump-patch-version.yml)), skipped when that push already edited the pubspec `version:` line.
-- **Verify alignment**: `tool/bump_patch_version.sh --verify` (full string must match).
-- **Major / minor**: edit `pubspec.yaml`, then run the bump script (or let CI bump) so AppInfo stays aligned — do not hand-edit AppInfo alone.
-
-### Git hooks (pre-commit)
-
-Install once: `make hooks` (or `pre-commit install --hook-type pre-commit --hook-type pre-push`)
-
-- **pre-commit**: secret scan (gitleaks + private-key detect), merge-conflict / large-file checks
-- **pre-push**: gitleaks + `tool/flutter_checks.sh all` (version verify + analyze + offline tests + Linux release compile; fail closed off Linux)
-
-Do not commit API keys, credential JSON, or a filled `omniscope.json`. Config: [`.pre-commit-config.yaml`](.pre-commit-config.yaml), [`.gitleaks.toml`](.gitleaks.toml).
-
-Linux deps (Fedora): `clang`, `cmake`, `ninja-build`, `gtk3-devel`, `pkgconf-pkg-config`, etc. See [`docs/development.md`](docs/development.md). The same build packages (and runtime GTK/EGL packages) must stay mirrored in [`Containerfile`](Containerfile) — see **Podman** above and [`docs/container.md`](docs/container.md).
+Do not commit API keys, credential JSON, or a filled `omniscope.json`. Hooks: [`.pre-commit-config.yaml`](.pre-commit-config.yaml), [`.gitleaks.toml`](.gitleaks.toml).
 
 ## When changing behavior
 

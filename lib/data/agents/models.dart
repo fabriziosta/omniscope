@@ -41,7 +41,7 @@ enum ModelWeight {
   heavy,
 }
 
-/// How agents phrase answers (Settings → Agents). Delivery only — not policy.
+/// How agents phrase answers (per-chat Agent settings). Delivery only — not policy.
 enum AgentAnswerMood {
   plain,
   concise,

@@ -19,7 +19,7 @@ When designing or changing Omniscope UI, **proactively suggest** where an AI age
 - Use [`AgentLaunchIntent`](lib/data/agents/agent_launch.dart): `investigate` (research), `tradeCheck` (intraday), `explainLive` (live balances), `explainPortfolio` (allocation / practice sizing), `explainCryptoSpot` (crypto spot literacy), or `explainMarketsLiteracy` (indices / ETFs / stocks tutor).
 - Launch via [`AgentLaunchActions.launch`](lib/features/agents/agent_launch_actions.dart) or [`AgentLaunchButton`](lib/widgets/agent_launch_button.dart) — do not push `AgentChatScreen` with a hard-coded role unless intentional.
 - Pass the **symbol**; set `autoRun` through the shared helper so chat runs the Genkit orchestrator (tools + specialty prompts).
-- Mobile-first: with an LLM key configured, open Agents → **create a new chat** with an intent title (e.g. `Investigate asset AAPL`) → draft the matching starter into the composer (user sends; do not auto-send). Without a key, send the user to Settings → Connections (`goToSettings(sectionId: 'connections')`).
+- Mobile-first: with an LLM key configured, open Agents → **reuse an empty chat** with the same intent title when one exists, otherwise create one (e.g. `Investigate asset AAPL`) → draft the matching starter into the composer (user sends; do not auto-send). `goToAgentChat` clears pushed tab overlays (Asset detail from a focus chip, etc.) so the Agents chat is visible. Without a key, send the user to Settings → Agents (`goToSettings(sectionId: 'connections')` — legacy deep-link id still opens Agents).
 - Brand / shadcn only — no ad-hoc Material menus.
 
 ```dart

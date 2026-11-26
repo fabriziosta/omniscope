@@ -32,6 +32,8 @@ class FavoritesQuotesPane extends StatelessWidget {
     this.errorTitle = 'Could not load Favorites',
     this.sourceLabelFor,
     this.sourceIsAgentFor,
+    this.onClearAll,
+    this.clearAllLabel = 'Clear all',
   });
 
   final List<String> symbols;
@@ -51,6 +53,11 @@ class FavoritesQuotesPane extends StatelessWidget {
 
   /// When [sourceLabelFor] is set, whether the chip uses Agent styling.
   final bool Function(String symbol)? sourceIsAgentFor;
+
+  /// Clears the whole list (shown in the content pane trailing when non-empty).
+  final VoidCallback? onClearAll;
+
+  final String clearAllLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -73,6 +80,8 @@ class FavoritesQuotesPane extends StatelessWidget {
         blockedMessage: blockedMessage,
         sourceLabelFor: sourceLabelFor,
         sourceIsAgentFor: sourceIsAgentFor,
+        onClearAll: onClearAll,
+        clearAllLabel: clearAllLabel,
       ),
     );
   }
@@ -90,6 +99,8 @@ class _FavoritesQuotesPaneView extends StatelessWidget {
     this.blockedMessage,
     this.sourceLabelFor,
     this.sourceIsAgentFor,
+    this.onClearAll,
+    this.clearAllLabel = 'Clear all',
   });
 
   final String title;
@@ -102,6 +113,8 @@ class _FavoritesQuotesPaneView extends StatelessWidget {
   final String? blockedMessage;
   final String? Function(String symbol)? sourceLabelFor;
   final bool Function(String symbol)? sourceIsAgentFor;
+  final VoidCallback? onClearAll;
+  final String clearAllLabel;
 
   void _openAsset(BuildContext context, String symbol) {
     pushFadePage(context, AssetDetailScreen(symbol: symbol));
@@ -112,11 +125,22 @@ class _FavoritesQuotesPaneView extends StatelessWidget {
     final density = context.watch<DisplaySettings>().listDensity;
     final gap = density == ListDensity.compact ? 4.0 : 8.0;
     final blocked = blockedMessage;
+    final showClear = onClearAll != null &&
+        blocked == null &&
+        symbols.isNotEmpty;
 
     return MasterDetailContentPane(
       title: title,
       subtitle: subtitle,
       onOpenMenu: onOpenMenu,
+      trailing: showClear
+          ? ShadButton.outline(
+              size: ShadButtonSize.sm,
+              height: 44,
+              onPressed: onClearAll,
+              child: Text(clearAllLabel),
+            )
+          : null,
       body: blocked != null
           ? AppEmptyView(blocked)
           : symbols.isEmpty

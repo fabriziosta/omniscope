@@ -32,7 +32,7 @@ abstract final class UserConfigKeys {
   static const legacyAgentChats = 'omniscope.agent_chats.v1';
   static const legacyPaperPortfolio = 'omniscope.paper_portfolio.v1';
 
-  static const currentVersion = 1;
+  static const currentVersion = 2;
 
   static const legacyPrefsKeys = <String>[
     legacyTheme,

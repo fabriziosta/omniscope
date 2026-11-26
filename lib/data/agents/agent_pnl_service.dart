@@ -126,16 +126,25 @@ abstract final class AgentPnlService {
   }
 
   /// Sum of realized P&L on executed fills in the UTC calendar day of [now].
+  ///
+  /// When [chatId] is set, only fills from that chat are counted.
   static double realizedPnlForUtcDay({
     required Iterable<TradeProposal> proposals,
     required DateTime now,
     bool autopilotOnly = false,
+    String? chatId,
   }) {
     final dayStart = DateTime.utc(now.year, now.month, now.day);
     final dayEnd = dayStart.add(const Duration(days: 1));
+    final scopedChat = chatId?.trim();
     var sum = 0.0;
     for (final p in executedFills(proposals)) {
       if (autopilotOnly && !p.autopilot) continue;
+      if (scopedChat != null &&
+          scopedChat.isNotEmpty &&
+          p.chatId != scopedChat) {
+        continue;
+      }
       final at = p.filledAt ?? p.createdAt;
       if (at.isBefore(dayStart) || !at.isBefore(dayEnd)) continue;
       final pnl = p.realizedPnl;
@@ -145,15 +154,24 @@ abstract final class AgentPnlService {
   }
 
   /// Count of executed Autopilot fills in the UTC calendar day of [now].
+  ///
+  /// When [chatId] is set, only fills from that chat are counted.
   static int autopilotFillCountForUtcDay({
     required Iterable<TradeProposal> proposals,
     required DateTime now,
+    String? chatId,
   }) {
     final dayStart = DateTime.utc(now.year, now.month, now.day);
     final dayEnd = dayStart.add(const Duration(days: 1));
+    final scopedChat = chatId?.trim();
     var count = 0;
     for (final p in executedFills(proposals)) {
       if (!p.autopilot) continue;
+      if (scopedChat != null &&
+          scopedChat.isNotEmpty &&
+          p.chatId != scopedChat) {
+        continue;
+      }
       final at = p.filledAt ?? p.createdAt;
       if (at.isBefore(dayStart) || !at.isBefore(dayEnd)) continue;
       count++;

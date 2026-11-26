@@ -75,10 +75,14 @@ class QuoteListTile extends StatelessWidget {
         '${quote.symbol}${subtitle == null ? '' : ', $subtitle'}, '
         'price $priceText, change $changeText';
 
-    final favorites = context.watch<FavoritesRepository>();
-    final favorited = showFavorite && favorites.isFavorite(quote.symbol);
-    final investMarked =
-        showInvestInterest && favorites.isInvestInterest(quote.symbol);
+    final favorited = showFavorite &&
+        context.select<FavoritesRepository, bool>(
+          (f) => f.isFavorite(quote.symbol),
+        );
+    final investMarked = showInvestInterest &&
+        context.select<FavoritesRepository, bool>(
+          (f) => f.isInvestInterest(quote.symbol),
+        );
 
     final favoriteButton = showFavorite
         ? _FavoriteStarButton(

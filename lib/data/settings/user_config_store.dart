@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -17,7 +18,12 @@ class UserConfigStore extends ChangeNotifier {
     SharedPreferences? prefs,
     this.memoryOnly = false,
     Map<String, dynamic>? initialDocument,
+    Duration? persistDebounce,
   })  : _prefsOverride = prefs,
+        _persistDebounce = persistDebounce ??
+            (memoryOnly
+                ? Duration.zero
+                : const Duration(milliseconds: 400)),
         _document = initialDocument != null
             ? _deepCopyMap(initialDocument)
             : UserConfigDefaults.document();
@@ -27,6 +33,10 @@ class UserConfigStore extends ChangeNotifier {
   /// When true, never touch the filesystem (tests / in-memory).
   final bool memoryOnly;
 
+  /// Delay before coalesced disk/prefs write. Zero = flush on each mutation
+  /// (default for [memoryOnly] so widget tests leave no pending [Timer]s).
+  final Duration _persistDebounce;
+
   Map<String, dynamic> _document;
   String? _resolvedPath;
   String? _pathOverride;
@@ -34,7 +44,19 @@ class UserConfigStore extends ChangeNotifier {
   bool _ready = false;
   bool _usesFilesystem = false;
 
+  Timer? _persistDebounceTimer;
+  bool _persistDirty = false;
+  Future<void>? _inFlightPersist;
+
+  /// How many debounced flush operations ran ([UserConfigStore] tests).
+  @visibleForTesting
+  int persistOperationCount = 0;
+
   bool get isReady => _ready;
+
+  /// Whether a disk write is scheduled or in progress.
+  bool get hasPendingPersist =>
+      _persistDirty || _persistDebounceTimer != null || _inFlightPersist != null;
 
   /// Absolute path when using a file; null on Web / memory-only.
   String? get effectivePath => _usesFilesystem ? _resolvedPath : null;
@@ -127,14 +149,17 @@ class UserConfigStore extends ChangeNotifier {
     }
 
     if (shouldPersist) {
-      await _persistImmediate();
+      await _persistWithoutDebounce();
     }
 
     _ready = true;
     notifyListeners();
   }
 
-  /// Replace one top-level slice and persist.
+  /// Replace one top-level slice and schedule a debounced persist.
+  ///
+  /// Completes after the in-memory update (does not wait for disk). Call
+  /// [flushPersist] when durability is required before continuing.
   Future<void> setSlice(String key, Object? value) async {
     if (value == null) {
       _document.remove(key);
@@ -144,15 +169,23 @@ class UserConfigStore extends ChangeNotifier {
           : value;
     }
     notifyListeners();
-    await _persistImmediate();
+    _scheduleDebouncedPersist();
   }
 
-  /// Mutate the document in place, then persist.
+  /// Mutate the document in place, then schedule a debounced persist.
+  ///
+  /// Completes after the in-memory update (does not wait for disk).
   Future<void> update(void Function(Map<String, dynamic> doc) mutate) async {
     mutate(_document);
     notifyListeners();
-    await _persistImmediate();
+    _scheduleDebouncedPersist();
   }
+
+  /// Writes the in-memory document to durable storage now.
+  ///
+  /// Call after Import or before Export when disk must match memory, and on
+  /// app pause/background.
+  Future<void> flushPersist() => _flushPersistNow();
 
   /// Replace the whole document from Import (JSON text).
   Future<void> importJson(String raw) async {
@@ -160,13 +193,14 @@ class UserConfigStore extends ChangeNotifier {
     if (parsed == null) {
       throw const FormatException('Invalid Omniscope config JSON.');
     }
+    _abortPendingPersist();
     _document = parsed;
     if (_document[UserConfigKeys.version] is! int) {
       _document[UserConfigKeys.version] = UserConfigKeys.currentVersion;
     }
     UserConfigDefaults.mergeInto(_document);
     UserConfigDefaults.sanitizeInto(_document);
-    await _persistImmediate();
+    await _persistWithoutDebounce();
     notifyListeners();
   }
 
@@ -202,13 +236,67 @@ class UserConfigStore extends ChangeNotifier {
     _ready = false;
     await load();
     // Ensure the document is present at the resolved path.
-    await _persistImmediate();
+    await _persistWithoutDebounce();
     notifyListeners();
   }
 
+  void _abortPendingPersist() {
+    _cancelDebouncedPersist();
+    _persistDirty = false;
+  }
+
+  Future<void> _persistWithoutDebounce() async {
+    _abortPendingPersist();
+    await _persistImmediate();
+  }
+
+  void _cancelDebouncedPersist() {
+    _persistDebounceTimer?.cancel();
+    _persistDebounceTimer = null;
+  }
+
+  void _scheduleDebouncedPersist() {
+    _persistDirty = true;
+    if (_persistDebounce <= Duration.zero) {
+      unawaited(_flushPersistNow());
+      return;
+    }
+    _cancelDebouncedPersist();
+    _persistDebounceTimer = Timer(_persistDebounce, () {
+      unawaited(_flushPersistNow());
+    });
+  }
+
+  Future<void> _flushPersistNow() async {
+    _cancelDebouncedPersist();
+    if (_inFlightPersist != null) {
+      await _inFlightPersist;
+    }
+    if (!_persistDirty) return;
+    _persistDirty = false;
+    final run = _persistImmediate();
+    _inFlightPersist = run;
+    try {
+      await run;
+    } finally {
+      if (identical(_inFlightPersist, run)) {
+        _inFlightPersist = null;
+      }
+    }
+    if (_persistDirty) {
+      _scheduleDebouncedPersist();
+    }
+  }
+
   Future<void> _persistImmediate() async {
-    _document[UserConfigKeys.version] = UserConfigKeys.currentVersion;
+    final existing = _document[UserConfigKeys.version];
+    if (existing is! int ||
+        existing >= UserConfigKeys.currentVersion) {
+      _document[UserConfigKeys.version] = UserConfigKeys.currentVersion;
+    }
     final encoded = jsonEncode(_document);
+
+    persistOperationCount++;
 
     if (memoryOnly) return;
 

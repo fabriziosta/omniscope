@@ -21,7 +21,6 @@ import 'package:omniscope/data/portfolio/portfolio_repository.dart';
 import 'package:omniscope/data/settings/data_source_settings.dart';
 import 'package:omniscope/data/settings/env_secrets_repository.dart';
 import 'package:omniscope/data/settings/favorites_repository.dart';
-import 'package:omniscope/data/settings/mandate_settings.dart';
 import 'package:omniscope/data/trading/broker_exchange_registry.dart';
 import 'package:omniscope/data/trading/trade_executor.dart';
 import 'package:omniscope/features/agents/agent_chat_screen.dart';
@@ -68,8 +67,6 @@ Future<({AgentChatRepository chats, ShellNavigationController shellNav})>
     await portfolio.load();
     final favorites = FavoritesRepository(store: store);
     await favorites.load();
-    final mandate = MandateSettings(store: store);
-    await mandate.load();
     final agentMemory = AgentMemoryRepository(store: store);
     await agentMemory.load();
     final notifications = AppNotificationRepository(store: store);
@@ -84,7 +81,6 @@ Future<({AgentChatRepository chats, ShellNavigationController shellNav})>
       dataSources: dataSources,
       portfolio: portfolio,
       favorites: favorites,
-      mandate: mandate,
       agentMemory: agentMemory,
       notifications: notifications,
     );
@@ -120,7 +116,6 @@ Future<({AgentChatRepository chats, ShellNavigationController shellNav})>
     secrets: setup.seeded.secrets,
     llmRuntime: setup.seeded.llmRuntime,
     appSettings: setup.seeded.appSettings,
-    mandate: setup.mandate,
     agentMemory: setup.agentMemory,
     investInterestProposals: setup.investInterest,
   );
@@ -151,7 +146,6 @@ Future<({AgentChatRepository chats, ShellNavigationController shellNav})>
         ChangeNotifierProvider<FavoritesRepository>.value(
           value: setup.favorites,
         ),
-        ChangeNotifierProvider<MandateSettings>.value(value: setup.mandate),
         ChangeNotifierProvider<AgentsRepository>.value(value: setup.agents),
         ChangeNotifierProvider<LlmRuntimeSettings>.value(
           value: setup.seeded.llmRuntime,

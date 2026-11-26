@@ -82,4 +82,11 @@ class AgentsRepository extends ChangeNotifier {
     await _persist();
     notifyListeners();
   }
+
+  /// After v1→v2 promotion, drop legacy connection payloads from config.
+  Future<void> clearLegacyConnectionsAfterMigration() async {
+    _state = const AgentsState(connections: []);
+    await _persist();
+    notifyListeners();
+  }
 }

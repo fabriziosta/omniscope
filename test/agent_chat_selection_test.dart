@@ -23,7 +23,6 @@ import 'package:omniscope/data/portfolio/portfolio_repository.dart';
 import 'package:omniscope/data/settings/data_source_settings.dart';
 import 'package:omniscope/data/settings/env_secrets_repository.dart';
 import 'package:omniscope/data/settings/favorites_repository.dart';
-import 'package:omniscope/data/settings/mandate_settings.dart';
 import 'package:omniscope/data/trading/broker_exchange_registry.dart';
 import 'package:omniscope/data/trading/trade_executor.dart';
 import 'package:omniscope/features/agents/agent_chat_screen.dart';
@@ -67,8 +66,6 @@ void main() {
       await portfolio.load();
       final favorites = FavoritesRepository(store: store);
       await favorites.load();
-      final mandate = MandateSettings(store: store);
-      await mandate.load();
       final agentMemory = AgentMemoryRepository(store: store);
       await agentMemory.load();
       final notifications = AppNotificationRepository(store: store);
@@ -83,7 +80,6 @@ void main() {
         dataSources: dataSources,
         portfolio: portfolio,
         favorites: favorites,
-        mandate: mandate,
         agentMemory: agentMemory,
         notifications: notifications,
       );
@@ -118,7 +114,6 @@ void main() {
       secrets: setup.seeded.secrets,
       llmRuntime: setup.seeded.llmRuntime,
       appSettings: setup.seeded.appSettings,
-      mandate: setup.mandate,
       agentMemory: setup.agentMemory,
       investInterestProposals: setup.investInterest,
     );
@@ -147,7 +142,6 @@ void main() {
           ChangeNotifierProvider<FavoritesRepository>.value(
             value: setup.favorites,
           ),
-          ChangeNotifierProvider<MandateSettings>.value(value: setup.mandate),
           ChangeNotifierProvider<AgentsRepository>.value(value: setup.agents),
           ChangeNotifierProvider<LlmRuntimeSettings>.value(
             value: setup.seeded.llmRuntime,
@@ -217,7 +211,10 @@ void main() {
         createdAt: DateTime.utc(2026, 1, 1, 0, 1),
       ),
     );
-    await tester.pumpAndSettle();
+    // Prefer finite pumps over pumpAndSettle: MasterDetail slide + any
+    // indeterminate progress would otherwise run until the 10-minute timeout.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.byType(AgentChatScreen), findsOneWidget);
     // Message list SelectionArea + any route-level one.

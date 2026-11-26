@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +14,7 @@ import '../../widgets/app_tooltip.dart';
 import '../../widgets/in_tab_back.dart';
 import '../../data/agents/invest_interest_proposal_repository.dart';
 import '../../data/agents/trade_proposal_repository.dart';
+import '../../data/settings/user_config_store.dart';
 import '../../data/notifications/app_notification_repository.dart';
 import '../activity/activity_screen.dart';
 import '../agents/agent_schedule_coordinator.dart';
@@ -111,6 +114,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       case AppLifecycleState.paused:
       case AppLifecycleState.detached:
         schedule.pause();
+        unawaited(context.read<UserConfigStore>().flushPersist());
     }
   }
 
@@ -118,6 +122,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void didChangeDependencies() {
     super.didChangeDependencies();
     context.read<AppErrorController>().bindTabNavigators(_tabNavigatorKeys);
+    context.read<ShellNavigationController>().bindTabNavigators(
+          _tabNavigatorKeys,
+        );
   }
 
   void _onTabStackChanged() {
@@ -143,15 +150,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    final shellNav = context.watch<ShellNavigationController>();
-    final index = shellNav.tabIndex;
-    final pendingCount =
-        context.watch<TradeProposalRepository>().pendingActionableCount +
-            context
-                .watch<InvestInterestProposalRepository>()
-                .pendingActionableCount;
-    final alertsUnread =
-        context.watch<AppNotificationRepository>().unreadCount;
+    final index = context.select<ShellNavigationController, int>(
+      (nav) => nav.tabIndex,
+    );
 
     return InTabBackScope(
       registry: _inTabBack,
@@ -211,19 +212,25 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                               else if (i > 0)
                                 const SizedBox(width: 4),
                               Expanded(
-                                child: _NavTab(
-                                  label: _sideTabs[i].$2,
-                                  tooltip: _sideTabs[i].$3,
-                                  icon: _sideTabs[i].$4,
-                                  selected: index == _sideTabs[i].$1,
-                                  badgeCount: _sideTabs[i].$1 ==
-                                          ShellNavigationController
-                                              .activityTabIndex
-                                      ? alertsUnread
-                                      : 0,
-                                  onPressed: () =>
-                                      _onTabPressed(_sideTabs[i].$1),
-                                ),
+                                child: _sideTabs[i].$1 ==
+                                        ShellNavigationController
+                                            .activityTabIndex
+                                    ? _ActivityNavTab(
+                                        label: _sideTabs[i].$2,
+                                        tooltip: _sideTabs[i].$3,
+                                        icon: _sideTabs[i].$4,
+                                        selected: index == _sideTabs[i].$1,
+                                        onPressed: () =>
+                                            _onTabPressed(_sideTabs[i].$1),
+                                      )
+                                    : _NavTab(
+                                        label: _sideTabs[i].$2,
+                                        tooltip: _sideTabs[i].$3,
+                                        icon: _sideTabs[i].$4,
+                                        selected: index == _sideTabs[i].$1,
+                                        onPressed: () =>
+                                            _onTabPressed(_sideTabs[i].$1),
+                                      ),
                               ),
                             ],
                           ],
@@ -231,11 +238,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                       ),
                       Positioned(
                         top: -_agentsFabProtrusion,
-                        child: _AgentsNavFab(
+                        child: _AgentsNavFabWithBadge(
                           size: _agentsFabSize,
                           selected: index ==
                               ShellNavigationController.agentsTabIndex,
-                          badgeCount: pendingCount,
                           onPressed: () => _onTabPressed(
                             ShellNavigationController.agentsTabIndex,
                           ),
@@ -312,6 +318,66 @@ class _TabRouteObserver extends NavigatorObserver {
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) =>
       _notify();
+}
+
+/// Activity tab — unread alert badge only (narrow provider watch).
+class _ActivityNavTab extends StatelessWidget {
+  const _ActivityNavTab({
+    required this.label,
+    required this.tooltip,
+    required this.icon,
+    required this.selected,
+    required this.onPressed,
+  });
+
+  final String label;
+  final String tooltip;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final badgeCount = context.select<AppNotificationRepository, int>(
+      (r) => r.unreadCount,
+    );
+    return _NavTab(
+      label: label,
+      tooltip: tooltip,
+      icon: icon,
+      selected: selected,
+      badgeCount: badgeCount,
+      onPressed: onPressed,
+    );
+  }
+}
+
+class _AgentsNavFabWithBadge extends StatelessWidget {
+  const _AgentsNavFabWithBadge({
+    required this.size,
+    required this.selected,
+    required this.onPressed,
+  });
+
+  final double size;
+  final bool selected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final tradePending = context.select<TradeProposalRepository, int>(
+      (r) => r.pendingActionableCount,
+    );
+    final investPending = context.select<InvestInterestProposalRepository, int>(
+      (r) => r.pendingActionableCount,
+    );
+    return _AgentsNavFab(
+      size: size,
+      selected: selected,
+      badgeCount: tradePending + investPending,
+      onPressed: onPressed,
+    );
+  }
 }
 
 /// Compact bottom-nav control that scales labels on narrow phones.
@@ -446,82 +512,68 @@ class _AgentsNavFab extends StatelessWidget {
           onTap: onPressed,
           child: SizedBox(
             width: size + 16,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
               children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.center,
-                  children: [
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: scheme.primary,
-                        border: Border.all(
-                          color: selected
-                              ? scheme.secondary
-                              : scheme.background,
-                          width: 3,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: BrandColors.shadowOf(context),
-                            blurRadius: selected ? 14 : 10,
-                            spreadRadius: selected ? 1 : 0,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: scheme.primary,
+                    border: Border.all(
+                      color: selected
+                          ? scheme.secondary
+                          : scheme.background,
+                      width: 3,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: BrandColors.shadowOf(context),
+                        blurRadius: selected ? 14 : 10,
+                        spreadRadius: selected ? 1 : 0,
+                        offset: const Offset(0, 3),
                       ),
-                      child: SizedBox(
-                        width: size,
-                        height: size,
-                        child: Icon(
-                          LucideIcons.messagesSquare,
-                          size: 26,
-                          color: scheme.primaryForeground,
+                    ],
+                  ),
+                  child: SizedBox(
+                    width: size,
+                    height: size,
+                    child: Icon(
+                      LucideIcons.messagesSquare,
+                      size: 26,
+                      color: scheme.primaryForeground,
+                    ),
+                  ),
+                ),
+                if (badgeCount > 0)
+                  Positioned(
+                    top: -2,
+                    right: -2,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: scheme.secondary,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: scheme.background,
+                          width: 2,
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 1,
+                        ),
+                        child: Text(
+                          badgeCount > 99 ? '99+' : '$badgeCount',
+                          style: theme.textTheme.small.copyWith(
+                            color: scheme.secondaryForeground,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                     ),
-                    if (badgeCount > 0)
-                      Positioned(
-                        top: -2,
-                        right: -2,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: scheme.secondary,
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: scheme.background,
-                              width: 2,
-                            ),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 5,
-                              vertical: 1,
-                            ),
-                            child: Text(
-                              badgeCount > 99 ? '99+' : '$badgeCount',
-                              style: theme.textTheme.small.copyWith(
-                                color: scheme.secondaryForeground,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Agents',
-                  maxLines: 1,
-                  style: theme.textTheme.small.copyWith(
-                    color: selected ? scheme.primary : scheme.foreground,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                   ),
-                ),
               ],
             ),
           ),

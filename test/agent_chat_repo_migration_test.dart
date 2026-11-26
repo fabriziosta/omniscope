@@ -1,7 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniscope/data/agents/agent_app_settings.dart';
 import 'package:omniscope/data/agents/agent_chat_repository.dart';
+import 'package:omniscope/data/agents/chat_agent_settings.dart';
 import 'package:omniscope/data/agents/chat_models.dart';
+import 'package:omniscope/data/agents/models.dart';
+import 'package:omniscope/data/settings/mandate_settings.dart';
 import 'package:omniscope/data/settings/user_config_keys.dart';
 
 import 'support/memory_config.dart';
@@ -77,6 +80,34 @@ void main() {
     expect(thread.legacyRoleId, 'marketResearch');
     expect(thread.messages, hasLength(1));
     expect(thread.messages.first.content, 'Investigate AAPL');
+  });
+
+  test('emptyChatWithTitle reuses empty drafts only', () async {
+    final store = await memoryConfig();
+    final repo = AgentChatRepository(store: store);
+    await repo.load();
+
+    expect(repo.emptyChatWithTitle('Trade check for AAPL'), isNull);
+
+    final empty = await repo.createChat(title: 'Trade check for AAPL');
+    expect(repo.emptyChatWithTitle('Trade check for AAPL')?.chatId, empty.chatId);
+
+    await repo.append(
+      chatId: empty.chatId,
+      message: AgentChatMessage(
+        id: AgentChatMessage.newId(),
+        role: AgentChatRole.user,
+        content: 'sent',
+        createdAt: DateTime.now().toUtc(),
+      ),
+    );
+    expect(repo.emptyChatWithTitle('Trade check for AAPL'), isNull);
+
+    final again = await repo.createChat(title: 'Trade check for AAPL');
+    final touched = await repo.touchChat(again.chatId);
+    expect(touched.updatedAt.isAfter(again.updatedAt) ||
+        touched.updatedAt.isAtSameMomentAs(again.updatedAt), isTrue);
+    expect(repo.emptyChatWithTitle('Trade check for AAPL')?.chatId, again.chatId);
   });
 
   test('createChat and append use chatId', () async {
@@ -288,5 +319,205 @@ void main() {
       ),
     );
     expect(repo.threadFor(created.chatId).focusSymbols, ['MSFT']);
+  });
+
+  test('thread JSON always persists mandate; missing key uses defaults', () {
+    final withMandate = AgentChatThread(
+      chatId: 'c_m',
+      title: 'M',
+      messages: const [],
+      updatedAt: DateTime.utc(2026, 1, 1),
+      mandate: const ChatMandate(
+        goal: MandateGoal.grow,
+        maxSymbolCount: 7,
+      ),
+    );
+    final json = withMandate.toJson();
+    expect(json['mandate'], isA<Map>());
+    expect(json['mandate']['goal'], 'grow');
+    expect(json['mandate']['maxSymbolCount'], 7);
+
+    final legacy = Map<String, dynamic>.from(json)..remove('mandate');
+    final parsed = AgentChatThread.fromJson(legacy);
+    expect(parsed.mandate, ChatMandate.defaults);
+  });
+
+  test('migrateGlobalMandateIfNeeded seeds threads from legacy slice',
+      () async {
+    final store = await memoryConfig();
+    await store.setSlice(UserConfigKeys.mandate, {
+      'goal': 'grow',
+      'horizon': 'long',
+      'universe': 'equities',
+      'maxSymbolCount': 9,
+      'maxOpenProposals': 2,
+      'maxAutopilotFillsPerDay': 4,
+      'cadencePreference': 'hours4',
+    });
+    await store.setSlice(UserConfigKeys.agentChats, {
+      'version': 2,
+      'threads': [
+        {
+          'chatId': 'c_legacy',
+          'title': 'Old',
+          'messages': <dynamic>[],
+          'updatedAt': '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    });
+
+    final repo = AgentChatRepository(store: store);
+    await repo.load();
+    expect(repo.threadFor('c_legacy').mandate, ChatMandate.defaults);
+    await repo.migrateGlobalMandateIfNeeded();
+
+    final seeded = repo.threadFor('c_legacy').mandate;
+    expect(seeded.goal, MandateGoal.grow);
+    expect(seeded.horizon, MandateHorizon.long);
+    expect(seeded.universe, MandateUniverse.equities);
+    expect(seeded.maxSymbolCount, 9);
+    expect(seeded.maxOpenProposals, 2);
+    expect(seeded.maxAutopilotFillsPerDay, 4);
+
+    final legacySlice = store.getSlice(UserConfigKeys.mandate);
+    expect(legacySlice, isA<Map>());
+    expect((legacySlice as Map).isEmpty, isTrue);
+
+    final again = AgentChatRepository(store: store);
+    await again.load();
+    expect(again.threadFor('c_legacy').mandate.maxSymbolCount, 9);
+  });
+
+  test('setMandate persists without bumping updatedAt', () async {
+    final store = await memoryConfig();
+    final repo = AgentChatRepository(store: store);
+    await repo.load();
+    final created = await repo.createChat(title: 'Edit mandate');
+    final before = created.updatedAt;
+    final next = await repo.setMandate(
+      created.chatId,
+      const ChatMandate(goal: MandateGoal.preserve, maxSymbolCount: 5),
+    );
+    expect(next.mandate.goal, MandateGoal.preserve);
+    expect(next.mandate.maxSymbolCount, 5);
+    expect(next.updatedAt, before);
+  });
+
+  test('thread JSON always persists agentSettings; missing key uses defaults',
+      () {
+    final withSettings = AgentChatThread(
+      chatId: 'c_as',
+      title: 'AS',
+      messages: const [],
+      updatedAt: DateTime.utc(2026, 1, 1),
+      agentSettings: const ChatAgentSettings(
+        answerMood: AgentAnswerMood.concise,
+        answerMoodNote: 'Bullets',
+        disabledRoleIds: {'cryptoSpotPrimer'},
+        autopilotExchangeId: 'practice',
+      ),
+    );
+    final json = withSettings.toJson();
+    expect(json['agentSettings'], isA<Map>());
+    expect(json['agentSettings']['answerMood'], 'concise');
+    expect(json['agentSettings']['answerMoodNote'], 'Bullets');
+    expect(json['agentSettings']['disabledRoleIds'], ['cryptoSpotPrimer']);
+    expect(json['agentSettings']['autopilotExchangeId'], 'practice');
+
+    final legacy = Map<String, dynamic>.from(json)..remove('agentSettings');
+    final parsed = AgentChatThread.fromJson(legacy);
+    expect(parsed.agentSettings, ChatAgentSettings.defaults);
+  });
+
+  test('migrateGlobalAgentSettingsIfNeeded seeds threads and clears agentApp',
+      () async {
+    final store = await memoryConfig();
+    await store.setSlice(UserConfigKeys.agentApp, {
+      'autopilotEnabled': false,
+      'autopilotExchangeId': 'crypto_com',
+      'autopilotMaxOpenProposals': 3,
+      'disabledRoleIds': ['liveBalance'],
+      'overrides': <Map<String, dynamic>>[],
+      'scheduleEnabled': false,
+      'scheduleInterval': 'hour1',
+      'scheduleSymbols': <String>[],
+      'scheduleUseInvestInterest': true,
+      'answerMood': 'coaching',
+      'answerMoodNote': 'Keep it short',
+    });
+    await store.setSlice(UserConfigKeys.agentChats, {
+      'version': 2,
+      'threads': [
+        {
+          'chatId': 'c_legacy_as',
+          'title': 'Old',
+          'messages': <dynamic>[],
+          'updatedAt': '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    });
+
+    final app = AgentAppSettings(store: store);
+    await app.load();
+    expect(app.hasLegacyChatScopedFields, isTrue);
+    expect(app.answerMood, AgentAnswerMood.coaching);
+    expect(app.autopilotExchangeId, 'crypto_com');
+
+    final repo = AgentChatRepository(store: store);
+    await repo.load();
+    expect(repo.threadFor('c_legacy_as').agentSettings, ChatAgentSettings.defaults);
+
+    await repo.migrateGlobalAgentSettingsIfNeeded(app);
+
+    final seeded = repo.threadFor('c_legacy_as').agentSettings;
+    expect(seeded.answerMood, AgentAnswerMood.coaching);
+    expect(seeded.answerMoodNote, 'Keep it short');
+    expect(seeded.disabledRoleIds, {'liveBalance'});
+    expect(seeded.autopilotExchangeId, 'crypto_com');
+
+    expect(app.hasLegacyChatScopedFields, isFalse);
+    expect(app.answerMood, AgentAnswerMood.plain);
+    expect(app.answerMoodNote, isNull);
+    expect(app.disabledRoleIds, isEmpty);
+    expect(app.autopilotExchangeId, isNull);
+
+    final again = AgentChatRepository(store: store);
+    await again.load();
+    expect(
+      again.threadFor('c_legacy_as').agentSettings.answerMood,
+      AgentAnswerMood.coaching,
+    );
+    await again.migrateGlobalAgentSettingsIfNeeded(app);
+    expect(
+      again.threadFor('c_legacy_as').agentSettings.answerMood,
+      AgentAnswerMood.coaching,
+    );
+  });
+
+  test('setAgentSettings persists without bumping updatedAt', () async {
+    final store = await memoryConfig();
+    final repo = AgentChatRepository(store: store);
+    await repo.load();
+    final created = await repo.createChat(title: 'Edit agent settings');
+    final before = created.updatedAt;
+    final next = await repo.setAgentSettings(
+      created.chatId,
+      const ChatAgentSettings(
+        answerMood: AgentAnswerMood.formal,
+        disabledRoleIds: {'marketsLiteracy'},
+        autopilotExchangeId: 'practice',
+      ),
+    );
+    expect(next.agentSettings.answerMood, AgentAnswerMood.formal);
+    expect(next.agentSettings.disabledRoleIds, {'marketsLiteracy'});
+    expect(next.agentSettings.autopilotExchangeId, 'practice');
+    expect(next.updatedAt, before);
+
+    final reloaded = AgentChatRepository(store: store);
+    await reloaded.load();
+    expect(
+      reloaded.threadFor(created.chatId).agentSettings.answerMood,
+      AgentAnswerMood.formal,
+    );
   });
 }

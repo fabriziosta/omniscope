@@ -4,7 +4,7 @@ abstract final class AppCopy {
 
   /// Bottom-nav hover / long-press hints (plain language, not just the label).
   static const tabTooltipPortfolio =
-      'Practice paper trading and live exchange balances';
+      'Practice and live balances from agent-confirmed trades';
   static const tabTooltipMarkets =
       'Browse favorites, equities, and spot crypto by exchange';
   static const tabTooltipActivity =
@@ -38,8 +38,6 @@ abstract final class AppCopy {
       'how the ticker works, Investigate for a research turn, or open the '
       'research links below.';
 
-  static const filterQuotesHint = 'Filter by symbol…';
-
   static const symbolSearchHint = 'Search symbols or names…';
 
   static const symbolSearchEmpty =
@@ -48,8 +46,6 @@ abstract final class AppCopy {
   static const symbolSearchNoMatches = 'No symbols match that search.';
 
   static const symbolSearchTooltip = 'Search symbols';
-
-  static const noQuotesMatchFilter = 'No quotes match that filter.';
 
   static const noQuotes = 'No quotes available';
 
@@ -67,14 +63,14 @@ abstract final class AppCopy {
       'who added each symbol. Manual edits clear the managed badge.';
 
   static const mandateIntro =
-      'Set your investing policy once. Connected agents read this mandate '
-      'and may propose Invest interest changes. With Autopilot off, you '
-      'Confirm every change; with Autopilot on, investigation agents may '
-      'auto-add symbols (remove/set still need Confirm).';
+      'Set investing policy for this chat. Agents read this Mandate and may '
+      'propose Invest interest changes. With Autopilot off, you Confirm every '
+      'change; with Autopilot on, investigation agents may auto-add symbols '
+      '(remove/set still need Confirm).';
 
   static const mandateRiskRailsSaved =
-      'Notional is enforced on Confirm; Autopilot also respects daily fill '
-      'budget and optional loss stop.';
+      'Notional is enforced on Confirm; Autopilot also respects this chat\'s '
+      'daily fill budget and optional loss stop.';
 
   static const noMarketSourcesEnabled =
       'No market data sources enabled. Turn one on in Settings.';
